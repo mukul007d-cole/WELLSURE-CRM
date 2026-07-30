@@ -1,0 +1,694 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DataScope {
+  SELF
+  TEAM
+  DEPARTMENT
+  ORGANIZATION
+}
+
+enum FieldAccessLevel {
+  VIEW
+  EDIT
+}
+
+enum OutcomeType {
+  open
+  closed_won
+  closed_lost
+}
+
+enum BehaviorType {
+  default
+  call_later
+  follow_up
+  archived
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  departments   Department[]
+  designations  Designation[]
+  roles         Role[]
+  users         User[]
+  journeys      Journey[]
+  services      Service[]
+  statuses      Status[]
+  fields        Field[]
+  leads         Lead[]
+  auditLogs     SystemAuditLog[]
+  importJobs    ImportJob[]
+  payments      Payment[]
+  notifications Notification[]
+  settings      Setting[]
+
+  @@map("organizations")
+}
+
+model Department {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("DepartmentCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?        @relation("DepartmentUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  users        User[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, active])
+  @@map("departments")
+}
+
+model Designation {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("DesignationCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?        @relation("DesignationUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  users        User[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, active])
+  @@map("designations")
+}
+
+model Role {
+  id              String   @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  key             String
+  name            String
+  active          Boolean  @default(true)
+  version         Int      @default(1)
+  isSystemDefault Boolean  @default(false) @map("is_system_default")
+  createdById     String?  @map("created_by") @db.Uuid
+  updatedById     String?  @map("updated_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy       User?               @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy       User?               @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  users           User[]
+  permissions     RolePermission[]
+  journeyAccess   RoleJourneyAccess[]
+  fieldVisibility FieldVisibility[]
+  autoStatuses    Status[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, active])
+  @@map("roles")
+}
+
+model User {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  email          String
+  roleId         String   @map("role_id") @db.Uuid
+  departmentId   String?  @map("department_id") @db.Uuid
+  designationId  String?  @map("designation_id") @db.Uuid
+  managerId      String?  @map("manager_id") @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role                Role              @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+  department          Department?       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  designation         Designation?      @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
+  manager             User?             @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
+  reports             User[]            @relation("ReportingHierarchy")
+  assignments         Assignment[]
+  grants              UserAccessGrant[] @relation("GrantRecipient")
+  issuedGrants        UserAccessGrant[] @relation("GrantIssuer")
+  notifications       Notification[]
+  departmentsCreated  Department[]      @relation("DepartmentCreatedBy")
+  departmentsUpdated  Department[]      @relation("DepartmentUpdatedBy")
+  designationsCreated Designation[]     @relation("DesignationCreatedBy")
+  designationsUpdated Designation[]     @relation("DesignationUpdatedBy")
+  rolesCreated        Role[]            @relation("RoleCreatedBy")
+  rolesUpdated        Role[]            @relation("RoleUpdatedBy")
+  journeysCreated     Journey[]         @relation("JourneyCreatedBy")
+  journeysUpdated     Journey[]         @relation("JourneyUpdatedBy")
+  servicesCreated     Service[]         @relation("ServiceCreatedBy")
+  servicesUpdated     Service[]         @relation("ServiceUpdatedBy")
+  statusesCreated     Status[]          @relation("StatusCreatedBy")
+  statusesUpdated     Status[]          @relation("StatusUpdatedBy")
+  fieldsCreated       Field[]           @relation("FieldCreatedBy")
+  fieldsUpdated       Field[]           @relation("FieldUpdatedBy")
+  activities          ActivityLog[]
+  auditLogs           SystemAuditLog[]
+  assignedTasks       Task[]
+  uploadedAttachments Attachment[]
+  importJobs          ImportJob[]
+  settingsUpdated     Setting[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, email])
+  @@index([organizationId, managerId])
+  @@index([organizationId, departmentId])
+  @@map("users")
+}
+
+model RolePermission {
+  id             String    @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  roleId         String    @map("role_id") @db.Uuid
+  module         String
+  action         String
+  scope          DataScope
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  role Role @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, roleId, module, action])
+  @@index([organizationId, module, action])
+  @@map("role_permissions")
+}
+
+model Journey {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy        User?                 @relation("JourneyCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy        User?                 @relation("JourneyUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  statuses         Status[]
+  processInstances ProcessInstance[]
+  roleAccess       RoleJourneyAccess[]
+  fieldSettings    FieldJourneySetting[]
+  journeyServices  JourneyService[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, active])
+  @@map("journeys")
+}
+
+model RoleJourneyAccess {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  journeyId      String   @map("journey_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  role    Role    @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+  journey Journey @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, roleId, journeyId])
+  @@index([organizationId, journeyId, roleId])
+  @@map("role_journey_access")
+}
+
+model Service {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  description    String?
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy       User?            @relation("ServiceCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy       User?            @relation("ServiceUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  journeyServices JourneyService[]
+  leadServices    LeadService[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@map("services")
+}
+
+model JourneyService {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  journeyId      String   @map("journey_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  journey Journey @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  service Service @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, journeyId, serviceId])
+  @@map("journey_services")
+}
+
+model Status {
+  id                   String       @default(uuid()) @db.Uuid
+  organizationId       String       @map("organization_id") @db.Uuid
+  journeyId            String       @map("journey_id") @db.Uuid
+  key                  String
+  name                 String
+  active               Boolean      @default(true)
+  version              Int          @default(1)
+  isDefaultOnCreate    Boolean      @default(false) @map("is_default_on_create")
+  outcomeType          OutcomeType  @map("outcome_type")
+  behaviorType         BehaviorType @map("behavior_type")
+  autoReassignToRoleId String?      @map("auto_reassign_to_role_id") @db.Uuid
+  sortOrder            Int          @map("sort_order")
+  createdById          String?      @map("created_by") @db.Uuid
+  updatedById          String?      @map("updated_by") @db.Uuid
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy        User?                 @relation("StatusCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy        User?                 @relation("StatusUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  journey          Journey               @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  autoReassignRole Role?                 @relation(fields: [organizationId, autoReassignToRoleId], references: [organizationId, id], onDelete: Restrict)
+  processInstances ProcessInstance[]
+  requiredSettings FieldJourneySetting[]
+  createdTasks     Task[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, journeyId, key])
+  @@unique([organizationId, journeyId, id])
+  @@index([organizationId, journeyId, active, sortOrder])
+  @@map("statuses")
+}
+
+model Field {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  fieldType      String   @map("field_type")
+  validationRule Json?    @map("validation_rule") @db.JsonB
+  section        String?
+  editMode       String   @map("edit_mode")
+  source         String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?                 @relation("FieldCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?                 @relation("FieldUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  settings     FieldJourneySetting[]
+  visibility   FieldVisibility[]
+  attachments  Attachment[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, active])
+  @@map("fields")
+}
+
+model FieldJourneySetting {
+  id                   String   @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  fieldId              String   @map("field_id") @db.Uuid
+  journeyId            String   @map("journey_id") @db.Uuid
+  requirement          String
+  requiredFromStatusId String?  @map("required_from_status_id") @db.Uuid
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  field              Field   @relation(fields: [organizationId, fieldId], references: [organizationId, id], onDelete: Restrict)
+  journey            Journey @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  requiredFromStatus Status? @relation(fields: [organizationId, journeyId, requiredFromStatusId], references: [organizationId, journeyId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, fieldId, journeyId])
+  @@map("field_journey_settings")
+}
+
+model FieldVisibility {
+  id             String           @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  fieldId        String           @map("field_id") @db.Uuid
+  roleId         String           @map("role_id") @db.Uuid
+  accessLevel    FieldAccessLevel @map("access_level")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  field Field @relation(fields: [organizationId, fieldId], references: [organizationId, id], onDelete: Restrict)
+  role  Role  @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, fieldId, roleId])
+  @@index([organizationId, roleId, accessLevel])
+  @@map("field_visibility")
+}
+
+model Lead {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  phone          String?
+  email          String?
+  fieldValues    Json     @default("{}") @map("field_values") @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  processInstances ProcessInstance[]
+  grants           UserAccessGrant[]
+  activities       ActivityLog[]
+  tasks            Task[]
+  attachments      Attachment[]
+  invoices         Invoice[]
+  payments         Payment[]
+  notifications    Notification[]
+  linksFrom        LeadLink[]        @relation("LeadLinkFrom")
+  linksTo          LeadLink[]        @relation("LeadLinkTo")
+
+  @@id([organizationId, id])
+  @@index([organizationId, phone])
+  @@index([organizationId, email])
+  @@index([organizationId, updatedAt])
+  @@map("leads")
+}
+
+model ProcessInstance {
+  id              String   @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  leadId          String   @map("lead_id") @db.Uuid
+  journeyId       String   @map("journey_id") @db.Uuid
+  currentStatusId String   @map("current_status_id") @db.Uuid
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead          Lead          @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  journey       Journey       @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  currentStatus Status        @relation(fields: [organizationId, journeyId, currentStatusId], references: [organizationId, journeyId, id], onDelete: Restrict)
+  assignments   Assignment[]
+  leadServices  LeadService[]
+  activities    ActivityLog[]
+  tasks         Task[]
+
+  @@id([organizationId, id])
+  @@index([organizationId, journeyId, currentStatusId])
+  @@index([organizationId, leadId])
+  @@map("process_instances")
+}
+
+model Assignment {
+  id                String   @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  processInstanceId String   @map("process_instance_id") @db.Uuid
+  assignmentType    String   @map("assignment_type")
+  userId            String   @map("user_id") @db.Uuid
+  assignedAt        DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  isCurrent         Boolean  @default(true) @map("is_current")
+
+  processInstance ProcessInstance @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
+  user            User            @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, userId, isCurrent])
+  @@map("assignments")
+}
+
+model LeadService {
+  id                String    @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  processInstanceId String    @map("process_instance_id") @db.Uuid
+  serviceId         String    @map("service_id") @db.Uuid
+  active            Boolean   @default(true)
+  enrolledAt        DateTime  @default(now()) @map("enrolled_at") @db.Timestamptz(6)
+  endedAt           DateTime? @map("ended_at") @db.Timestamptz(6)
+
+  processInstance ProcessInstance @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
+  service         Service         @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, processInstanceId, serviceId])
+  @@map("lead_services")
+}
+
+model LeadLink {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  leadIdA        String   @map("lead_id_a") @db.Uuid
+  leadIdB        String   @map("lead_id_b") @db.Uuid
+  relationType   String   @map("relation_type")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  leadA Lead @relation("LeadLinkFrom", fields: [organizationId, leadIdA], references: [organizationId, id], onDelete: Restrict)
+  leadB Lead @relation("LeadLinkTo", fields: [organizationId, leadIdB], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, leadIdA, leadIdB, relationType])
+  @@map("lead_links")
+}
+
+model UserAccessGrant {
+  id              String    @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  leadId          String    @map("lead_id") @db.Uuid
+  grantedByUserId String    @map("granted_by_user_id") @db.Uuid
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user          User @relation("GrantRecipient", fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  lead          Lead @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  grantedByUser User @relation("GrantIssuer", fields: [organizationId, grantedByUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, userId, leadId, revokedAt, expiresAt])
+  @@map("user_access_grants")
+}
+
+model ActivityLog {
+  id                String   @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  leadId            String   @map("lead_id") @db.Uuid
+  processInstanceId String?  @map("process_instance_id") @db.Uuid
+  actorUserId       String?  @map("actor_user_id") @db.Uuid
+  timestamp         DateTime @default(now()) @db.Timestamptz(6)
+  actionType        String   @map("action_type")
+  source            String
+  commentText       String?  @map("comment_text")
+  recordingUrl      String?  @map("recording_reference_url")
+  oldValue          Json?    @map("old_value") @db.JsonB
+  newValue          Json?    @map("new_value") @db.JsonB
+
+  lead            Lead             @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  processInstance ProcessInstance? @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
+  actor           User?            @relation(fields: [organizationId, actorUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, leadId, timestamp(sort: Desc)])
+  @@map("activity_logs")
+}
+
+model SystemAuditLog {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  timestamp      DateTime @default(now()) @db.Timestamptz(6)
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id") @db.Uuid
+  action         String
+  oldValue       Json?    @map("old_value") @db.JsonB
+  newValue       Json?    @map("new_value") @db.JsonB
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User?        @relation(fields: [organizationId, actorUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, entityType, entityId, timestamp(sort: Desc)])
+  @@map("system_audit_logs")
+}
+
+model Task {
+  id                  String   @default(uuid()) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  leadId              String   @map("lead_id") @db.Uuid
+  processInstanceId   String?  @map("process_instance_id") @db.Uuid
+  assignedToUserId    String   @map("assigned_to_user_id") @db.Uuid
+  dueDate             DateTime @map("due_date") @db.Timestamptz(6)
+  type                String
+  status              String
+  createdFromStatusId String?  @map("created_from_status_id") @db.Uuid
+  source              String
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead              Lead             @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  processInstance   ProcessInstance? @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
+  createdFromStatus Status?          @relation(fields: [organizationId, createdFromStatusId], references: [organizationId, id], onDelete: Restrict)
+  assignedTo        User             @relation(fields: [organizationId, assignedToUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, assignedToUserId, status, dueDate])
+  @@map("tasks")
+}
+
+model Attachment {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  leadId         String   @map("lead_id") @db.Uuid
+  fieldId        String?  @map("field_id") @db.Uuid
+  s3Key          String   @map("s3_key")
+  uploadedById   String   @map("uploaded_by") @db.Uuid
+  uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+
+  lead       Lead   @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  field      Field? @relation(fields: [organizationId, fieldId], references: [organizationId, id], onDelete: Restrict)
+  uploadedBy User   @relation(fields: [organizationId, uploadedById], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, s3Key, version])
+  @@map("attachments")
+}
+
+model ImportJob {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  source         String
+  fileKey        String   @map("file_key")
+  status         String
+  mappingJson    Json     @map("mapping_json") @db.JsonB
+  createdById    String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation(fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, status, createdAt])
+  @@map("import_jobs")
+}
+
+model Invoice {
+  id             String    @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  leadId         String    @map("lead_id") @db.Uuid
+  invoiceNumber  String    @map("invoice_number")
+  customerName   String    @map("customer_name")
+  issueDate      DateTime? @map("issue_date") @db.Date
+  totalAmount    Decimal   @map("total_amount") @db.Decimal(19, 4)
+  dueAmount      Decimal   @map("due_amount") @db.Decimal(19, 4)
+  dueDate        DateTime? @map("due_date") @db.Date
+  status         String
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead     Lead      @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  payments Payment[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, leadId, status])
+  @@map("invoices")
+}
+
+model Payment {
+  id              String   @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  invoiceId       String   @map("invoice_id") @db.Uuid
+  leadId          String   @map("lead_id") @db.Uuid
+  amountPaid      Decimal  @map("amount_paid") @db.Decimal(19, 4)
+  paymentDate     DateTime @map("payment_date") @db.Date
+  paymentMethod   String?  @map("payment_method")
+  referenceNumber String?  @map("reference_number")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [organizationId, invoiceId], references: [organizationId, id], onDelete: Restrict)
+  lead         Lead         @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, invoiceId, paymentDate])
+  @@map("payments")
+}
+
+model Notification {
+  id              String   @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  type            String
+  referenceLeadId String?  @map("reference_lead_id") @db.Uuid
+  message         String
+  read            Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user          User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  referenceLead Lead?        @relation(fields: [organizationId, referenceLeadId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@index([organizationId, userId, read, createdAt])
+  @@map("notifications")
+}
+
+model Setting {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  value          Json     @db.JsonB
+  version        Int      @default(1)
+  updatedById    String?  @map("updated_by") @db.Uuid
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  updatedBy    User?        @relation(fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@map("settings")
+}

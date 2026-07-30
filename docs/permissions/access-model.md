@@ -33,6 +33,13 @@ ALLOW =
 
 **B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`
 
+- `SELF`: records assigned to the requester under the applicable assignment rule.
+- `TEAM`: the requester plus all recursive downstream reports through
+  `users.manager_id` (ADR-0006).
+- `DEPARTMENT`: all active users sharing the requester's `department_id`,
+  regardless of reporting branch or depth.
+- `ORGANIZATION`: all records in the requester's organization.
+
 **C. Journey access** — explicit allow-list per role. A role with no access to a Journey doesn't see it in the UI at all, not greyed out.
 
 **D. Field-level visibility** — layered on top of A–C via an allow-list in `field_visibility`. Each `(field, role)` row grants `VIEW` or `EDIT`; `EDIT` includes viewing. Absence of a row means the field is hidden entirely for that role. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes sensitive fields actually secure.

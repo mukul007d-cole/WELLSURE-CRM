@@ -176,7 +176,7 @@ mapping. They are blocking for the import mapping, not for the Phase 0 docs.
 | `pcid`, `seller_merchant_token` | Which is the authoritative marketplace seller ID for ADR-0004 priority 2, or do they represent different concepts? Retain both in staging. |
 | `seller_status`, `lead_status` | Determine whether they duplicate the one process Status or whether `seller_status` is a separate account-health Field. Do not merge yet. |
 | `source_name`, `lead_source` | Determine whether they duplicate/overlap and establish conflict precedence. Do not merge yet. |
-| Five `quotation_*` columns | V1 has no quotation module under ADR-0003. Proposed disposition is informational configurable Fields, but this remains a scope decision. Exact five header names must also be supplied for the ledger. |
+| `quotation_total_amount`, `quotation_customer_name`, `quotation_date`, `quotation_expiry_date`, `quotation_number` | V1 has no quotation module under ADR-0003. Proposed disposition is informational configurable Fields, but this remains a scope decision. |
 | `issue` | Determine whether this is distinct from the seed Status named “Issue.” Retain in staging; do not infer from the matching label. |
 | `is_shared` | Define whether this represents assignment/ownership sharing or another concept. |
 | `amount` | Too generic to map safely to a financial concept. |
@@ -189,16 +189,16 @@ mapping. They are blocking for the import mapping, not for the Phase 0 docs.
 | `retained_by` | Define whether this is an assignment type or another historical attribute. |
 | `file_name` | Define the associated source file/reference and whether it is attachment metadata. |
 | `updated` | Confirm relationship and precedence versus `lead_update_date`. |
+| `message` | Purpose and V1 relevance are unclear. It may be legacy notification/SMS content, but no behavior or destination may be inferred from its generic name. Retain only in access-controlled staging pending data-team review. |
 
 ## 4. Coverage result and import gates
 
-The supplied disposition names 114 distinct columns explicitly plus a family of
-five unnamed `quotation_*` columns: 119 source columns in total. The export is
-described as having 120 columns, so one header name is still absent from the
-supplied inventory. Phase 0 can establish the model and review queue, but the
-migration mapping cannot be marked final until the data team supplies the exact
-five quotation headers and the one missing 120th header. This count mismatch is
-tracked in `docs/requirements/open-decisions.md` rather than silently ignored.
+A programmatic cross-check of this ledger against the complete export header—not
+a sample of source rows—confirms that all 120 source columns now have a
+disposition. The final missing header was `message`; it has an explicit open
+mapping decision rather than a guessed destination. Header coverage is complete,
+while the substantive questions in `docs/requirements/open-decisions.md` still
+block final import mapping where noted.
 
 Before implementation, the importer must provide:
 

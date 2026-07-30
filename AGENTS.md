@@ -26,7 +26,7 @@ falcon-crm/
 
 ## Commands
 
-- Setup: (fill in once scaffolded — e.g. `pnpm install`)
+- Setup: `cp .env.example .env && pnpm install --frozen-lockfile`
 - Dev: `pnpm dev`
 - Test: `pnpm test`
 - Lint: `pnpm lint`

@@ -42,7 +42,7 @@ mapping is approved; do not guess destinations.
 | OD-014 | `retained_by` | Determine whether this is a user assignment, history, or another attribute. | Candidate configurable assignment type only after confirmation. |
 | OD-015 | `updated`, `lead_update_date` | Confirm whether `updated` duplicates the source update timestamp and establish precedence. | Use `lead_update_date` only after confirmation; retain `updated` in staging meanwhile. |
 | OD-016 | Status `behavior_type` seed assignments | Verify every proposed `default`, `call_later`, `follow_up`, and `archived` value. | Blocks approval of the seed status mapping, not the configurable Status engine. |
-| OD-017 | Export header completeness | Supply the exact five `quotation_*` header names and the remaining header name. | The provided inventory contains 114 explicit names plus five unnamed quotation columns (119 total), while the export is described as 120 columns. Final coverage certification requires the missing names. |
+| OD-017 | Export header completeness | **Closed.** All 120 columns have a disposition. | Resolved by a programmatic full-header-to-ledger cross-check, not source-row sampling. The five quotation headers and final `message` header are now explicit in the migration ledger. |
 
 ## Non-blocking validation follow-up
 
@@ -54,6 +54,14 @@ mapping is approved; do not guess destinations.
   unexpected status values, identity collisions, and encoding/date issues.
 - **Exit evidence:** documented counts and examples with personal data redacted,
   plus updated migration validation rules and synthetic regression fixtures.
+
+### OD-019 — `message` source-column meaning
+
+- **Status:** Open; blocks final mapping of this column, not Phase 1 foundation.
+- **Need:** Confirm whether `message` is notification/SMS content or another
+  generic Cronberry value and whether it has any V1 relevance.
+- **Until resolved:** Retain only in access-controlled staging. Do not map it to
+  notifications, activities, tasks, or communications based on its name alone.
 
 ## Decision process
 

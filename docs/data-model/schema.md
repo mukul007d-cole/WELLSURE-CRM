@@ -182,6 +182,8 @@ settings
   process_instance_id, assignment_type)` and an index on current assignments by
   `user_id` for `SELF` scope.
 - Index `users(organization_id, manager_id)` for hierarchy traversal.
+- `TEAM` scope is derived recursively from `users.manager_id`; `DEPARTMENT` is a
+  flat same-`department_id` scope. No Teams table exists (ADR-0006).
 - Index active direct grants by `(organization_id, user_id, lead_id,
   expires_at)`.
 - Index activity timeline reads by `(organization_id, lead_id, timestamp DESC)`.

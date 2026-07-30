@@ -1,0 +1,4 @@
+environment = "production"
+common_tags = {
+  Owner = "platform"
+}
