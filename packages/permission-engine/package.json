@@ -8,7 +8,12 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "lint": "eslint src",
-    "test": "vitest run",
+    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.0.4",
+    "postgres": "3.4.7",
+    "testcontainers": "^12.0.4"
   }
 }
