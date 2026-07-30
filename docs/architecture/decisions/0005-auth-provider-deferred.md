@@ -1,6 +1,6 @@
 # ADR-0005: Authentication Provider — Deferred
 
-**Status:** Open — do not build the auth module until resolved
+**Status:** Superseded by ADR-0007 (2026) — see ADR-0007 for the accepted V1 auth decision
 
 **Context:** Three options are on the table:
 - AWS Cognito (managed, but within Wellsure's own AWS account)
