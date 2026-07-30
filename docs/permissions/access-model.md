@@ -7,8 +7,10 @@ ALLOW =
   user is active
   AND role grants the feature/action
   AND role grants the journey
-  AND data scope includes the record (expanded through hierarchy where relevant)
-  AND any direct record grant is honored
+  AND (
+    data scope includes the record (expanded through hierarchy where relevant)
+    OR an active, non-expired direct record grant exists for the record
+  )
   AND field permission allows the requested fields
   AND the workflow permits the action in the current status
 ```
@@ -33,21 +35,21 @@ ALLOW =
 
 **C. Journey access** — explicit allow-list per role. A role with no access to a Journey doesn't see it in the UI at all, not greyed out.
 
-**D. Field-level visibility** — layered on top of A–C via `field_visibility`. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes "hidden finance fields" actually secure.
+**D. Field-level visibility** — layered on top of A–C via an allow-list in `field_visibility`. Each `(field, role)` row grants `VIEW` or `EDIT`; `EDIT` includes viewing. Absence of a row means the field is hidden entirely for that role. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes sensitive fields actually secure.
 
 ## Additional mechanism: direct record grants
 
-For exceptional one-off access that doesn't fit the role/hierarchy model (e.g. a specific person needs temporary visibility into one lead outside their normal scope), use `user_access_grants` rather than creating a new role or assigning a second role. One active role per user, always.
+For exceptional one-off access that doesn't fit the role/hierarchy model (e.g. a specific person needs temporary visibility into one lead outside their normal scope), use `user_access_grants` rather than creating a new role or assigning a second role. A non-expired direct grant is additive to normal data scope; it never bypasses feature/action, Journey, field, workflow, or active-user checks. One active role per user, always.
 
 ## Example starting roles (seed data — fully editable)
 
 | Role | Leads scope | Journey access | Notes |
 |---|---|---|---|
-| Sales Executive | own | assigned journeys only | create, edit own, no delete/export |
-| Team Leader | own + team | same as team's journeys | bulk_reassign within team, view_standard reports |
-| Manager | department | subset of journeys (varies by manager) | export, view_standard + view_financial |
-| Ops Rep | assigned-via-handoff | journey-agnostic | operational fields only, no financial field visibility |
-| Admin | all | all | full config access — Fields/Journeys/Roles/Users |
+| Sales Executive | SELF | assigned journeys only | create, edit own, no delete/export |
+| Team Leader | TEAM | same as team's journeys | bulk_reassign within team, view_standard reports |
+| Manager | DEPARTMENT | subset of journeys (varies by manager) | export, view_standard + view_financial |
+| Ops Rep | SELF (assigned process instances) | assigned journeys only | operational fields only, no financial field visibility |
+| Admin | ORGANIZATION | all | full config access — Fields/Journeys/Roles/Users |
 
 ## Non-negotiable implementation rules
 
