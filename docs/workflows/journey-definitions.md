@@ -40,7 +40,7 @@ Example statuses seen in real data, with inferred `behavior_type` (flagged as an
 
 PPC Management, Cataloging, Account Management, Brand Registry, FBA, Images Creation, Reviews Management, Reinstatement Appeal, A+ / Brand Store, Training.
 
-## Departments (seed data, 20)
+## Departments (seed data, 21)
 
 Sales, Operations, PPC, Catalog, Graphic Design, Video Editors, Photography, Finance, HR, Admin, Support, Compliance, Brand Registry, Trademark, Warehouse, Logistics, Customer Success, Business Development, Marketing, Management, Audit.
 
@@ -50,11 +50,11 @@ Sales Executive, Senior Sales Executive, Sales TL, Sales Manager, Operations Exe
 
 ## Real assignment fields observed (per actual Cronberry export — becomes the Assignment model)
 
-Lead Owner, Prev Lead Owner (history), Sales Associate, Team Leader, Operations Associate, plus secondary collaborator fields for Ops/Sales/Account Management. A reassignment counter (`lead_reassign`) is tracked historically — worth carrying forward as a computed count on `activity_logs`, not a separate stored counter, to avoid drift.
+Lead Owner, Prev Lead Owner (history), Sales Associate, Team Leader, Operations Associate, plus secondary collaborator fields for Ops/Sales/Account Management. These become rows in `assignments` against the applicable `process_instance`; assignment types are configurable strings/lookups rather than fixed enums. A reassignment counter (`lead_reassign`) is migrated only as a historical reference and is derived from `activity_logs` for native Falcon activity rather than maintained as a counter, avoiding drift.
 
 ## Status change side effects
 
-1. Update the lead's current status.
+1. Update the process instance's current status.
 2. Look up the new status's `behavior_type`:
    - `call_later` → create a task (due date, assigned to current owner)
    - `follow_up` → create a task; if `auto_reassign_to_role_id` is set, reassign ownership

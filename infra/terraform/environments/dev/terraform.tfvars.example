@@ -1,0 +1,4 @@
+environment = "dev"
+common_tags = {
+  Owner = "platform"
+}

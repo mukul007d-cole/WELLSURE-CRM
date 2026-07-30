@@ -1,0 +1,4 @@
+environment = "staging"
+common_tags = {
+  Owner = "platform"
+}

@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: ${{ matrix.command }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        command: [format:check, lint, typecheck, test, build]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ${{ matrix.command }}
+
+  database:
+    name: Prisma and migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.5-alpine3.21
+        env:
+          POSTGRES_DB: falcon
+          POSTGRES_USER: falcon
+          POSTGRES_PASSWORD: ci_only_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U falcon -d falcon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://falcon:ci_only_password@localhost:5432/falcon?schema=public
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @falcon/database prisma:format
+      - run: pnpm --filter @falcon/database prisma:validate
+      - run: pnpm --filter @falcon/database prisma:generate
+      - run: pnpm --filter @falcon/database exec prisma migrate deploy --config prisma.config.ts
+      - name: Verify append-only triggers and baseline tables
+        run: |
+          PGPASSWORD=ci_only_password psql -h localhost -U falcon -d falcon -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT to_regclass('public.process_instances') IS NOT NULL AS process_instances_exists;
+          SELECT to_regclass('public.activity_logs') IS NOT NULL AS activity_logs_exists;
+          SELECT tgname FROM pg_trigger WHERE tgname IN ('activity_logs_append_only', 'system_audit_logs_append_only');
+          SQL
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.11.4
+      - run: terraform fmt -check -recursive infra/terraform
+      - name: Validate environment roots
+        run: |
+          for environment in dev staging production; do
+            terraform -chdir="infra/terraform/environments/$environment" init -backend=false
+            terraform -chdir="infra/terraform/environments/$environment" validate
+          done

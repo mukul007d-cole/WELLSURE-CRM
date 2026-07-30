@@ -1,0 +1,11 @@
+.pnpm-store
+node_modules
+dist
+coverage
+packages/database/generated
+pnpm-lock.yaml
+docs/
+AGENTS.md
+PLANS.md
+packages/database/prisma/
+infra/terraform/
