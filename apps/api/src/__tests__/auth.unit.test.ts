@@ -22,7 +22,7 @@ const now = new Date('2026-01-01T00:00:00.000Z');
 describe('password hashing', () => {
   it('hashes with argon2id metadata and verifies without accepting null hashes', async () => {
     const hash = await hashPassword('correct horse');
-    expect(hash.startsWith('argon2id$')).toBe(true);
+    expect(hash.startsWith('$argon2id$')).toBe(true);
     await expect(verifyPassword('correct horse', hash)).resolves.toBe(true);
     await expect(verifyPassword('wrong horse', hash)).resolves.toBe(false);
     await expect(verifyPassword('correct horse', null)).resolves.toBe(false);
@@ -265,8 +265,10 @@ class MemoryAuthRepository
   ): Promise<LoginAttemptRecord | null> {
     return this.attempts.get(`${organizationId}:${normalizedEmail}`) ?? null;
   }
-  async recordFailedLogin(input: LoginAttemptRecord): Promise<void> {
+  async recordFailedLogin(input: LoginAttemptRecord): Promise<{ id: string }> {
+    const id = `attempt-${this.attempts.size + 1}`;
     this.attempts.set(`${input.organizationId}:${input.normalizedEmail}`, input);
+    return { id };
   }
   async clearLoginAttempt(organizationId: string, normalizedEmail: string): Promise<void> {
     this.attempts.delete(`${organizationId}:${normalizedEmail}`);

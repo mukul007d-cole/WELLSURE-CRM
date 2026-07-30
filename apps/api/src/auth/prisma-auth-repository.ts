@@ -28,7 +28,7 @@ interface PrismaAuthClient {
   };
   failedLoginAttempt: {
     findUnique(args: unknown): Promise<LoginAttemptRow | null>;
-    upsert(args: unknown): Promise<unknown>;
+    upsert(args: unknown): Promise<LoginAttemptRow>;
     deleteMany(args: unknown): Promise<unknown>;
   };
   systemAuditLog: { create(args: unknown): Promise<unknown> };
@@ -47,7 +47,9 @@ interface UserRow {
 
 type SessionRow = SessionRecord;
 type PasswordResetTokenRow = PasswordResetTokenRecord;
-type LoginAttemptRow = LoginAttemptRecord;
+interface LoginAttemptRow extends LoginAttemptRecord {
+    id: string;
+  }
 
 export class PrismaAuthRepository
   implements LoginRepository, SessionRepository, PasswordResetRepository, SecurityAuditWriter
@@ -132,8 +134,8 @@ export class PrismaAuthRepository
     });
   }
 
-  async recordFailedLogin(input: LoginAttemptRecord): Promise<void> {
-    await this.prisma.failedLoginAttempt.upsert({
+async recordFailedLogin(input: LoginAttemptRecord): Promise<{ id: string }> {
+    const row = await this.prisma.failedLoginAttempt.upsert({
       where: {
         organizationId_normalizedEmail: {
           organizationId: input.organizationId,
@@ -147,6 +149,7 @@ export class PrismaAuthRepository
         lockedUntil: input.lockedUntil,
       },
     });
+    return { id: row.id };
   }
 
   async clearLoginAttempt(organizationId: string, normalizedEmail: string): Promise<void> {

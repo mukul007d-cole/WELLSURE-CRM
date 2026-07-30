@@ -28,7 +28,7 @@ export interface LoginRepository extends SessionRepository {
     organizationId: string,
     normalizedEmail: string,
   ): Promise<LoginAttemptRecord | null>;
-  recordFailedLogin(input: LoginAttemptRecord): Promise<void>;
+  recordFailedLogin(input: LoginAttemptRecord): Promise<{ id: string }>;
   clearLoginAttempt(organizationId: string, normalizedEmail: string): Promise<void>;
 }
 
@@ -107,18 +107,22 @@ async function recordFailure(input: {
       ? new Date(input.now.getTime() + input.config.lockoutDurationMs)
       : null;
 
-  await input.repository.recordFailedLogin({
+      const attempt = await input.repository.recordFailedLogin({
     organizationId: input.organizationId,
     normalizedEmail: input.normalizedEmail,
     failedCount,
     windowStartedAt: withinWindow ? (input.previous?.windowStartedAt ?? input.now) : input.now,
     lockedUntil,
   });
+
+  const entityType = input.userId !== null ? 'user' : 'login_attempt';
+  const entityId = input.userId ?? attempt.id;
+
   await input.audit.writeSystemAudit({
     organizationId: input.organizationId,
     actorUserId: input.userId,
-    entityType: 'user',
-    entityId: input.userId ?? input.normalizedEmail,
+    entityType,
+    entityId,
     action: 'auth.login_failed',
     oldValue: {
       failedCount: input.previous?.failedCount ?? 0,
@@ -136,7 +140,7 @@ async function recordFailure(input: {
       organizationId: input.organizationId,
       actorUserId: input.userId,
       entityType: 'login_attempt',
-      entityId: input.normalizedEmail,
+      entityId: attempt.id,
       action: 'auth.lockout_created',
       oldValue: { lockedUntil: null },
       newValue: { lockedUntil: lockedUntil.toISOString(), failedCount },
