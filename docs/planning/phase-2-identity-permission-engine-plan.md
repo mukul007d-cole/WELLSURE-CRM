@@ -34,7 +34,7 @@ Deliver the Phase 2 provider-independent permission engine plan for Falcon CRM: 
 1. Define the `packages/permission-engine` public contract around authorization inputs and outputs, not authentication:
    - Input identity is an already-resolved Falcon `userId` + `organizationId` supplied by a future API/auth boundary.
    - The engine never validates passwords, parses sessions, verifies JWTs, calls Cognito/Keycloak, or stores provider identities.
-   - Output is an authorization decision and reusable enforcement metadata: allowed/denied, denial reason, effective `DataScope`, journey allow/deny, record predicate fragments, field visibility/editability sets, and audit/cache invalidation hints.
+   - Output is an authorization decision and reusable enforcement metadata: allowed/denied, denial reason, effective `DataScope`, journey allow/deny, record predicate fragments, field visibility/editability sets, a `workflowCheck` placeholder typed as not enforced, and audit/cache invalidation hints.
 2. Implement feature/action permission resolution from `role_permissions`:
    - Treat `module` and `action` as configurable/string-backed permission vocabulary, not role-name or journey-name logic.
    - Require active user and active role before any allow decision.
