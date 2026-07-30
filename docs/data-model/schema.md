@@ -39,10 +39,28 @@ role_journey_access
   id, organization_id, role_id, journey_id, created_at
 
 users
-  id, organization_id, name, email, role_id, department_id, designation_id,
-  manager_id (self-FK), active, created_at, updated_at
-  -- Authentication-provider-specific identity/credential columns are deferred
-  -- until ADR-0005 is resolved. One user has exactly one active role.
+  id, organization_id, name, email, password_hash (nullable until password issuance),
+  role_id, department_id, designation_id, manager_id (self-FK), active,
+  created_at, updated_at
+  -- ADR-0007 selects custom session auth. password_hash is nullable only for
+  -- bootstrap/admin-created users who have not completed password issuance.
+  -- One user has exactly one active role.
+
+sessions
+  id, organization_id, user_id, token_hash, created_at, expires_at, revoked_at,
+  last_seen_at, ip_address, user_agent
+  -- Server-side tenant-scoped sessions; revoked/expired sessions are rejected
+  -- and rows are revoked, not hard-deleted.
+
+password_reset_tokens
+  id, organization_id, user_id, token_hash, created_at, expires_at, used_at,
+  ip_address, user_agent
+  -- Store token hashes only. Tokens are expiring and single-use.
+
+failed_login_attempts
+  id, organization_id, normalized_email, failed_count, window_started_at,
+  locked_until, updated_at
+  -- Simple configurable brute-force protection state.
 
 user_access_grants
   id, organization_id, user_id, lead_id, granted_by_user_id,

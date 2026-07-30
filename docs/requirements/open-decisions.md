@@ -9,15 +9,17 @@ the Phase 0 documentation baseline or foundational Phase 1 work.
 
 ### OD-001 — Authentication provider
 
-- **Status:** Open; blocking before Phase 2 Identity & Permission Engine begins.
+- **Status:** Resolved — custom, self-hosted session authentication for V1.
 - **Owner:** Wellsure product/security/architecture.
-- **Decision needed:** AWS Cognito, self-hosted Keycloak, or custom-built auth.
-- **Constraints:** Data ownership, operations burden, security responsibility,
-  identity lifecycle, disaster recovery, and AWS deployment fit must be compared.
-- **Source:** ADR-0005 remains correctly marked “Open.”
-- **Until resolved:** Do not scaffold or implement provider-specific auth,
-  provider-specific credential columns, or session integration. Falcon's
-  provider-independent authorization tables may be designed and tested.
+- **Decision:** Falcon V1 uses API-owned email/password authentication with
+  argon2id password hashes and server-side, tenant-scoped, revocable sessions
+  referenced by secure httpOnly sameSite cookies. Registration remains out of
+  scope; admins create users.
+- **Source:** ADR-0007 records the accepted V1 auth decision. ADR-0005 is
+  superseded for V1 implementation planning.
+- **Implementation impact:** Auth is no longer blocking Phase 3. Do not build
+  Cognito, Keycloak, OAuth, social login, SSO, MFA, magic links, or JWT-based
+  auth paths for V1.
 
 ## Migration/data-team decisions
 

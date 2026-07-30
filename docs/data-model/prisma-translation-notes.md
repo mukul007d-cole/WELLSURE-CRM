@@ -97,10 +97,17 @@ No speculative assignment-type table or enum is introduced.
 
 ## User and authentication shape
 
-`users` contains authorization/profile relations but no password, provider
-subject, session, or provider-specific identity column. ADR-0005 remains open.
-The future auth decision may require a separate identity table or additional
-columns and migration; Phase 1 does not anticipate one provider.
+ADR-0007 supersedes ADR-0005 for V1 and selects custom, self-hosted session
+authentication. `users.password_hash` stores only argon2id password hashes and is
+nullable solely for bootstrap/admin-created users who have not completed password
+issuance. The legacy Cronberry `pass` field and any plaintext credentials remain
+excluded from migration and storage.
+
+Server-side `sessions` are tenant-scoped, stored in PostgreSQL, referenced from
+secure httpOnly sameSite cookies, and revoked through `revoked_at` rather than
+hard deletion. Password reset tokens store hashes only, expire, and become
+single-use through `used_at`. Failed login attempts are tracked per organization
+and normalized email so lockout thresholds can remain configurable in the API.
 
 One User has exactly one Role through required `role_id`. Department,
 designation, and manager are nullable because the logical docs do not require

@@ -10,5 +10,11 @@
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@falcon/permission-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.13"
   }
 }

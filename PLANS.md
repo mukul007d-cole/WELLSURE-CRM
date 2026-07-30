@@ -41,3 +41,4 @@ and docs/, per the source-of-truth precedence rule>
 - If a plan reveals a conflict between two source documents, stop and surface it rather than resolving it silently — update `docs/architecture/decisions/` with a new ADR once resolved, then resume.
 - Use a separate Git worktree for independent parallel work; never let two tasks modify the same package/module simultaneously.
 - Long-running or multi-phase work should reference the phase numbering in `docs/requirements/v1-scope.md` and the original implementation plan's phase breakdown, so progress stays traceable.
+

@@ -38,20 +38,23 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  departments   Department[]
-  designations  Designation[]
-  roles         Role[]
-  users         User[]
-  journeys      Journey[]
-  services      Service[]
-  statuses      Status[]
-  fields        Field[]
-  leads         Lead[]
-  auditLogs     SystemAuditLog[]
-  importJobs    ImportJob[]
-  payments      Payment[]
-  notifications Notification[]
-  settings      Setting[]
+  departments         Department[]
+  designations        Designation[]
+  roles               Role[]
+  users               User[]
+  journeys            Journey[]
+  services            Service[]
+  statuses            Status[]
+  fields              Field[]
+  leads               Lead[]
+  auditLogs           SystemAuditLog[]
+  importJobs          ImportJob[]
+  payments            Payment[]
+  notifications       Notification[]
+  settings            Setting[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  loginAttempts       FailedLoginAttempt[]
 
   @@map("organizations")
 }
@@ -140,45 +143,106 @@ model User {
   designationId  String?  @map("designation_id") @db.Uuid
   managerId      String?  @map("manager_id") @db.Uuid
   active         Boolean  @default(true)
+  passwordHash   String?  @map("password_hash")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  role                Role              @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
-  department          Department?       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
-  designation         Designation?      @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
-  manager             User?             @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
-  reports             User[]            @relation("ReportingHierarchy")
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role                Role                 @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+  department          Department?          @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  designation         Designation?         @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
+  manager             User?                @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
+  reports             User[]               @relation("ReportingHierarchy")
   assignments         Assignment[]
-  grants              UserAccessGrant[] @relation("GrantRecipient")
-  issuedGrants        UserAccessGrant[] @relation("GrantIssuer")
+  grants              UserAccessGrant[]    @relation("GrantRecipient")
+  issuedGrants        UserAccessGrant[]    @relation("GrantIssuer")
   notifications       Notification[]
-  departmentsCreated  Department[]      @relation("DepartmentCreatedBy")
-  departmentsUpdated  Department[]      @relation("DepartmentUpdatedBy")
-  designationsCreated Designation[]     @relation("DesignationCreatedBy")
-  designationsUpdated Designation[]     @relation("DesignationUpdatedBy")
-  rolesCreated        Role[]            @relation("RoleCreatedBy")
-  rolesUpdated        Role[]            @relation("RoleUpdatedBy")
-  journeysCreated     Journey[]         @relation("JourneyCreatedBy")
-  journeysUpdated     Journey[]         @relation("JourneyUpdatedBy")
-  servicesCreated     Service[]         @relation("ServiceCreatedBy")
-  servicesUpdated     Service[]         @relation("ServiceUpdatedBy")
-  statusesCreated     Status[]          @relation("StatusCreatedBy")
-  statusesUpdated     Status[]          @relation("StatusUpdatedBy")
-  fieldsCreated       Field[]           @relation("FieldCreatedBy")
-  fieldsUpdated       Field[]           @relation("FieldUpdatedBy")
+  departmentsCreated  Department[]         @relation("DepartmentCreatedBy")
+  departmentsUpdated  Department[]         @relation("DepartmentUpdatedBy")
+  designationsCreated Designation[]        @relation("DesignationCreatedBy")
+  designationsUpdated Designation[]        @relation("DesignationUpdatedBy")
+  rolesCreated        Role[]               @relation("RoleCreatedBy")
+  rolesUpdated        Role[]               @relation("RoleUpdatedBy")
+  journeysCreated     Journey[]            @relation("JourneyCreatedBy")
+  journeysUpdated     Journey[]            @relation("JourneyUpdatedBy")
+  servicesCreated     Service[]            @relation("ServiceCreatedBy")
+  servicesUpdated     Service[]            @relation("ServiceUpdatedBy")
+  statusesCreated     Status[]             @relation("StatusCreatedBy")
+  statusesUpdated     Status[]             @relation("StatusUpdatedBy")
+  fieldsCreated       Field[]              @relation("FieldCreatedBy")
+  fieldsUpdated       Field[]              @relation("FieldUpdatedBy")
   activities          ActivityLog[]
   auditLogs           SystemAuditLog[]
   assignedTasks       Task[]
   uploadedAttachments Attachment[]
   importJobs          ImportJob[]
   settingsUpdated     Setting[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@id([organizationId, id])
   @@unique([organizationId, email])
   @@index([organizationId, managerId])
   @@index([organizationId, departmentId])
   @@map("users")
+}
+
+model Session {
+  id             String    @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  tokenHash      String    @map("token_hash")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  ipAddress      String?   @map("ip_address")
+  userAgent      String?   @map("user_agent")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, tokenHash])
+  @@index([organizationId, userId, revokedAt, expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id             String    @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  tokenHash      String    @map("token_hash")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt         DateTime? @map("used_at") @db.Timestamptz(6)
+  ipAddress      String?   @map("ip_address")
+  userAgent      String?   @map("user_agent")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, tokenHash])
+  @@index([organizationId, userId, usedAt, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model FailedLoginAttempt {
+  id              String    @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  normalizedEmail String    @map("normalized_email")
+  failedCount     Int       @default(0) @map("failed_count")
+  windowStartedAt DateTime  @map("window_started_at") @db.Timestamptz(6)
+  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, normalizedEmail])
+  @@index([organizationId, lockedUntil])
+  @@map("failed_login_attempts")
 }
 
 model RolePermission {
@@ -273,6 +337,7 @@ model JourneyService {
   journeyId      String   @map("journey_id") @db.Uuid
   serviceId      String   @map("service_id") @db.Uuid
   active         Boolean  @default(true)
+  passwordHash   String?  @map("password_hash")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
