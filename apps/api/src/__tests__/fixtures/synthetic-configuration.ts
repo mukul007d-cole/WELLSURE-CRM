@@ -262,9 +262,7 @@ export function permissionRepository(allowed = true): PermissionRepository {
         : null;
     },
     async hasJourneyAccess(input: { roleId: string; organizationId: string; journeyId: string }) {
-      return (
-        input.journeyId === '00000000-0000-0000-0000-000000000000' || input.journeyId === journeyId
-      );
+      return input.journeyId === journeyId;
     },
     async getFieldVisibility() {
       return [];

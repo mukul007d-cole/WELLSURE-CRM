@@ -294,7 +294,7 @@ async function mutate(
       userId: input.auth.user.id,
       module,
       action,
-      journeyId: journeyId ?? '00000000-0000-0000-0000-000000000000',
+      ...(journeyId === undefined ? {} : { journeyId }),
       ...(input.now === undefined ? {} : { now: input.now }),
     },
   });

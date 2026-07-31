@@ -118,7 +118,7 @@ export interface AuthorizationRequest {
   userId: string;
   module: string;
   action: string;
-  journeyId: string;
+  journeyId?: string;
   leadId?: string;
   requestedFieldIds?: readonly string[];
   requestedEditFieldIds?: readonly string[];
@@ -150,7 +150,7 @@ export interface AuthorizationDecision {
   roleVersion: number | null;
   module: string;
   action: string;
-  journeyId: string;
+  journeyId?: string;
   effectiveScope: DataScope | null;
   journeyAllowed: boolean;
   recordAllowed: boolean;

@@ -71,11 +71,14 @@ export async function resolveAuthorization(input: {
     deniedReasons.push('FEATURE_ACTION_DENIED');
   }
 
-  const journeyAllowed = await input.repository.hasJourneyAccess({
-    roleId: role.id,
-    organizationId: input.request.organizationId,
-    journeyId: input.request.journeyId,
-  });
+  const journeyAllowed =
+    input.request.journeyId === undefined
+      ? true
+      : await input.repository.hasJourneyAccess({
+          roleId: role.id,
+          organizationId: input.request.organizationId,
+          journeyId: input.request.journeyId,
+        });
   if (!journeyAllowed) {
     deniedReasons.push('JOURNEY_DENIED');
   }
