@@ -149,8 +149,8 @@ Lead/Seller endpoints use the same server-side permission-engine decision contra
 
 ### Seller List
 
-- `GET /leads` supports server-side search over name, phone, and email; filters for Journey, Status, and owner assignment; safe allow-listed sorting; and pagination.
-- List rows and total counts must use the same permission-scoped predicate produced from `resolveAuthorization`. Counts must not reveal records outside the requester's role scope, Journey access, or direct grants.
+- `GET /leads` supports server-side search over name, phone, and email; optional filters for Journey, Status, and owner assignment; safe allow-listed sorting; and pagination. When `journeyId` is omitted, Seller List returns the approved all-Journeys aggregate view across Journeys the requester is allowed to access.
+- List rows and total counts must use the same permission-scoped predicate produced from `resolveAuthorization`. Counts must not reveal records outside the requester's role scope, Journey access, or direct grants. The same parity rule applies to both Journey-filtered and all-Journeys aggregate requests.
 - Field-level visibility applies to every row in the paginated response. Unauthorized dynamic Fields are stripped server-side.
 
 ### Seller 360

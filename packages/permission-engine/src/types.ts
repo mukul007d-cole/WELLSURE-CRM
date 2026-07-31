@@ -60,6 +60,7 @@ export interface AssignmentSnapshot {
   userId: string;
   organizationId: string;
   isCurrent: boolean;
+  journeyId: string;
 }
 
 export interface LeadScopeSnapshot {
@@ -83,10 +84,15 @@ export interface PermissionRepository {
     organizationId: string;
     journeyId: string;
   }): Promise<boolean>;
+  listAccessibleJourneyIds(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<readonly string[]>;
   getFieldVisibility(input: {
     roleId: string;
     organizationId: string;
     fieldIds: readonly string[];
+    journeyId?: string;
   }): Promise<readonly FieldVisibilitySnapshot[]>;
   getLeadScope(input: {
     leadId: string;
@@ -104,6 +110,7 @@ export interface PermissionRepository {
   listCurrentAssignments(input: {
     organizationId: string;
     assignmentTypes: readonly string[];
+    journeyIds?: readonly string[];
   }): Promise<readonly AssignmentSnapshot[]>;
   getActiveDirectGrant(input: {
     organizationId: string;
@@ -138,6 +145,7 @@ export interface RecordPredicate {
   scope: DataScope;
   allowedUserIds: readonly string[] | 'ALL_ORGANIZATION_USERS';
   assignmentTypes: readonly string[];
+  journeyIds: readonly string[];
   includeDirectGrantsForUserId: string;
 }
 

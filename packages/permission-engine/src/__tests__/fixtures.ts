@@ -119,6 +119,18 @@ export function createRepository(state = createFixtureState()): PermissionReposi
         ),
       );
     },
+    listAccessibleJourneyIds(input) {
+      return Promise.resolve(
+        state.journeys
+          .filter(
+            (row) =>
+              row.roleId === input.roleId &&
+              row.organizationId === input.organizationId &&
+              row.active,
+          )
+          .map((row) => row.journeyId),
+      );
+    },
     getFieldVisibility(input) {
       const requested = new Set(input.fieldIds);
       return Promise.resolve(
@@ -176,12 +188,14 @@ export function createRepository(state = createFixtureState()): PermissionReposi
     },
     listCurrentAssignments(input) {
       const types = new Set(input.assignmentTypes);
+      const journeyIds = input.journeyIds === undefined ? null : new Set(input.journeyIds);
       return Promise.resolve(
         state.assignments.filter(
           (row) =>
             row.organizationId === input.organizationId &&
             row.isCurrent &&
-            types.has(row.assignmentType),
+            types.has(row.assignmentType) &&
+            (journeyIds === null || journeyIds.has(row.journeyId)),
         ),
       );
     },
@@ -237,5 +251,6 @@ function assignment(leadId: string, userId: string): AssignmentSnapshot {
     userId,
     organizationId: orgA,
     isCurrent: true,
+    journeyId: journeyA,
   };
 }

@@ -19,7 +19,10 @@ interface PrismaPermissionClient {
   };
   role: { findUnique(args: unknown): Promise<RoleRow | null> };
   rolePermission: { findUnique(args: unknown): Promise<RolePermissionRow | null> };
-  roleJourneyAccess: { findUnique(args: unknown): Promise<JourneyAccessRow | null> };
+  roleJourneyAccess: {
+    findUnique(args: unknown): Promise<JourneyAccessRow | null>;
+    findMany(args: unknown): Promise<JourneyAccessRow[]>;
+  };
   fieldVisibility: { findMany(args: unknown): Promise<FieldVisibilityRow[]> };
   lead: { findUnique(args: unknown): Promise<LeadScopeRow | null> };
   assignment: { findMany(args: unknown): Promise<AssignmentRow[]> };
@@ -53,7 +56,7 @@ interface FieldVisibilityRow {
   accessLevel: FieldAccessLevel;
 }
 interface AssignmentRow {
-  processInstance: { leadId: string };
+  processInstance: { leadId: string; journeyId: string };
   processInstanceId: string;
   assignmentType: string;
   userId: string;
@@ -112,6 +115,17 @@ export class PrismaPermissionRepository implements PermissionRepository {
       where: { organizationId_roleId_journeyId: input },
     });
     return row !== null;
+  }
+
+  async listAccessibleJourneyIds(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<readonly string[]> {
+    const rows = await this.prisma.roleJourneyAccess.findMany({
+      where: { organizationId: input.organizationId, roleId: input.roleId },
+      select: { journeyId: true },
+    });
+    return rows.map((row) => row.journeyId);
   }
 
   async getFieldVisibility(input: {
@@ -198,14 +212,18 @@ export class PrismaPermissionRepository implements PermissionRepository {
   async listCurrentAssignments(input: {
     organizationId: string;
     assignmentTypes: readonly string[];
+    journeyIds?: readonly string[];
   }): Promise<readonly AssignmentSnapshot[]> {
     const rows = await this.prisma.assignment.findMany({
       where: {
         organizationId: input.organizationId,
         isCurrent: true,
         assignmentType: { in: [...input.assignmentTypes] },
+        ...(input.journeyIds === undefined
+          ? {}
+          : { processInstance: { journeyId: { in: [...input.journeyIds] } } }),
       },
-      include: { processInstance: { select: { leadId: true } } },
+      include: { processInstance: { select: { leadId: true, journeyId: true } } },
     });
     return rows.map((row) => ({
       leadId: row.processInstance.leadId,
@@ -214,6 +232,7 @@ export class PrismaPermissionRepository implements PermissionRepository {
       userId: row.userId,
       organizationId: row.organizationId,
       isCurrent: row.isCurrent,
+      journeyId: row.processInstance.journeyId,
     }));
   }
 

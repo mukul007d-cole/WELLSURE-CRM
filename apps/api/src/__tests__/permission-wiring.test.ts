@@ -152,6 +152,9 @@ function createPermissionRepository(): PermissionRepository {
     async hasJourneyAccess() {
       return true;
     },
+    async listAccessibleJourneyIds() {
+      return [journeyA];
+    },
     async getFieldVisibility() {
       return [{ fieldId: 'field-visible', accessLevel: 'VIEW' }];
     },
@@ -176,6 +179,7 @@ function createPermissionRepository(): PermissionRepository {
           userId: 'user-child',
           organizationId: orgA,
           isCurrent: true,
+          journeyId: journeyA,
         },
       ];
     },

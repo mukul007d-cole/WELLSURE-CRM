@@ -20,6 +20,8 @@ export type * from './routes/leads.js';
 export * from './leads/service.js';
 export * from './leads/errors.js';
 export * from './leads/validation.js';
+export { PrismaLeadRepository } from './leads/prisma-lead-repository.js';
+export type { PrismaLeadClient } from './leads/prisma-lead-repository.js';
 
 export * from './routes/configuration.js';
 export * from './configuration/service.js';

@@ -229,6 +229,62 @@ describe('Lead/Seller core route and service behavior', () => {
     });
   });
 
+  it('unions Seller 360 field visibility across authorized journey contexts', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({
+      fieldValues: {
+        [fieldVisible]: 'visible from journey a',
+        [fieldHidden]: 'visible from journey b',
+      },
+    });
+    repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedProcess(lead.id, journeyB, statusEarly);
+    const response = await getSeller360({
+      auth,
+      sellerRepository: repo,
+      permissionRepository: permissionRepository({
+        journeys: [journeyA, journeyB],
+        visibleFieldsByJourney: new Map([
+          [journeyA, [fieldVisible]],
+          [journeyB, [fieldHidden]],
+        ]),
+      }),
+      leadId: lead.id,
+      requestedFieldIds: [fieldVisible, fieldHidden],
+      assignmentTypes: [assignmentType],
+      now,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      fieldValues: {
+        [fieldVisible]: 'visible from journey a',
+        [fieldHidden]: 'visible from journey b',
+      },
+    });
+  });
+
+  it('supports approved all-journeys Seller List requests without requiring journeyId', async () => {
+    const repo = new MemoryLeadRepository();
+    repo.seedLead({ fieldValues: { [fieldVisible]: 'visible' } });
+    const response = await listSellers({
+      auth,
+      sellerRepository: repo,
+      permissionRepository: permissionRepository({
+        visibleFields: [fieldVisible],
+        journeys: [journeyA, journeyB],
+      }),
+      list: {
+        requestedFieldIds: [fieldVisible],
+        assignmentTypes: [assignmentType],
+        page: 1,
+        pageSize: 10,
+      },
+      now,
+    });
+    expect(response.status).toBe(200);
+    expect(repo.lastRecordPredicate).toMatchObject({ journeyIds: [journeyA, journeyB] });
+  });
+
   it('preserves cross-organization isolation', async () => {
     const repo = new MemoryLeadRepository();
     const lead = repo.seedLead({
@@ -419,6 +475,7 @@ function permissionRepository(
     editableFields?: string[];
     journeys?: string[];
     assignmentTypes?: string[];
+    visibleFieldsByJourney?: Map<string, string[]>;
   } = {},
 ): PermissionRepository {
   return {
@@ -434,11 +491,14 @@ function permissionRepository(
     async hasJourneyAccess(request) {
       return (input.journeys ?? [journeyA]).includes(request.journeyId);
     },
+    async listAccessibleJourneyIds() {
+      return input.journeys ?? [journeyA];
+    },
     async getFieldVisibility(request) {
+      const visibleFields =
+        input.visibleFieldsByJourney?.get(request.journeyId ?? '') ?? input.visibleFields ?? [];
       return request.fieldIds
-        .filter((fieldId) =>
-          [...(input.visibleFields ?? []), ...(input.editableFields ?? [])].includes(fieldId),
-        )
+        .filter((fieldId) => [...visibleFields, ...(input.editableFields ?? [])].includes(fieldId))
         .map((fieldId) => ({
           fieldId,
           accessLevel: input.editableFields?.includes(fieldId) ? 'EDIT' : 'VIEW',
@@ -457,16 +517,15 @@ function permissionRepository(
       return [];
     },
     async listCurrentAssignments() {
-      return [
-        {
-          leadId: 'lead-1',
-          processInstanceId: 'process-1',
-          assignmentType,
-          userId: actorId,
-          organizationId: orgA,
-          isCurrent: true,
-        },
-      ];
+      return [journeyA, journeyB].map((journeyId, index) => ({
+        leadId: 'lead-1',
+        processInstanceId: `process-${index + 1}`,
+        assignmentType,
+        userId: actorId,
+        organizationId: orgA,
+        isCurrent: true,
+        journeyId,
+      }));
     },
     async getActiveDirectGrant() {
       return null;
