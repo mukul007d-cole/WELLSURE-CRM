@@ -64,6 +64,7 @@ export function buildRecordPredicate(input: {
   scope: DataScope;
   allowedUserIds: readonly string[] | 'ALL_ORGANIZATION_USERS';
   assignmentTypes: readonly string[];
+  journeyIds: readonly string[];
   userId: string;
 }): RecordPredicate {
   return {
@@ -71,6 +72,7 @@ export function buildRecordPredicate(input: {
     scope: input.scope,
     allowedUserIds: input.allowedUserIds,
     assignmentTypes: input.assignmentTypes,
+    journeyIds: input.journeyIds,
     includeDirectGrantsForUserId: input.userId,
   };
 }
@@ -81,10 +83,16 @@ export function assignmentScopeAllowsLead(input: {
   organizationId: string;
   assignmentTypes: readonly string[];
   allowedUserIds: readonly string[] | 'ALL_ORGANIZATION_USERS';
+  journeyIds?: readonly string[];
 }): boolean {
   const assignmentTypes = new Set(input.assignmentTypes);
+  const journeyIds = input.journeyIds === undefined ? null : new Set(input.journeyIds);
   const allowedUsers =
     input.allowedUserIds === 'ALL_ORGANIZATION_USERS' ? null : new Set(input.allowedUserIds);
+
+  if (allowedUsers === null) {
+    return true;
+  }
 
   return input.assignments.some((assignment) => {
     if (!assignment.isCurrent || assignment.leadId !== input.leadId) {
@@ -93,9 +101,12 @@ export function assignmentScopeAllowsLead(input: {
     if (assignment.organizationId !== input.organizationId) {
       return false;
     }
+    if (journeyIds !== null && !journeyIds.has(assignment.journeyId)) {
+      return false;
+    }
     if (!assignmentTypes.has(assignment.assignmentType)) {
       return false;
     }
-    return allowedUsers === null || allowedUsers.has(assignment.userId);
+    return allowedUsers.has(assignment.userId);
   });
 }

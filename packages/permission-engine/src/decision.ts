@@ -71,14 +71,23 @@ export async function resolveAuthorization(input: {
     deniedReasons.push('FEATURE_ACTION_DENIED');
   }
 
+  const accessibleJourneyIds =
+    input.request.journeyId === undefined
+      ? await input.repository.listAccessibleJourneyIds({
+          roleId: role.id,
+          organizationId: input.request.organizationId,
+        })
+      : [];
   const journeyAllowed =
     input.request.journeyId === undefined
-      ? true
+      ? accessibleJourneyIds.length > 0
       : await input.repository.hasJourneyAccess({
           roleId: role.id,
           organizationId: input.request.organizationId,
           journeyId: input.request.journeyId,
         });
+  const predicateJourneyIds =
+    input.request.journeyId === undefined ? accessibleJourneyIds : [input.request.journeyId];
   if (!journeyAllowed) {
     deniedReasons.push('JOURNEY_DENIED');
   }
@@ -87,6 +96,7 @@ export async function resolveAuthorization(input: {
     roleId: role.id,
     organizationId: input.request.organizationId,
     fieldIds: [...requestedFieldIds, ...requestedEditFieldIds],
+    ...(input.request.journeyId === undefined ? {} : { journeyId: input.request.journeyId }),
   });
   const fields = resolveFieldDecision({
     requestedFieldIds,
@@ -116,6 +126,7 @@ export async function resolveAuthorization(input: {
       scope: effectiveScope,
       allowedUserIds,
       assignmentTypes,
+      journeyIds: predicateJourneyIds,
       userId: user.id,
     });
 
@@ -123,6 +134,7 @@ export async function resolveAuthorization(input: {
       const assignments = await input.repository.listCurrentAssignments({
         organizationId: input.request.organizationId,
         assignmentTypes,
+        journeyIds: predicateJourneyIds,
       });
       recordAllowed = assignmentScopeAllowsLead({
         assignments,
@@ -130,6 +142,7 @@ export async function resolveAuthorization(input: {
         organizationId: input.request.organizationId,
         assignmentTypes,
         allowedUserIds,
+        journeyIds: predicateJourneyIds,
       });
 
       const grant = await input.repository.getActiveDirectGrant({

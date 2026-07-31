@@ -227,9 +227,6 @@ export async function listSellers(input: {
   list: SellerListInput;
   now?: Date;
 }): Promise<LeadRouteResult> {
-  if (input.list.journeyId === undefined) {
-    return { status: 400, body: { error: 'validation_error', details: { journeyId: 'required' } } };
-  }
   const decision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -237,7 +234,7 @@ export async function listSellers(input: {
       userId: input.auth.user.id,
       module: leadsModule,
       action: viewAction,
-      journeyId: input.list.journeyId,
+      ...(input.list.journeyId === undefined ? {} : { journeyId: input.list.journeyId }),
       requestedFieldIds: input.list.requestedFieldIds,
       assignmentTypes: input.list.assignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
@@ -274,7 +271,7 @@ export async function getSeller360(input: {
   );
   if (lead === null) return { status: 404, body: { error: 'not_found' } };
   const visibleProcesses: Seller360Record['processInstances'] = [];
-  let visibleFieldIds: readonly string[] = [];
+  const visibleFieldIds = new Set<string>();
   for (const process of lead.processInstances.filter((row) => row.active)) {
     const decision = await resolveAuthorization({
       repository: input.permissionRepository,
@@ -295,13 +292,15 @@ export async function getSeller360(input: {
     );
     if (blockingReasons.length === 0) {
       visibleProcesses.push(process);
-      visibleFieldIds = decision.fields.visibleFieldIds;
+      for (const fieldId of decision.fields.visibleFieldIds) {
+        visibleFieldIds.add(fieldId);
+      }
     }
   }
   if (visibleProcesses.length === 0) return { status: 403, body: { error: 'forbidden' } };
   return {
     status: 200,
-    body: { ...serializeLead(lead, visibleFieldIds), processInstances: visibleProcesses },
+    body: { ...serializeLead(lead, [...visibleFieldIds]), processInstances: visibleProcesses },
   };
 }
 
