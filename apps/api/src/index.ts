@@ -9,7 +9,7 @@ export { completePasswordReset, requestPasswordReset } from './auth/password-res
 export { authenticateCookie } from './auth/middleware.js';
 export { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 export { PrismaPermissionRepository } from './permissions/prisma-permission-repository.js';
-export { getLeadById } from './routes/leads.js';
+export { createLead, editLead, getLeadById, getSeller360, listSellers } from './routes/leads.js';
 export type * from './auth/audit.js';
 export type * from './auth/config.js';
 export type * from './auth/login.js';
@@ -17,6 +17,9 @@ export type * from './auth/password-reset.js';
 export type * from './auth/session.js';
 export type * from './auth/middleware.js';
 export type * from './routes/leads.js';
+export * from './leads/service.js';
+export * from './leads/errors.js';
+export * from './leads/validation.js';
 
 export * from './routes/configuration.js';
 export * from './configuration/service.js';
