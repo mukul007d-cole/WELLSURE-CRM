@@ -132,3 +132,29 @@ Configuration endpoints operate on tenant-scoped IDs/keys and never depend on We
 ### Mapping row deletion rule
 
 `journey_services`, `field_journey_settings`, `field_visibility`, and `role_journey_access` represent current relationships rather than independently versioned configuration entities. Removing one of these relationships is a real DELETE. The required history is the corresponding `system_audit_logs` row with the previous row in `old_value` and `new_value = null`.
+
+## Lead/Seller Core API (Phase 5)
+
+Lead/Seller endpoints use the same server-side permission-engine decision contract as the configuration routes. Dynamic field values are accepted and returned by Field ID, never by hardcoded business field names.
+
+### Creation and editing
+
+- `POST /leads` creates a Lead/Seller or adds a Journey process instance to an existing Lead when an existing Lead ID is supplied by the route contract.
+- Creation requires a target `journeyId`, a valid initial `statusId` or the Journey's default-on-create Status, core fields, dynamic `fieldValues`, and a non-empty `assignments` array.
+- Each assignment entry supplies caller-configured `assignment_type` and `userId`. The API validates that at least one assignment exists and that assignment users belong to the request organization; it does not invent or require any canonical owner type string.
+- Dynamic values are rejected when their Field is not actively assigned to the target Journey, when the Field-Journey setting is `hidden`, or when the value fails the Field's generic `field_type` / `validation_rule` contract.
+- `required_from_status_id` is exact-match only: a Field becomes required only when the process instance's `current_status_id` equals that configured Status. `statuses.sort_order` is display-only and must not be used for required-field validation.
+- `PATCH /leads/:id` edits a specific process instance context. A status change that would make a required Field missing is blocked with a validation error; it is not allowed as a warning-only incomplete transition.
+- Successful field edits write `activity_logs.action_type = field_edit`; successful status changes write `activity_logs.action_type = status_change`. Lead/Seller mutations do not write `system_audit_logs` unless they delegate to a configuration mutation.
+
+### Seller List
+
+- `GET /leads` supports server-side search over name, phone, and email; filters for Journey, Status, and owner assignment; safe allow-listed sorting; and pagination.
+- List rows and total counts must use the same permission-scoped predicate produced from `resolveAuthorization`. Counts must not reveal records outside the requester's role scope, Journey access, or direct grants.
+- Field-level visibility applies to every row in the paginated response. Unauthorized dynamic Fields are stripped server-side.
+
+### Seller 360
+
+- `GET /leads/:id` returns core Lead/Seller fields, visible dynamic `fieldValues`, authorized active process instances/Journeys/statuses, and current assignments.
+- A Lead with multiple active Journey memberships returns only the process instances the requester is authorized to see.
+- Activity timeline, tasks/reminders, attachments, linked-lead expansion, services, and finance sections remain deferred until their underlying module contracts are implemented.

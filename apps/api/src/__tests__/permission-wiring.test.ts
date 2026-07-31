@@ -37,6 +37,7 @@ describe('session to permission engine route wiring', () => {
       leadRepository,
       permissionRepository: createPermissionRepository(),
       requestedFieldIds: ['field-visible', 'field-hidden'],
+      assignmentTypes: ['synthetic_assignment_type'],
       now,
     });
 
@@ -67,6 +68,7 @@ describe('session to permission engine route wiring', () => {
       leadRepository,
       permissionRepository: createPermissionRepository(),
       requestedFieldIds: ['field-visible'],
+      assignmentTypes: ['synthetic_assignment_type'],
       now,
     });
     expect(crossOrg.status).toBe(404);
@@ -170,7 +172,7 @@ function createPermissionRepository(): PermissionRepository {
         {
           leadId: leadA,
           processInstanceId: 'process-a',
-          assignmentType: 'primary',
+          assignmentType: 'synthetic_assignment_type',
           userId: 'user-child',
           organizationId: orgA,
           isCurrent: true,
