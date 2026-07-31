@@ -186,7 +186,7 @@ function buildDecision(
     roleVersion: resolved.roleVersion,
     module: request.module,
     action: request.action,
-    journeyId: request.journeyId,
+    ...(request.journeyId === undefined ? {} : { journeyId: request.journeyId }),
     effectiveScope: resolved.effectiveScope,
     journeyAllowed: resolved.journeyAllowed,
     recordAllowed: resolved.recordAllowed,
