@@ -11,7 +11,7 @@ Deliver the Phase 2 provider-independent permission engine plan for Falcon CRM: 
 - `docs/architecture/decisions/0003-finance-scope-v1.md`
 - `docs/architecture/decisions/0004-migration-dedup-priority.md`
 - `docs/architecture/decisions/0005-auth-provider-deferred.md`
-- `docs/architecture/decisions/0006-team-scope-from-reporting-hierarchy.md`
+- `docs/architecture/decisions/0006-team-scope-from-hierarchy.md`
 - `docs/permissions/access-model.md`
 - `docs/permissions/permission-engine-schema.md`
 - `docs/data-model/schema.md`

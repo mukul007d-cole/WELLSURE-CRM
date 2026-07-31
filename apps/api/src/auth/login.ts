@@ -1,5 +1,5 @@
 import type { AuthConfig } from './config.js';
-import { normalizeEmail, verifyPassword } from './password.js';
+import { normalizeEmail, verifyPassword, hashPassword } from './password.js';
 import { issueSession, type IssuedSession, type SessionRepository } from './session.js';
 import type { SecurityAuditWriter } from './audit.js';
 
@@ -36,6 +36,15 @@ export type LoginResult =
   | { ok: true; session: IssuedSession }
   | { ok: false; reason: 'INVALID_CREDENTIALS' | 'LOCKED_OUT' };
 
+let dummyHashPromise: Promise<string> | null = null;
+
+function getDummyHash(): Promise<string> {
+  if (dummyHashPromise === null) {
+    dummyHashPromise = hashPassword('falcon-timing-safety-placeholder');
+  }
+  return dummyHashPromise;
+}
+
 export async function login(input: {
   repository: LoginRepository;
   audit: SecurityAuditWriter;
@@ -59,7 +68,10 @@ export async function login(input: {
   }
 
   const user = await input.repository.findUserForLogin(input.organizationId, normalizedEmail);
-  const valid = user?.active === true && (await verifyPassword(input.password, user.passwordHash));
+  const passwordHash = user?.active === true ? user.passwordHash : await getDummyHash();
+  const passwordMatches = await verifyPassword(input.password, passwordHash);
+  const valid = user?.active === true && passwordMatches;
+
   if (!valid) {
     await recordFailure({
       ...input,
@@ -77,7 +89,7 @@ export async function login(input: {
     session: await issueSession({
       repository: input.repository,
       config: input.config,
-      userId: user.id,
+      userId: user!.id,
       organizationId: input.organizationId,
       ipAddress: input.ipAddress,
       userAgent: input.userAgent,
@@ -107,7 +119,7 @@ async function recordFailure(input: {
       ? new Date(input.now.getTime() + input.config.lockoutDurationMs)
       : null;
 
-      const attempt = await input.repository.recordFailedLogin({
+  const attempt = await input.repository.recordFailedLogin({
     organizationId: input.organizationId,
     normalizedEmail: input.normalizedEmail,
     failedCount,

@@ -19,7 +19,6 @@ route.
 - `docs/architecture/decisions/0004-migration-dedup-priority.md`
 - `docs/architecture/decisions/0005-auth-provider-deferred.md`
 - `docs/architecture/decisions/0006-team-scope-from-hierarchy.md`
-- `docs/architecture/decisions/0006-team-scope-from-reporting-hierarchy.md`
 - `docs/architecture/decisions/0007-custom-session-auth.md`
 - `docs/permissions/access-model.md`
 - `docs/permissions/permission-engine-schema.md`
