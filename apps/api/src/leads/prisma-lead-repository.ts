@@ -12,6 +12,7 @@ import type {
   LeadDetailRecord,
   Seller360Record,
   SellerListInput,
+  SellerListProcessSummary,
   SellerListRecord,
   SellerReadRepository,
   LeadReadRepository,
@@ -98,7 +99,13 @@ interface ProcessRow {
   isPrimary: boolean;
   active: boolean;
   journey?: { id: string; key: string; name: string };
-  currentStatus?: { id: string; key: string; name: string };
+  currentStatus?: {
+    id: string;
+    key: string;
+    name: string;
+    outcomeType?: string;
+    behaviorType?: string;
+  };
   assignments?: AssignmentRow[];
 }
 
@@ -109,6 +116,7 @@ interface AssignmentRow {
   assignmentType: string;
   userId: string;
   isCurrent: boolean;
+  user?: { id: string; name: string };
 }
 
 export class PrismaLeadRepository
@@ -332,8 +340,13 @@ export class PrismaLeadRepository
             where: processWhere(input),
             include: {
               journey: { select: { id: true, key: true, name: true } },
-              currentStatus: { select: { id: true, key: true, name: true } },
-              assignments: { where: { isCurrent: true } },
+              currentStatus: {
+                select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
+              },
+              assignments: {
+                where: { isCurrent: true },
+                include: { user: { select: { id: true, name: true } } },
+              },
             },
           },
         },
@@ -343,7 +356,7 @@ export class PrismaLeadRepository
     return {
       rows: rows.map((row) => ({
         ...lead(row),
-        processInstances: (row.processInstances ?? []).map(process),
+        processInstances: (row.processInstances ?? []).map(sellerListProcess),
       })),
       total,
     };
@@ -429,6 +442,19 @@ function process(row: ProcessRow): LeadProcessRecord {
     ...(row.journey === undefined ? {} : { journey: row.journey }),
     ...(row.currentStatus === undefined ? {} : { currentStatus: row.currentStatus }),
     ...(row.assignments === undefined ? {} : { assignments: row.assignments.map(assignment) }),
+  };
+}
+
+function sellerListProcess(row: ProcessRow): SellerListProcessSummary {
+  return {
+    processInstanceId: row.id,
+    journeyId: row.journeyId,
+    journeyName: row.journey?.name ?? '',
+    statusId: row.currentStatusId,
+    statusName: row.currentStatus?.name ?? '',
+    statusOutcomeType: row.currentStatus?.outcomeType ?? 'open',
+    statusBehaviorType: row.currentStatus?.behaviorType ?? 'default',
+    ownerName: row.assignments?.[0]?.user?.name ?? null,
   };
 }
 

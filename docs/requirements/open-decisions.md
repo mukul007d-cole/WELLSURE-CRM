@@ -21,6 +21,32 @@ the Phase 0 documentation baseline or foundational Phase 1 work.
   Cognito, Keycloak, OAuth, social login, SSO, MFA, magic links, or JWT-based
   auth paths for V1.
 
+### OD-020 — apps/api has no real HTTP server wired up yet
+
+- **Status:** Open, non-blocking for now — the apps/web frontend build covers
+  its immediate need with a dev-only MSW mock layer (see
+  `apps/web/src/mocks/`). Flagging explicitly so this doesn't silently keep
+  getting deferred a fourth time.
+- **Owner:** Wellsure engineering/architecture.
+- **Problem:** The route functions in `apps/api/src/routes/` (auth,
+  configuration, leads) exist and are tested in isolation — unit tests call
+  them directly, and a Testcontainers-backed integration suite exercises the
+  Prisma repository against real Postgres — but nothing binds any of them to
+  an actual HTTP method+path over a network port. There is no Express/
+  Fastify/Hono/etc. dependency anywhere in `apps/api/package.json` and no
+  `server.ts`/`app.ts`. `docs/api/endpoints.md` documents a target contract,
+  not a running API.
+- **Needed decision:** Propose and get approval for an HTTP framework choice
+  (Express/Fastify/Hono/etc.), then wire the existing route functions to it —
+  request parsing, path routing, cookie/session middleware, a CORS policy,
+  and mapping `LeadRouteResult`/equivalent shapes to real HTTP responses.
+  This needs its own planned task per `PLANS.md`, not a drive-by addition to
+  an unrelated change.
+- **Implementation impact:** Blocking before any frontend work can depend on
+  real (non-mocked) API responses instead of the MSW mock layer.
+- **Source:** identified while building the real `apps/web` frontend against
+  the documented/verified route contract.
+
 ## Migration/data-team decisions
 
 The following items require Wellsure data-team review before the import mapping

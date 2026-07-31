@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+@import './fonts.css';
+
+/*
+ * Wellsure design tokens.
+ *
+ * Brand identity (ink/gold/paper) lives in structural moments: sidebar,
+ * topbar, login, primary actions, active states. Working surfaces (lists,
+ * detail views, forms) stay on the light `paper`/`surface` pair so hours of
+ * table-reading don't happen against a black background. Status colors are
+ * a deliberately separate palette so gold never doubles as a status meaning.
+ */
+@theme {
+  /* Brand */
+  --color-ink: #0b0b0c;
+  --color-ink-raised: #19181c;
+  --color-gold: #e8b923;
+  --color-gold-deep: #c79a1b;
+  --color-gold-soft: #f6e6b0;
+  --color-paper: #f8f6f1;
+  --color-surface: #ffffff;
+  --color-ink-soft: #6b6864;
+  --color-line: #e7e3da;
+  --color-line-strong: #d8d3c6;
+
+  /* Text/foreground on ink surfaces */
+  --color-on-ink: #f5f3ee;
+  --color-on-ink-soft: #a9a5a0;
+  --color-on-ink-line: #2c2b2f;
+
+  /* Semantic status palette — distinct from brand gold on purpose */
+  --color-status-open: #5b6472;
+  --color-status-open-bg: #eef0f3;
+  --color-status-won: #1e8e5a;
+  --color-status-won-bg: #e6f4ed;
+  --color-status-lost: #c4453d;
+  --color-status-lost-bg: #fbebea;
+  --color-status-followup: #3b6fd1;
+  --color-status-followup-bg: #eaf0fc;
+  --color-status-calllater: #a15a1f;
+  --color-status-calllater-bg: #f7ede2;
+  --color-status-archived: #766f87;
+  --color-status-archived-bg: #efedf3;
+
+  /* Type */
+  --font-display: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Radius */
+  --radius-card: 0.875rem;
+  --radius-control: 0.5rem;
+  --radius-pill: 999px;
+
+  /* Shadow: kept minimal — depth mostly comes from the paper/surface pair */
+  --shadow-card: 0 1px 2px rgba(11, 11, 12, 0.04), 0 1px 1px rgba(11, 11, 12, 0.03);
+  --shadow-popover: 0 12px 32px rgba(11, 11, 12, 0.16), 0 2px 6px rgba(11, 11, 12, 0.08);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    font-family: var(--font-body);
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  ::selection {
+    background-color: var(--color-gold-soft);
+    color: var(--color-ink);
+  }
+
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* On ink surfaces the gold focus ring needs a dark halo to read clearly */
+  .surface-ink :focus-visible {
+    outline-color: var(--color-gold);
+    box-shadow: 0 0 0 4px rgba(232, 185, 35, 0.25);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

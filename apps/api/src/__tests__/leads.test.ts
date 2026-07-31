@@ -196,9 +196,49 @@ describe('Lead/Seller core route and service behavior', () => {
             phone: null,
             email: null,
             fieldValues: { [fieldVisible]: 'visible' },
+            processInstances: [],
           },
         ],
       },
+    });
+  });
+
+  it('includes journey, status, and owner summary per row so the Seller List UI never needs a second request', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: { [fieldVisible]: 'visible' } });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    const response = await listSellers({
+      auth,
+      sellerRepository: repo,
+      permissionRepository: permissionRepository({ visibleFields: [fieldVisible] }),
+      list: {
+        journeyId: journeyA,
+        requestedFieldIds: [fieldVisible],
+        assignmentTypes: [assignmentType],
+        page: 1,
+        pageSize: 10,
+      },
+      now,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      rows: [
+        {
+          id: lead.id,
+          processInstances: [
+            {
+              processInstanceId: process.id,
+              journeyId: journeyA,
+              journeyName: 'Synthetic Journey',
+              statusId: statusEarly,
+              statusName: 'Synthetic Status',
+              statusOutcomeType: 'open',
+              statusBehaviorType: 'default',
+              ownerName: 'Synthetic Owner',
+            },
+          ],
+        },
+      ],
     });
   });
 
@@ -430,7 +470,23 @@ class MemoryLeadRepository implements LeadRepository {
       .filter((lead) => lead.organizationId === input.organizationId)
       .map((lead) => ({
         ...lead,
-        processInstances: this.processes.filter((process) => process.leadId === lead.id),
+        processInstances: this.processes
+          .filter((process) => process.leadId === lead.id)
+          .map((process) => {
+            const owner = this.assignments.find(
+              (assignment) => assignment.processInstanceId === process.id,
+            );
+            return {
+              processInstanceId: process.id,
+              journeyId: process.journeyId,
+              journeyName: 'Synthetic Journey',
+              statusId: process.currentStatusId,
+              statusName: 'Synthetic Status',
+              statusOutcomeType: 'open',
+              statusBehaviorType: 'default',
+              ownerName: owner === undefined ? null : 'Synthetic Owner',
+            };
+          }),
       }));
     return { rows, total: rows.length };
   }

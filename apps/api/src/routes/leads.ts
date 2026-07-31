@@ -35,8 +35,19 @@ export interface Seller360Record extends LeadCoreRecord {
   >;
 }
 
+export interface SellerListProcessSummary {
+  processInstanceId: string;
+  journeyId: string;
+  journeyName: string;
+  statusId: string;
+  statusName: string;
+  statusOutcomeType: string;
+  statusBehaviorType: string;
+  ownerName: string | null;
+}
+
 export interface SellerListRecord extends LeadCoreRecord {
-  processInstances: LeadProcessRecord[];
+  processInstances: SellerListProcessSummary[];
 }
 
 export interface LeadReadRepository {
@@ -251,7 +262,10 @@ export async function listSellers(input: {
     status: 200,
     body: {
       total: result.total,
-      rows: result.rows.map((row) => serializeLead(row, decision.fields.visibleFieldIds)),
+      rows: result.rows.map((row) => ({
+        ...serializeLead(row, decision.fields.visibleFieldIds),
+        processInstances: row.processInstances,
+      })),
     },
   };
 }

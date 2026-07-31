@@ -9,3 +9,4 @@ AGENTS.md
 PLANS.md
 packages/database/prisma/
 infra/terraform/
+apps/web/public/mockServiceWorker.js
