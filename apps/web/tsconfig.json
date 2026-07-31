@@ -3,7 +3,17 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowJs": false,
+    "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

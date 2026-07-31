@@ -3,12 +3,38 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.5.7",
+    "@tanstack/react-query": "5.101.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "7.83.0",
+    "react-router-dom": "7.18.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
+    "msw": "2.15.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

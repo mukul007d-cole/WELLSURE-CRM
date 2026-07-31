@@ -1,0 +1,21 @@
+/*
+ * Archivo (display) echoes the logo wordmark's blocky geometry; true Archivo
+ * Black is reserved for the brand mark itself, so in-app headers (700-800)
+ * feel related without duplicating it. Inter (body) is tuned for dense
+ * tables and small UI text people read for hours.
+ */
+@font-face {
+  font-family: 'Archivo';
+  src: url('/fonts/Archivo-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
