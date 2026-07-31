@@ -69,11 +69,8 @@ describe.runIf(shouldRunPostgresIntegration)('security audit trail against real 
   });
 });
 
-describe.skipIf(shouldRunPostgresIntegration)(
-  'security audit trail against real Postgres',
-  () => {
-    it('requires Docker/Testcontainers or FALCON_POSTGRES_URL to execute', () => {
-      expect(shouldRunPostgresIntegration).toBe(false);
-    });
-  },
-);
+describe.skipIf(shouldRunPostgresIntegration)('security audit trail against real Postgres', () => {
+  it('requires Docker/Testcontainers or FALCON_POSTGRES_URL to execute', () => {
+    expect(shouldRunPostgresIntegration).toBe(false);
+  });
+});

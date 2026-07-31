@@ -230,11 +230,19 @@ export function createPostgresAuthRepository(
         WHERE organization_id = ${organizationId} AND normalized_email = ${normalizedEmail}
       `;
     },
-    async findUserForPasswordReset(organizationId, normalizedEmail): Promise<PasswordResetUserRecord | null> {
+    async findUserForPasswordReset(
+      organizationId,
+      normalizedEmail,
+    ): Promise<PasswordResetUserRecord | null> {
       const user = await this.findUserForLogin(organizationId, normalizedEmail);
       return user === null
         ? null
-        : { id: user.id, organizationId: user.organizationId, email: user.email, active: user.active };
+        : {
+            id: user.id,
+            organizationId: user.organizationId,
+            email: user.email,
+            active: user.active,
+          };
     },
     async createPasswordResetToken(input) {
       const [row] = await sql<ResetTokenDbRow[]>`
@@ -277,7 +285,7 @@ export function createPostgresAuthRepository(
         INSERT INTO auth_test_system_audit_logs
           (organization_id, actor_user_id, entity_type, entity_id, action, old_value, new_value)
         VALUES (${input.organizationId}, ${input.actorUserId}, ${input.entityType}, ${input.entityId},
-                ${input.action}, ${sql.json(input.oldValue as object)}, ${sql.json(input.newValue as object)})
+                ${input.action}, ${sql.json(input.oldValue as never)}, ${sql.json(input.newValue as never)})
       `;
     },
   };

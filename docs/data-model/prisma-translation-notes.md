@@ -163,3 +163,9 @@ is ignored as a build artifact. No runtime driver adapter is selected yet becaus
 there is no API/worker database connection in this foundation milestone. The
 schema, generation, and migrations are real; runtime connection ownership will
 be chosen when an application first consumes the client.
+
+## Mapping and grant row lifecycle
+
+The no-hard-delete rule applies to primary configuration entities with independent identity and downstream foreign-key references: Journey, Status, Field, Service, and Role. Pure relationship rows such as `journey_services`, `field_journey_settings`, `field_visibility`, and `role_journey_access` are current-state mappings/grants. Nothing references those row IDs, so unmapping or revoking one of those relationships deletes the row and preserves history through a `system_audit_logs` entry whose `old_value` is the removed row and whose `new_value` is null.
+
+Status reassignment-assisted deactivation has two histories. The configuration action writes one `system_audit_logs` row, while each affected lead also receives an `activity_logs` row with `action_type = status_change` and the same old/new status values that an individual status change would record. The process-instance updates and both log families must commit in the same transaction.
