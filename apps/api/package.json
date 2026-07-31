@@ -12,13 +12,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-        "@falcon/permission-engine": "workspace:*",
-        "argon2": "^0.45.1"
-       },
-       "devDependencies": {
-            "@types/node": "24.10.13",
-            "@testcontainers/postgresql": "^12.0.4",
-            "postgres": "3.4.7",
-            "testcontainers": "^12.0.4"
-           }
+    "@falcon/permission-engine": "workspace:*",
+    "argon2": "^0.45.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.13",
+    "@testcontainers/postgresql": "^12.0.4",
+    "postgres": "3.4.7",
+    "testcontainers": "^12.0.4"
+  }
 }

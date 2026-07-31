@@ -48,8 +48,8 @@ interface UserRow {
 type SessionRow = SessionRecord;
 type PasswordResetTokenRow = PasswordResetTokenRecord;
 interface LoginAttemptRow extends LoginAttemptRecord {
-    id: string;
-  }
+  id: string;
+}
 
 export class PrismaAuthRepository
   implements LoginRepository, SessionRepository, PasswordResetRepository, SecurityAuditWriter
@@ -134,7 +134,7 @@ export class PrismaAuthRepository
     });
   }
 
-async recordFailedLogin(input: LoginAttemptRecord): Promise<{ id: string }> {
+  async recordFailedLogin(input: LoginAttemptRecord): Promise<{ id: string }> {
     const row = await this.prisma.failedLoginAttempt.upsert({
       where: {
         organizationId_normalizedEmail: {

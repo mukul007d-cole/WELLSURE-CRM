@@ -89,7 +89,7 @@ export async function login(input: {
     session: await issueSession({
       repository: input.repository,
       config: input.config,
-      userId: user!.id,
+      userId: user.id,
       organizationId: input.organizationId,
       ipAddress: input.ipAddress,
       userAgent: input.userAgent,

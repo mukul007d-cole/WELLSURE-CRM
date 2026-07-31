@@ -116,3 +116,19 @@ POST   /webhooks/accounting            -- fires on outcome_type = closed_won
 - Pagination: cursor or offset+limit, consistent across all list endpoints
 - List and count endpoints share identical access-filtering logic (see access model doc)
 - Rate limiting on auth endpoints specifically (lockout after repeated failed logins)
+
+## Configuration Engine API (Phase 4)
+
+Configuration endpoints operate on tenant-scoped IDs/keys and never depend on Wellsure seed names. Implementations must authorize every request server-side through the permission engine before mutating configuration.
+
+### Supported configuration mutations
+
+- Journeys: create, edit, deactivate. Journeys are not hard-deleted; deactivation is blocked while active process instances still depend on the Journey.
+- Statuses: create, edit, deactivate. Deactivation is blocked while active process instances use the Status unless the request supplies a replacement Status in the same Journey. Reassignment-assisted deactivation writes both one `system_audit_logs` row for the builder change and one `activity_logs` `status_change` row per affected lead.
+- Services: create, edit, deactivate, and Journey-to-Service map/unmap. Services are not hard-deleted; Journey-to-Service unmapping is a real delete of the mapping row with system audit history.
+- Fields: create, edit, deactivate. Field values already stored on leads are preserved. Field-to-Journey setting and field-visibility rows are mapping rows and are deleted on unmap/revoke with system audit history.
+- Field visibility: uses the existing `field_visibility` allow-list contract consumed by the permission engine. No separate visibility evaluator exists in the API.
+
+### Mapping row deletion rule
+
+`journey_services`, `field_journey_settings`, `field_visibility`, and `role_journey_access` represent current relationships rather than independently versioned configuration entities. Removing one of these relationships is a real DELETE. The required history is the corresponding `system_audit_logs` row with the previous row in `old_value` and `new_value = null`.

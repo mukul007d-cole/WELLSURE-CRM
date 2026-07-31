@@ -17,3 +17,8 @@ export type * from './auth/password-reset.js';
 export type * from './auth/session.js';
 export type * from './auth/middleware.js';
 export type * from './routes/leads.js';
+
+export * from './routes/configuration.js';
+export * from './configuration/service.js';
+export * from './configuration/errors.js';
+export * from './configuration/validation.js';
