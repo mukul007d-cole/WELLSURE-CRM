@@ -91,11 +91,21 @@ already-documented requirement — not speculatively:
 |---|---|---|
 | `fastify` | `5.11.0` | The framework itself. |
 | `@fastify/cookie` | `11.1.2` | Cookie handling for the ADR-0007 session cookie. This decorates `request`/`reply` with convenient cookie access at the transport layer; it does **not** replace the already-tested `serializeSessionCookie` / `serializeClearedSessionCookie` / `parseCookie` functions in `apps/api/src/auth/cookies.ts`, which remain the source of truth for the session cookie's name, `HttpOnly`/`Secure`/`SameSite` attributes, and value encoding per ADR-0007. |
-| `@fastify/cors` | `11.3.0` | The CORS policy needed for credentialed requests from the `apps/web` origin (`docs/api/endpoints.md`). Exact origin/credentials configuration is implementation detail — see the phase-6 plan's open dev-proxy question. |
+| `@fastify/cors` | `11.3.0` | The CORS policy needed for credentialed requests from the `apps/web` origin (`docs/api/endpoints.md`). The phase-6 plan resolves dev to a same-origin Vite proxy, so this plugin's practical load-bearing role is staging/production and any non-proxied tooling — see the phase-6 plan, §3 and §6. |
 | `@fastify/rate-limit` | `11.2.0` | "Rate limiting on auth endpoints specifically (lockout after repeated failed logins)" (`docs/api/endpoints.md`, Standards). HTTP-layer defense in depth alongside the already-implemented application-level lockout in `apps/api/src/auth/login.ts` (`lockoutMaxAttempts` / `lockoutWindowMs` / `lockoutDurationMs`), not a replacement for it. |
 | `pino` (Fastify's built-in logger) | `10.3.1` | Structured logging with correlation/request IDs on every request (`docs/operations/runbook.md`, Monitoring). Configured with an explicit `redact` list so no credential, session token, cookie, or personal-data field is ever logged — enforced by configuration, not convention. |
 | `@fastify/swagger` | `9.8.1` | OpenAPI generation (`docs/api/endpoints.md`: "Versioned under `/api/v1` ... REST, OpenAPI-documented"). Generates the spec from real Fastify route schemas rather than a hand-maintained document that can drift from behavior. |
 | `@fastify/swagger-ui` | `6.1.1` | Serves the generated OpenAPI document as browsable interactive documentation. |
+
+**Version and compatibility check (2026-07-31):** every pin above matches
+each package's current npm `latest` tag as of this date, and each Fastify
+plugin's own published `devDependencies` declares `fastify: ^5.0.0`
+(`@fastify/cookie` 11.1.2, `@fastify/cors` 11.3.0, `@fastify/rate-limit`
+11.2.0, `@fastify/swagger` 9.8.1, `@fastify/swagger-ui` 6.1.1) — confirming
+stated Fastify 5 compatibility from each package's own metadata rather than
+assuming it from the package name or description alone. No pin here is a
+major version behind `latest`; if that changes before implementation,
+re-verify rather than trusting this table indefinitely.
 
 Exact wiring, bootstrap structure, environment configuration, and the
 per-route schema definitions needed to drive `@fastify/swagger` are
@@ -139,20 +149,20 @@ than a typical framework migration because the route layer was already kept
 transport-agnostic before this decision was made. Do not read "reversible"
 as "free."
 
-This decision does **not** resolve the exact HTTP error-response envelope.
-The route layer already returns `{ error: string, details?: Record<string,
-unknown> }` (a flat error-code string) — consistently implemented across
-`apps/api/src/routes/*.ts`, `apps/web/src/lib/api-client.ts`, and the MSW
-mock handlers in `apps/web/src/mocks/handlers.ts` — while
-`docs/api/endpoints.md`'s Standards section states `{ error: { code,
-message, details? } }` (a nested object). A code comment in
-`apps/web/src/types/domain.ts` already flags this directly: `ApiErrorBody`
-is documented there as "the real code, not endpoints.md's stale
-{code,message} shape." Fastify does not need this resolved to be adopted —
-`@fastify/swagger`'s generated schema will document whatever shape the error
-mapping in the transport layer actually produces — but the shape must be
-decided before the OpenAPI document is finalized. See the phase-6 plan's
-Risks / open questions; this ADR does not pick a side.
+This decision did not originally resolve the exact HTTP error-response
+envelope, because the route layer's already-implemented `{ error: string,
+details?: Record<string, unknown> }` (a flat error-code string) disagreed
+with `docs/api/endpoints.md`'s Standards section, which at the time stated
+`{ error: { code, message, details? } }` (a nested object). **Resolved
+2026-07-31:** the flat shape is correct — it is what `apps/api/src/routes/*.ts`,
+`apps/web/src/lib/api-client.ts`, and the MSW mock handlers in
+`apps/web/src/mocks/handlers.ts` already agreed on — and `docs/api/endpoints.md`
+has been corrected to document it. `@fastify/swagger`'s generated schema
+documents this flat shape directly, with no separate shaping step. Full
+history and the remaining implementation follow-ups (a stale code comment
+at `apps/web/src/types/domain.ts:162` that still needs correcting, and a
+`loginRoute` error-code refinement) are recorded in the phase-6 plan's
+Risks / open questions, item 2.
 
 If a future requirement (e.g. an edge/multi-runtime deployment target)
 changes the calculus above, that must be recorded in a new ADR that

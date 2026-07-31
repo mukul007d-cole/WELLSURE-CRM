@@ -112,7 +112,11 @@ POST   /webhooks/accounting            -- fires on outcome_type = closed_won
 
 ## Standards
 
-- Errors: consistent JSON shape `{ error: { code, message, details? } }`
+- Errors: consistent JSON shape `{ error: string, details? }` — `error` is a
+  stable, machine-readable code (e.g. `not_found`, `forbidden`,
+  `validation_error`); `details` is optional structured context (e.g.
+  `{ fieldId }`). There is no separate `message` field; clients render their
+  own copy from the code (see `apps/web/src/lib/api-error.ts`).
 - Pagination: cursor or offset+limit, consistent across all list endpoints
 - List and count endpoints share identical access-filtering logic (see access model doc)
 - Rate limiting on auth endpoints specifically (lockout after repeated failed logins)
