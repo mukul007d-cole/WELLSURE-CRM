@@ -5,7 +5,7 @@
   "type": "module",
   "exports": "./dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "prisma generate --config prisma.config.ts && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "lint": "eslint src",
     "prisma:format": "prisma format --config prisma.config.ts",
@@ -16,9 +16,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "7.9.1"
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "pg": "8.16.3"
   },
   "devDependencies": {
+    "@types/pg": "8.15.5",
     "dotenv": "17.2.3",
     "prisma": "7.9.1"
   }

@@ -34,7 +34,7 @@ export async function loginRoute(input: {
   if (!result.ok) {
     return {
       status: result.reason === 'LOCKED_OUT' ? 423 : 401,
-      body: { error: 'invalid_credentials' },
+      body: { error: result.reason === 'LOCKED_OUT' ? 'account_locked' : 'invalid_credentials' },
     };
   }
   return {

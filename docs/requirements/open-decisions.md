@@ -21,12 +21,11 @@ the Phase 0 documentation baseline or foundational Phase 1 work.
   Cognito, Keycloak, OAuth, social login, SSO, MFA, magic links, or JWT-based
   auth paths for V1.
 
-### OD-020 — apps/api has no real HTTP server wired up yet
+### OD-020 — apps/api HTTP server transport
 
-- **Status:** Open, non-blocking for now — the apps/web frontend build covers
-  its immediate need with a dev-only MSW mock layer (see
-  `apps/web/src/mocks/`). Flagging explicitly so this doesn't silently keep
-  getting deferred a fourth time.
+- **Status:** Resolved in Phase 6 — Fastify binds the implemented route
+  functions, and the web development server proxies `/api` to that real
+  transport. MSW is retained only by the frontend test setup.
 - **Owner:** Wellsure engineering/architecture.
 - **Problem:** The route functions in `apps/api/src/routes/` (auth,
   configuration, leads) exist and are tested in isolation — unit tests call
@@ -36,14 +35,13 @@ the Phase 0 documentation baseline or foundational Phase 1 work.
   Fastify/Hono/etc. dependency anywhere in `apps/api/package.json` and no
   `server.ts`/`app.ts`. `docs/api/endpoints.md` documents a target contract,
   not a running API.
-- **Needed decision:** Propose and get approval for an HTTP framework choice
-  (Express/Fastify/Hono/etc.), then wire the existing route functions to it —
-  request parsing, path routing, cookie/session middleware, a CORS policy,
-  and mapping `LeadRouteResult`/equivalent shapes to real HTTP responses.
-  This needs its own planned task per `PLANS.md`, not a drive-by addition to
-  an unrelated change.
-- **Implementation impact:** Blocking before any frontend work can depend on
-  real (non-mocked) API responses instead of the MSW mock layer.
+- **Decision:** ADR-0008 selected Fastify with first-party cookie, CORS,
+  rate-limit, and OpenAPI plugins. The Phase 6 implementation keeps the route
+  functions transport-independent and places process startup in
+  `apps/api/src/main.ts`.
+- **Implementation impact:** Closed. `/auth/me` is bound for frontend session
+  restoration; endpoints that still have no backing route function remain
+  follow-up application work rather than transport bindings.
 - **Source:** identified while building the real `apps/web` frontend against
   the documented/verified route contract.
 
