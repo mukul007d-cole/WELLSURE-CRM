@@ -6,13 +6,13 @@ import type { ConfigurationError } from '../configuration/errors.js';
 import { ConfigurationService, type ConfigurationRepository } from '../configuration/service.js';
 
 export const configurationModules = {
-  journeys: 'journeys',
-  statuses: 'statuses',
+  journeys: 'journeys_statuses',
+  statuses: 'journeys_statuses',
   services: 'services',
   fields: 'fields',
-  journeyServices: 'journey_services',
-  fieldJourneySettings: 'field_journey_settings',
-  fieldVisibility: 'field_visibility',
+  journeyServices: 'services',
+  fieldJourneySettings: 'fields',
+  fieldVisibility: 'roles_permissions',
 } as const;
 
 export type ConfigurationRouteResult =
@@ -21,6 +21,79 @@ export type ConfigurationRouteResult =
 
 type ModuleName = (typeof configurationModules)[keyof typeof configurationModules];
 type ActionName = 'create' | 'edit' | 'deactivate' | 'delete';
+
+export async function readConfiguration(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  kind: 'journeys' | 'services' | 'fields';
+  id?: string;
+  page: number;
+  pageSize: number;
+  active?: boolean;
+}): Promise<ConfigurationRouteResult> {
+  const module = input.kind === 'journeys' ? 'journeys_statuses' : input.kind;
+  const decision = await resolveAuthorization({
+    repository: input.permissionRepository,
+    request: {
+      organizationId: input.auth.user.organizationId,
+      userId: input.auth.user.id,
+      module,
+      action: 'view',
+      ...(input.kind === 'journeys' && input.id ? { journeyId: input.id } : {}),
+    },
+  });
+  if (!decision.allowed) return { status: 403, body: { error: 'forbidden' } };
+  if (
+    !Number.isInteger(input.page) ||
+    input.page < 1 ||
+    !Number.isInteger(input.pageSize) ||
+    input.pageSize < 1 ||
+    input.pageSize > 100
+  )
+    return { status: 400, body: { error: 'validation_error' } };
+  const service = new ConfigurationService(input.configurationRepository);
+  const organizationId = input.auth.user.organizationId;
+  const accessibleJourneyIds = await input.permissionRepository.listAccessibleJourneyIds({
+    roleId: input.auth.user.roleId,
+    organizationId,
+  });
+  const body =
+    input.kind === 'journeys'
+      ? input.id
+        ? await service.getJourney({ organizationId, journeyId: input.id, active: input.active })
+        : await service.listJourneys({
+            organizationId,
+            active: input.active,
+            page: input.page,
+            pageSize: input.pageSize,
+            accessibleJourneyIds,
+          })
+      : input.kind === 'services'
+        ? input.id
+          ? await service.getService({ organizationId, serviceId: input.id, active: input.active })
+          : await service.listServices({
+              organizationId,
+              active: input.active,
+              page: input.page,
+              pageSize: input.pageSize,
+            })
+        : input.id
+          ? await service.getField({
+              organizationId,
+              fieldId: input.id,
+              active: input.active,
+              accessibleJourneyIds,
+            })
+          : await service.listFields({
+              organizationId,
+              active: input.active,
+              page: input.page,
+              pageSize: input.pageSize,
+              accessibleJourneyIds,
+            });
+  return body === null ? { status: 404, body: { error: 'not_found' } } : { status: 200, body };
+}
 
 export async function createJourney(input: {
   auth: AuthenticatedContext;

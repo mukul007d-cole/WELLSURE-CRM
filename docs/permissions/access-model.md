@@ -22,14 +22,19 @@ ALLOW =
 | Module | Actions |
 |---|---|
 | Leads | view, create, edit, delete, export, bulk_reassign, bulk_status_change |
-| Fields | create, edit, delete |
-| Journeys & Statuses | create, edit, delete |
-| Services | create, edit |
-| Users | create, edit, deactivate |
-| Roles & Permissions | create, edit |
+| Fields | view, create, edit, delete |
+| Journeys & Statuses | view, create, edit, delete |
+| Services | view, create, edit |
+| Users | view, create, edit, deactivate |
+| Roles & Permissions | view, create, edit |
 | Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
 | Integrations | configure |
+
+The immutable runtime source for these identifiers is
+`packages/permission-engine/src/catalog.ts`. Department administration is part
+of the User scope and uses `users:view/create/edit`; V1 has no separate
+Department permission module. See ADR-0009.
 
 **B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`
 

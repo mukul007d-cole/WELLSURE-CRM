@@ -6,6 +6,7 @@ import { loggingOptions } from './plugins/logging.js';
 import { registerOpenApi } from './plugins/openapi.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerLeadRoutes } from './routes/leads.js';
@@ -24,6 +25,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     await registerRateLimit(app, deps.authRateLimit ?? { max: 20, timeWindow: 60_000 });
     registerHealthRoutes(app);
     registerAuthRoutes(app, deps);
+    if (deps.adminRepository !== undefined)
+      registerAdminRoutes(app, { ...deps, adminRepository: deps.adminRepository });
     registerConfigurationRoutes(app, deps);
     registerLeadRoutes(app, deps);
   });

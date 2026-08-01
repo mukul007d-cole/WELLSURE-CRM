@@ -11,6 +11,7 @@ import {
   mapJourneyService,
   unmapJourneyService,
   upsertFieldVisibility,
+  readConfiguration,
 } from '../../routes/configuration.js';
 import { sendRouteResult, type RouteResult } from '../errors.js';
 import { authenticate } from '../plugins/authenticate.js';
@@ -41,6 +42,33 @@ export function registerConfigurationRoutes(
         ),
     });
   };
+  const read = (path: string, kind: 'journeys' | 'services' | 'fields') =>
+    server.get(
+      path,
+      { preHandler: authenticate(deps), schema: { tags: ['configuration'] } },
+      async (request, reply) => {
+        const p = request.params as Json;
+        const q = request.query as Json;
+        const id = p.journeyId ?? p.serviceId ?? p.fieldId;
+        return sendRouteResult(
+          reply,
+          await readConfiguration({
+            ...base(request),
+            kind,
+            ...(typeof id === 'string' ? { id } : {}),
+            page: Number(q.page ?? 1),
+            pageSize: Number(q.pageSize ?? 25),
+            active: q.active === undefined ? true : q.active === true || q.active === 'true',
+          }),
+        );
+      },
+    );
+  read('/api/v1/journeys', 'journeys');
+  read('/api/v1/journeys/:journeyId', 'journeys');
+  read('/api/v1/services', 'services');
+  read('/api/v1/services/:serviceId', 'services');
+  read('/api/v1/fields', 'fields');
+  read('/api/v1/fields/:fieldId', 'fields');
   bind('POST', '/api/v1/journeys', (r, b) =>
     createJourney({ ...base(r), key: String(b.key), name: String(b.name) }),
   );

@@ -66,6 +66,58 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async transaction<T>(work: (repository: ConfigurationRepository) => Promise<T>): Promise<T> {
     return work(this);
   }
+  async listJourneys(
+    org: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    accessible: readonly string[],
+  ) {
+    const all = [...this.rows.journeys.values()].filter(
+      (x) =>
+        x.organizationId === org &&
+        accessible.includes(x.id) &&
+        (active === undefined || x.active === active),
+    );
+    return { total: all.length, items: all.slice((page - 1) * pageSize, page * pageSize) };
+  }
+  async getJourneyDetail(org: string, id: string, active?: boolean) {
+    const row = find(this.rows.journeys, org, id);
+    return row && (active === undefined || row.active === active) ? row : null;
+  }
+  async listServices(org: string, active: boolean | undefined, page: number, pageSize: number) {
+    const all = [...this.rows.services.values()].filter(
+      (x) => x.organizationId === org && (active === undefined || x.active === active),
+    );
+    return { total: all.length, items: all.slice((page - 1) * pageSize, page * pageSize) };
+  }
+  async getServiceDetail(org: string, id: string, active?: boolean) {
+    const row = find(this.rows.services, org, id);
+    return row && (active === undefined || row.active === active) ? row : null;
+  }
+  async listFields(
+    org: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    _accessible: readonly string[],
+  ) {
+    void _accessible;
+    const all = [...this.rows.fields.values()].filter(
+      (x) => x.organizationId === org && (active === undefined || x.active === active),
+    );
+    return { total: all.length, items: all.slice((page - 1) * pageSize, page * pageSize) };
+  }
+  async getFieldDetail(
+    org: string,
+    id: string,
+    active: boolean | undefined,
+    _accessible: readonly string[],
+  ) {
+    void _accessible;
+    const row = find(this.rows.fields, org, id);
+    return row && (active === undefined || row.active === active) ? row : null;
+  }
   async writeSystemAudit(input: ConfigurationAuditInput) {
     this.systemAudits.push(input);
   }

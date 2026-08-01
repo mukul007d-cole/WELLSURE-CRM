@@ -31,6 +31,34 @@ export interface ProcessInstanceStatusMove {
 
 export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadActivityWriter {
   transaction<T>(work: (repository: ConfigurationRepository) => Promise<T>): Promise<T>;
+  listJourneys(
+    organizationId: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    accessibleJourneyIds: readonly string[],
+  ): Promise<{ total: number; items: ConfigRow[] }>;
+  getJourneyDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
+  listServices(
+    organizationId: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+  ): Promise<{ total: number; items: ConfigRow[] }>;
+  getServiceDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
+  listFields(
+    organizationId: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    accessibleJourneyIds: readonly string[],
+  ): Promise<{ total: number; items: ConfigRow[] }>;
+  getFieldDetail(
+    organizationId: string,
+    id: string,
+    active: boolean | undefined,
+    accessibleJourneyIds: readonly string[],
+  ): Promise<ConfigRow | null>;
   createJourney(input: Record<string, unknown>): Promise<ConfigRow>;
   updateJourney(
     organizationId: string,
@@ -103,6 +131,70 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
 
 export class ConfigurationService {
   constructor(private readonly repository: ConfigurationRepository) {}
+
+  listJourneys(input: {
+    organizationId: string;
+    active: boolean | undefined;
+    page: number;
+    pageSize: number;
+    accessibleJourneyIds: readonly string[];
+  }) {
+    return this.repository
+      .listJourneys(
+        input.organizationId,
+        input.active,
+        input.page,
+        input.pageSize,
+        input.accessibleJourneyIds,
+      )
+      .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
+  }
+  getJourney(input: { organizationId: string; journeyId: string; active: boolean | undefined }) {
+    return this.repository.getJourneyDetail(input.organizationId, input.journeyId, input.active);
+  }
+  listServices(input: {
+    organizationId: string;
+    active: boolean | undefined;
+    page: number;
+    pageSize: number;
+  }) {
+    return this.repository
+      .listServices(input.organizationId, input.active, input.page, input.pageSize)
+      .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
+  }
+  getService(input: { organizationId: string; serviceId: string; active: boolean | undefined }) {
+    return this.repository.getServiceDetail(input.organizationId, input.serviceId, input.active);
+  }
+  listFields(input: {
+    organizationId: string;
+    active: boolean | undefined;
+    page: number;
+    pageSize: number;
+    accessibleJourneyIds: readonly string[];
+  }) {
+    return this.repository
+      .listFields(
+        input.organizationId,
+        input.active,
+        input.page,
+        input.pageSize,
+        input.accessibleJourneyIds,
+      )
+      .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
+  }
+  getField(input: {
+    organizationId: string;
+    fieldId: string;
+    active: boolean | undefined;
+    accessibleJourneyIds: readonly string[];
+  }) {
+    return this.repository.getFieldDetail(
+      input.organizationId,
+      input.fieldId,
+      input.active,
+      input.accessibleJourneyIds,
+    );
+  }
 
   async createJourney(input: {
     organizationId: string;

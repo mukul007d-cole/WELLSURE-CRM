@@ -1,6 +1,7 @@
 import { createPrismaClient } from '@falcon/database';
 
 import { defaultAuthConfig } from './auth/config.js';
+import { PrismaAdminRepository } from './admin/prisma-admin-repository.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
 import { parseEnv } from './env.js';
@@ -22,6 +23,7 @@ const server = buildServer({
   permissionRepository: new PrismaPermissionRepository(prisma as never),
   leadRepository: new PrismaLeadRepository(prisma as never),
   configurationRepository: new PrismaConfigurationRepository(prisma),
+  adminRepository: new PrismaAdminRepository(prisma),
   authConfig: { ...defaultAuthConfig, secureCookies: env.sessionCookieSecure },
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,
