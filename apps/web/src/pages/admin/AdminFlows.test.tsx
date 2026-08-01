@@ -71,7 +71,7 @@ describe('administration resource flows', () => {
           ...body,
           journeyId: params.id,
           fieldId: params.fieldId,
-        } as Record<string, unknown>;
+        };
         return HttpResponse.json(setting);
       }),
       http.delete('/api/v1/journeys/:id/fields/:fieldId', () => {

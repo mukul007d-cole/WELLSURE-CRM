@@ -8,6 +8,6 @@
       "dependsOn": ["^build"],
       "env": ["FALCON_POSTGRES_URL", "DOCKER_HOST"]
     },
-    "typecheck": { "dependsOn": ["^typecheck"] }
+    "typecheck": { "dependsOn": ["^build"] }
   }
 }
