@@ -9,7 +9,6 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
-import type { AdminJourney } from '../../types/domain';
 import {
   ActiveFilter,
   AdminHeader,

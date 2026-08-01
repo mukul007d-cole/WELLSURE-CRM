@@ -132,7 +132,7 @@ export async function loadAllPages<T>(
 ): Promise<T[]> {
   const items: T[] = [];
   let page = 1;
-  let total = 0;
+  let total: number;
   do {
     const result = await load(page, 100);
     items.push(...result.items);

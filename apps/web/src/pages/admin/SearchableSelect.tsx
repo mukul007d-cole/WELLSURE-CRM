@@ -28,24 +28,26 @@ export function SearchableSelect({
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    loadPage(page)
-      .then((result) => {
-        if (!cancelled) {
+    const run = async () => {
+      setLoading(true);
+      try{
+        const result = await loadPage(page);
+        if(!cancelled) {
           setOptions((current) =>
-            page === 1
-              ? result.items
-              : [
-                  ...current,
-                  ...result.items.filter((item) => !current.some((old) => old.id === item.id)),
-                ],
-          );
-          setTotal(result.total);
+          page === 1
+          ? result.items
+          : [
+            ...current,
+            ...result.items.filter((item) => !current.some((old) => old.id === item.id)),
+          ],
+        );
+        setTotal(result.total);
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } finally{
+        if(!cancelled) setLoading(false);
+      }
+    };
+    void run()
     return () => {
       cancelled = true;
     };

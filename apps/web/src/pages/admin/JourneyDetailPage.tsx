@@ -67,7 +67,7 @@ export function JourneyDetailPage() {
     mutationFn: () =>
       adminApi.deactivateStatus(deactivatingStatus?.id ?? '', {
         journeyId,
-        replacementStatusId: replacementStatusId || undefined,
+        ...(replacementStatusId ? { replacementStatusId } : {}),
       }),
     onSuccess: async () => {
       setDeactivatingStatus(null);

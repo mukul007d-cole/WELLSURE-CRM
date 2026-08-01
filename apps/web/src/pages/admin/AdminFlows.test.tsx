@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse, delay } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
 import { createSession, setCookieHeader } from '../../mocks/session';
@@ -66,8 +66,9 @@ describe('administration resource flows', () => {
         ),
       ),
       http.put('/api/v1/journeys/:id/fields/:fieldId', async ({ params, request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
         setting = {
-          ...(await request.json()),
+          ...body,
           journeyId: params.id,
           fieldId: params.fieldId,
         } as Record<string, unknown>;
