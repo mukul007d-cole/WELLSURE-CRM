@@ -4,7 +4,10 @@
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "dev": { "cache": false, "persistent": true },
     "lint": { "dependsOn": ["^lint"] },
-    "test": { "dependsOn": ["^build"] },
+    "test": {
+      "dependsOn": ["^build"],
+      "env": ["FALCON_POSTGRES_URL", "DOCKER_HOST"]
+    },
     "typecheck": { "dependsOn": ["^typecheck"] }
   }
 }

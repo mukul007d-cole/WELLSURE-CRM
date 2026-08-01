@@ -40,6 +40,54 @@ export interface EmailSender {
   sendPasswordReset(input: { to: string; token: string; expiresAt: Date }): Promise<void>;
 }
 
+export function preparePasswordReset(config: AuthConfig, now = new Date()) {
+  const token = createOpaqueToken();
+  const expiresAt = new Date(now.getTime() + config.resetTokenTtlMs);
+  return { token, tokenHash: hashOpaqueToken(token), expiresAt };
+}
+
+/** Issue a reset for a user already resolved inside a trusted admin flow. */
+export async function issuePasswordResetForKnownUser(input: {
+  repository: PasswordResetRepository;
+  audit: SecurityAuditWriter;
+  emailSender: EmailSender;
+  config: AuthConfig;
+  user: PasswordResetUserRecord;
+  actorUserId: string | null;
+  ipAddress?: string | null | undefined;
+  userAgent?: string | null | undefined;
+  now?: Date;
+}): Promise<{ tokenId: string }> {
+  const now = input.now ?? new Date();
+  const { token, tokenHash, expiresAt } = preparePasswordReset(input.config, now);
+  const record = await input.repository.createPasswordResetToken({
+    organizationId: input.user.organizationId,
+    userId: input.user.id,
+    tokenHash,
+    createdAt: now,
+    expiresAt,
+    usedAt: null,
+    ipAddress: input.ipAddress ?? null,
+    userAgent: input.userAgent ?? null,
+  });
+  await input.audit.writeSystemAudit({
+    organizationId: input.user.organizationId,
+    actorUserId: input.actorUserId,
+    entityType: 'password_reset_token',
+    entityId: record.id,
+    action: 'auth.password_reset_requested',
+    oldValue: null,
+    newValue: {
+      subjectUserId: input.user.id,
+      expiresAt: expiresAt.toISOString(),
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+    },
+  });
+  await input.emailSender.sendPasswordReset({ to: input.user.email, token, expiresAt });
+  return { tokenId: record.id };
+}
+
 export async function requestPasswordReset(input: {
   repository: PasswordResetRepository;
   audit: SecurityAuditWriter;
@@ -58,31 +106,16 @@ export async function requestPasswordReset(input: {
     normalizedEmail,
   );
   if (user?.active === true) {
-    const token = createOpaqueToken();
-    const expiresAt = new Date(now.getTime() + input.config.resetTokenTtlMs);
-    const record = await input.repository.createPasswordResetToken({
-      organizationId: input.organizationId,
-      userId: user.id,
-      tokenHash: hashOpaqueToken(token),
-      createdAt: now,
-      expiresAt,
-      usedAt: null,
-      ipAddress: input.ipAddress ?? null,
-      userAgent: input.userAgent ?? null,
-    });
-    await input.emailSender.sendPasswordReset({ to: user.email, token, expiresAt });
-    await input.audit.writeSystemAudit({
-      organizationId: input.organizationId,
+    await issuePasswordResetForKnownUser({
+      repository: input.repository,
+      audit: input.audit,
+      emailSender: input.emailSender,
+      config: input.config,
+      user,
       actorUserId: user.id,
-      entityType: 'password_reset_token',
-      entityId: record.id,
-      action: 'auth.password_reset_requested',
-      oldValue: null,
-      newValue: {
-        expiresAt: expiresAt.toISOString(),
-        ipAddress: input.ipAddress ?? null,
-        userAgent: input.userAgent ?? null,
-      },
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      now,
     });
   }
   return { accepted: true };

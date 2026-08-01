@@ -14,7 +14,10 @@ describe.runIf(shouldRunPostgresIntegration)('configuration safety against real 
     const database = await createPostgresDatabase();
     cleanup = database.cleanup;
     const migration = await readFile(
-      'packages/database/prisma/migrations/00000000000000_initial/migration.sql',
+      new URL(
+        '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
+        import.meta.url,
+      ),
       'utf8',
     );
     await database.sql.unsafe(migration);

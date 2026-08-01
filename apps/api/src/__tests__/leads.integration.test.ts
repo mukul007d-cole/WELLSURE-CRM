@@ -102,6 +102,7 @@ describe.runIf(shouldRunPostgresIntegration)('Lead/Seller core against real Post
       auth: auth(),
       leadRepository: repository,
       permissionRepository: permissionRepository({
+        journeys: [journeyA, journeyB],
         editableFields: [fieldB],
         visibleFields: [fieldB],
       }),
@@ -161,8 +162,12 @@ describe.skipIf(shouldRunPostgresIntegration)('Lead/Seller core against real Pos
 
 async function setupLeadSchema(sql: postgres.Sql): Promise<void> {
   await sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`;
-  await sql`CREATE TYPE IF NOT EXISTS "DataScope" AS ENUM ('SELF', 'TEAM', 'DEPARTMENT', 'ORGANIZATION')`;
-  await sql`CREATE TYPE IF NOT EXISTS "FieldAccessLevel" AS ENUM ('VIEW', 'EDIT')`;
+  await sql.unsafe(
+    `DO $$ BEGIN CREATE TYPE "DataScope" AS ENUM ('SELF', 'TEAM', 'DEPARTMENT', 'ORGANIZATION'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+  );
+  await sql.unsafe(
+    `DO $$ BEGIN CREATE TYPE "FieldAccessLevel" AS ENUM ('VIEW', 'EDIT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+  );
   await sql`CREATE TEMP TABLE organizations (id uuid PRIMARY KEY, name text NOT NULL)`;
   await sql`CREATE TEMP TABLE roles (id uuid NOT NULL, organization_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, active boolean NOT NULL, version integer NOT NULL, PRIMARY KEY (organization_id, id))`;
   await sql`CREATE TEMP TABLE users (id uuid NOT NULL, organization_id uuid NOT NULL, name text NOT NULL, email text NOT NULL, role_id uuid NOT NULL, department_id uuid, manager_id uuid, active boolean NOT NULL, PRIMARY KEY (organization_id, id))`;
@@ -292,7 +297,9 @@ async function counts(sql: postgres.Sql, leadId: string) {
 function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
   const client: PrismaLeadClient = {
     async $transaction<T>(work: (tx: any) => Promise<T>): Promise<T> {
-      return sql.begin(async () => work(client)) as Promise<T>;
+      return sql.begin(async (transaction) =>
+        work(createPrismaLikeClient(transaction as unknown as postgres.Sql)),
+      ) as Promise<T>;
     },
     journey: {
       async findUnique(args) {

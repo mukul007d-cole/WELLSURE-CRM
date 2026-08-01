@@ -13,6 +13,112 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       work(new PrismaConfigurationRepository(tx as FalconPrismaClient)),
     );
   }
+  async listJourneys(
+    org: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    accessibleJourneyIds: readonly string[],
+  ) {
+    const where = {
+      organizationId: org,
+      id: { in: [...accessibleJourneyIds] },
+      ...(active === undefined ? {} : { active }),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.journey.count({ where }),
+      this.prisma.journey.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        include: {
+          statuses: {
+            where: active === undefined ? {} : { active },
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
+        },
+      }),
+    ]);
+    return { total, items: items as ConfigRow[] };
+  }
+  getJourneyDetail(org: string, id: string, active?: boolean) {
+    return this.prisma.journey.findFirst({
+      where: { organizationId: org, id, ...(active === undefined ? {} : { active }) },
+      include: {
+        statuses: {
+          where: active === undefined ? {} : { active },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
+      },
+    }) as Promise<ConfigRow | null>;
+  }
+  async listServices(org: string, active: boolean | undefined, page: number, pageSize: number) {
+    const where = { organizationId: org, ...(active === undefined ? {} : { active }) };
+    const [total, items] = await Promise.all([
+      this.prisma.service.count({ where }),
+      this.prisma.service.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+    return { total, items: items as ConfigRow[] };
+  }
+  getServiceDetail(org: string, id: string, active?: boolean) {
+    return this.prisma.service.findFirst({
+      where: { organizationId: org, id, ...(active === undefined ? {} : { active }) },
+    }) as Promise<ConfigRow | null>;
+  }
+  async listFields(
+    org: string,
+    active: boolean | undefined,
+    page: number,
+    pageSize: number,
+    accessibleJourneyIds: readonly string[],
+  ) {
+    const where = { organizationId: org, ...(active === undefined ? {} : { active }) };
+    const include = {
+      settings: {
+        where: {
+          journeyId: { in: [...accessibleJourneyIds] },
+          ...(active === undefined ? {} : { active }),
+        },
+        orderBy: { journeyId: 'asc' as const },
+      },
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.field.count({ where }),
+      this.prisma.field.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        include,
+      }),
+    ]);
+    return { total, items: items as ConfigRow[] };
+  }
+  getFieldDetail(
+    org: string,
+    id: string,
+    active: boolean | undefined,
+    accessibleJourneyIds: readonly string[],
+  ) {
+    return this.prisma.field.findFirst({
+      where: { organizationId: org, id, ...(active === undefined ? {} : { active }) },
+      include: {
+        settings: {
+          where: {
+            journeyId: { in: [...accessibleJourneyIds] },
+            ...(active === undefined ? {} : { active }),
+          },
+          orderBy: { journeyId: 'asc' },
+        },
+      },
+    }) as Promise<ConfigRow | null>;
+  }
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
   }

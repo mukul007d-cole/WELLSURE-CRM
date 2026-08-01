@@ -19,19 +19,27 @@ HTTP transport.
 GET    /users
 POST   /users
 GET    /users/:id
-PATCH  /users/:id
-DELETE /users/:id                      -- deactivate, not hard delete
-GET    /users/:id/reports              -- downstream hierarchy
+PUT    /users/:id
+POST   /users/:id/deactivate            -- deactivate and revoke sessions
 
 GET    /roles
 POST   /roles
-PATCH  /roles/:id
+GET    /roles/:id
+PUT    /roles/:id
+POST   /roles/:id/deactivate            -- optional atomic replacementRoleId
 GET    /roles/:id/permissions
 PUT    /roles/:id/permissions
+GET    /roles/:id/journey-access
 PUT    /roles/:id/journey-access
+GET    /roles/:id/field-visibility
+PUT    /roles/:id/field-visibility
+
+GET    /permissions/catalog
 
 GET    /departments
 POST   /departments
+GET    /departments/:id
+PUT    /departments/:id
 ```
 
 ### Journeys, Statuses, Services
@@ -47,6 +55,7 @@ PATCH  /statuses/:id
 DELETE /statuses/:id                   -- requires lead-migration step
 
 GET    /services
+GET    /services/:id
 POST   /services
 PUT    /journeys/:id/services
 ```
@@ -56,6 +65,7 @@ The services mapping request is `{ action: "map" | "unmap", serviceId }`.
 ### Fields
 ```
 GET    /fields
+GET    /fields/:id
 POST   /fields
 PATCH  /fields/:id
 DELETE /fields/:id

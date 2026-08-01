@@ -8,6 +8,7 @@ import type { EmailSender, PasswordResetRepository } from '../auth/password-rese
 import type { LoginRepository } from '../auth/login.js';
 import type { SessionRepository } from '../auth/session.js';
 import type { ConfigurationRepository } from '../configuration/service.js';
+import type { AdminRepository } from '../admin/repository.js';
 import type { LeadRepository } from '../leads/service.js';
 import type { SellerReadRepository } from '../routes/leads.js';
 
@@ -18,6 +19,7 @@ export interface ServerDependencies {
   permissionRepository: PermissionRepository;
   leadRepository: LeadRepository & SellerReadRepository;
   configurationRepository: ConfigurationRepository;
+  adminRepository?: AdminRepository;
   authConfig: AuthConfig;
   corsOrigins: readonly string[];
   logLevel?: string;

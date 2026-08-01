@@ -9,7 +9,7 @@
     "dev": "tsc -p tsconfig.json && node --watch dist/main.js",
     "start": "node dist/main.js",
     "lint": "eslint src",
-    "test": "vitest run",
+    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
