@@ -6,10 +6,13 @@ Versioned under `/api/v1`. All endpoints enforce `docs/permissions/access-model.
 ```
 POST   /auth/login
 POST   /auth/logout
-POST   /auth/refresh
 GET    /auth/me
+POST   /auth/password-reset/request
+POST   /auth/password-reset/complete
 ```
-Provider TBD — see ADR-0005. Do not implement until resolved.
+These are the currently bound Phase 6 routes. `/auth/refresh` remains a
+documented target without a backing route function and is not exposed by the
+HTTP transport.
 
 ### Users, Roles, Departments
 ```
@@ -48,6 +51,8 @@ POST   /services
 PUT    /journeys/:id/services
 ```
 
+The services mapping request is `{ action: "map" | "unmap", serviceId }`.
+
 ### Fields
 ```
 GET    /fields
@@ -56,6 +61,7 @@ PATCH  /fields/:id
 DELETE /fields/:id
 GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
+PUT    /roles/:roleId/field-visibility/:fieldId -- body: { accessLevel }
 ```
 
 ### Leads
@@ -112,7 +118,11 @@ POST   /webhooks/accounting            -- fires on outcome_type = closed_won
 
 ## Standards
 
-- Errors: consistent JSON shape `{ error: { code, message, details? } }`
+- Errors: consistent JSON shape `{ error: string, details? }` — `error` is a
+  stable, machine-readable code (e.g. `not_found`, `forbidden`,
+  `validation_error`); `details` is optional structured context (e.g.
+  `{ fieldId }`). There is no separate `message` field; clients render their
+  own copy from the code (see `apps/web/src/lib/api-error.ts`).
 - Pagination: cursor or offset+limit, consistent across all list endpoints
 - List and count endpoints share identical access-filtering logic (see access model doc)
 - Rate limiting on auth endpoints specifically (lockout after repeated failed logins)

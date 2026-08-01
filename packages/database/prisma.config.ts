@@ -1,10 +1,13 @@
 import dotenv from 'dotenv';
-import { defineConfig, env } from 'prisma/config';
+import { defineConfig } from 'prisma/config';
 
 dotenv.config({ path: '../../.env', quiet: true });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: { path: 'prisma/migrations' },
-  datasource: { url: env('DATABASE_URL') },
+  datasource: {
+    // Client generation does not connect. Runtime/migration commands still receive DATABASE_URL.
+    url: process.env.DATABASE_URL ?? 'postgresql://generate:generate@localhost:5432/generate',
+  },
 });

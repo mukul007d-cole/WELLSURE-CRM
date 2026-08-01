@@ -43,6 +43,8 @@ interface UserRow {
   departmentId: string | null;
   managerId: string | null;
   passwordHash: string | null;
+  name?: string;
+  role?: { name: string };
 }
 
 type SessionRow = SessionRecord;
@@ -50,6 +52,7 @@ type PasswordResetTokenRow = PasswordResetTokenRecord;
 interface LoginAttemptRow extends LoginAttemptRecord {
   id: string;
 }
+type PrismaUserSnapshot = UserSnapshot & { name?: string; email: string; roleName?: string };
 
 export class PrismaAuthRepository
   implements LoginRepository, SessionRepository, PasswordResetRepository, SecurityAuditWriter
@@ -101,28 +104,36 @@ export class PrismaAuthRepository
     });
   }
 
-  async getUserSnapshot(userId: string, organizationId: string): Promise<UserSnapshot | null> {
+  async getUserSnapshot(
+    userId: string,
+    organizationId: string,
+  ): Promise<PrismaUserSnapshot | null> {
     const row = await this.prisma.user.findUnique({
       where: { organizationId_id: { organizationId, id: userId } },
       select: {
         id: true,
         organizationId: true,
+        name: true,
+        email: true,
         roleId: true,
+        role: { select: { name: true } },
         active: true,
         departmentId: true,
         managerId: true,
       },
     });
-    return row === null
-      ? null
-      : {
-          id: row.id,
-          organizationId: row.organizationId,
-          roleId: row.roleId,
-          active: row.active,
-          departmentId: row.departmentId,
-          managerId: row.managerId,
-        };
+    if (row === null) return null;
+    return {
+      id: row.id,
+      organizationId: row.organizationId,
+      roleId: row.roleId,
+      active: row.active,
+      departmentId: row.departmentId,
+      managerId: row.managerId,
+      ...(row.name === undefined ? {} : { name: row.name }),
+      email: row.email,
+      ...(row.role === undefined ? {} : { roleName: row.role.name }),
+    };
   }
 
   async getLoginAttempt(

@@ -10,3 +10,4 @@ coverage/
 .terraform/
 .terraform.lock.hcl
 packages/database/generated/
+packages/database/src/generated/
