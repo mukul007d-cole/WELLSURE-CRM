@@ -159,7 +159,7 @@ export interface SessionUser {
   roleName: string;
 }
 
-/** Flat error-code body — matches the real code, not endpoints.md's stale {code,message} shape. */
+/** Flat, machine-readable API error-code body. */
 export interface ApiErrorBody {
   error: string;
   details?: Record<string, unknown> | undefined;

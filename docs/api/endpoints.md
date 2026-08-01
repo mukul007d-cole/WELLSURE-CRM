@@ -6,10 +6,12 @@ Versioned under `/api/v1`. All endpoints enforce `docs/permissions/access-model.
 ```
 POST   /auth/login
 POST   /auth/logout
-POST   /auth/refresh
-GET    /auth/me
+POST   /auth/password-reset/request
+POST   /auth/password-reset/complete
 ```
-Provider TBD — see ADR-0005. Do not implement until resolved.
+These are the currently bound Phase 6 routes. `/auth/refresh` and `/auth/me`
+remain documented targets without backing route functions and are not exposed
+by the HTTP transport.
 
 ### Users, Roles, Departments
 ```
@@ -48,6 +50,8 @@ POST   /services
 PUT    /journeys/:id/services
 ```
 
+The services mapping request is `{ action: "map" | "unmap", serviceId }`.
+
 ### Fields
 ```
 GET    /fields
@@ -56,6 +60,7 @@ PATCH  /fields/:id
 DELETE /fields/:id
 GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
+PUT    /roles/:roleId/field-visibility/:fieldId -- body: { accessLevel }
 ```
 
 ### Leads

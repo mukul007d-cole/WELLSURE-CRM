@@ -7,6 +7,12 @@ export { issueSession, revokeSession, validateSession } from './auth/session.js'
 export { login } from './auth/login.js';
 export { completePasswordReset, requestPasswordReset } from './auth/password-reset.js';
 export { authenticateCookie } from './auth/middleware.js';
+export {
+  completePasswordResetRoute,
+  loginRoute,
+  logoutRoute,
+  requestPasswordResetRoute,
+} from './routes/auth.js';
 export { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 export { PrismaPermissionRepository } from './permissions/prisma-permission-repository.js';
 export { createLead, editLead, getLeadById, getSeller360, listSellers } from './routes/leads.js';
@@ -27,3 +33,4 @@ export * from './routes/configuration.js';
 export * from './configuration/service.js';
 export * from './configuration/errors.js';
 export * from './configuration/validation.js';
+export { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
