@@ -39,9 +39,9 @@ the Phase 0 documentation baseline or foundational Phase 1 work.
   rate-limit, and OpenAPI plugins. The Phase 6 implementation keeps the route
   functions transport-independent and places process startup in
   `apps/api/src/main.ts`.
-- **Implementation impact:** Closed. Endpoints with no backing route function,
-  notably `/auth/me`, remain follow-up application work rather than transport
-  bindings.
+- **Implementation impact:** Closed. `/auth/me` is bound for frontend session
+  restoration; endpoints that still have no backing route function remain
+  follow-up application work rather than transport bindings.
 - **Source:** identified while building the real `apps/web` frontend against
   the documented/verified route contract.
 

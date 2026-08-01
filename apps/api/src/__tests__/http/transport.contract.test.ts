@@ -31,6 +31,13 @@ describe('Fastify HTTP transport', () => {
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers['access-control-allow-origin']).toBe('http://localhost:5173');
 
+    const unauthenticatedProfile = await server.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+    });
+    expect(unauthenticatedProfile.statusCode).toBe(401);
+    expect(unauthenticatedProfile.json()).toEqual({ error: 'unauthenticated' });
+
     const denied = await server.inject({ method: 'GET', url: '/api/v1/leads' });
     expect(denied.statusCode).toBe(401);
     expect(denied.json()).toEqual({ error: 'unauthenticated' });

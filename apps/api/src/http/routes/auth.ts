@@ -46,6 +46,34 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
       );
     },
   );
+  server.get(
+    '/api/v1/auth/me',
+    {
+      preHandler: authenticate(deps),
+      schema: {
+        tags: ['auth'],
+        response: {
+          200: {
+            type: 'object',
+            required: ['id', 'organizationId', 'roleId', 'active', 'departmentId', 'managerId'],
+            properties: {
+              id: { type: 'string' },
+              organizationId: { type: 'string' },
+              roleId: { type: 'string' },
+              active: { type: 'boolean' },
+              departmentId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              managerId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              name: { type: 'string' },
+              email: { type: 'string' },
+              roleName: { type: 'string' },
+            },
+          },
+          401: errorSchema,
+        },
+      },
+    },
+    (request) => request.auth.user,
+  );
   server.post(
     '/api/v1/auth/password-reset/request',
     {

@@ -24,6 +24,7 @@ describe.runIf(shouldRunPostgresIntegration)(
       await setupAuthSchema(database.sql);
       await database.sql`CREATE TEMP TABLE transport_test_leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, name text NOT NULL)`;
       const organizationId = '11111111-1111-1111-1111-111111111111';
+      const journeyId = '22222222-2222-2222-2222-222222222222';
       const email = 'transport-user@example.test';
       const password = 'Synthetic-password-123!';
       const userId = await seedUser(database.sql, {
@@ -56,9 +57,9 @@ describe.runIf(shouldRunPostgresIntegration)(
           return { module: 'leads', action: 'view', scope: 'ORGANIZATION' };
         },
         async listAccessibleJourneyIds() {
-          return [];
+          return [journeyId];
         },
-        async listFieldVisibility() {
+        async getFieldVisibility() {
           return [];
         },
         async hasJourneyAccess() {
@@ -130,6 +131,18 @@ describe.runIf(shouldRunPostgresIntegration)(
         const { authApi, sellersApi } = (await import(clientUrl)) as any;
         await expect(authApi.login(organizationId, email, password)).resolves.toEqual({ userId });
         expect(cookie).toMatch(/^falcon_session=/);
+        const expectedUser = {
+          id: userId,
+          organizationId,
+          roleId: user!.role_id,
+          active: true,
+          departmentId: null,
+          managerId: null,
+        };
+        await expect(authApi.me()).resolves.toEqual(expectedUser);
+        // A second call with the same cookie models AuthContext's mount-time
+        // session restoration after a hard refresh.
+        await expect(authApi.me()).resolves.toEqual(expectedUser);
         await expect(sellersApi.list({ page: 1, pageSize: 10 })).resolves.toEqual({
           total: 1,
           rows: [expect.objectContaining({ id: lead!.id, name: 'Synthetic Transport Seller' })],

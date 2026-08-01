@@ -6,12 +6,13 @@ Versioned under `/api/v1`. All endpoints enforce `docs/permissions/access-model.
 ```
 POST   /auth/login
 POST   /auth/logout
+GET    /auth/me
 POST   /auth/password-reset/request
 POST   /auth/password-reset/complete
 ```
-These are the currently bound Phase 6 routes. `/auth/refresh` and `/auth/me`
-remain documented targets without backing route functions and are not exposed
-by the HTTP transport.
+These are the currently bound Phase 6 routes. `/auth/refresh` remains a
+documented target without a backing route function and is not exposed by the
+HTTP transport.
 
 ### Users, Roles, Departments
 ```
