@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { configApi, sellersApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { DEFAULT_PAGE_SIZE } from '../../lib/constants';
@@ -16,6 +16,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { JourneyTabs } from './JourneyTabs';
 
 export function SellerListPage() {
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const journeyId = params.get('journeyId') ?? undefined;
   const statusId = params.get('statusId') ?? undefined;
@@ -84,6 +85,9 @@ export function SellerListPage() {
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-4 border-b border-line bg-surface px-4 py-5 sm:px-6">
+        {(location.state as { forbiddenFrom?: string } | null)?.forbiddenFrom ? (
+          <Banner tone="error">You do not have permission to open that administration page.</Banner>
+        ) : null}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-display text-2xl font-bold text-ink">Sellers</h2>

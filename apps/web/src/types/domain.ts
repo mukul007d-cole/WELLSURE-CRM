@@ -159,6 +159,67 @@ export interface SessionUser {
   roleName: string;
 }
 
+export interface CapabilitySet {
+  permissions: Array<{ module: string; action: string; scope: DataScope }>;
+  journeyIds: string[];
+  fieldVisibility: Array<{ fieldId: string; accessLevel: FieldAccessLevel }>;
+}
+export interface Page<T> {
+  page: number;
+  pageSize: number;
+  total: number;
+  items: T[];
+}
+export interface AdminJourney {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  statuses?: Status[];
+  version?: number;
+}
+export interface AdminField {
+  id: string;
+  key: string;
+  name: string;
+  fieldType: string;
+  validationRule: { options?: string[]; [key: string]: unknown } | null;
+  section: string | null;
+  editMode: string;
+  source: string;
+  active: boolean;
+}
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  roleId: string;
+  departmentId: string | null;
+  managerId: string | null;
+  active: boolean;
+}
+export interface AdminRole {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  version: number;
+  permissions?: CapabilitySet['permissions'];
+  journeyAccess?: Array<{ journeyId: string }>;
+  fieldVisibility?: CapabilitySet['fieldVisibility'];
+}
+export interface Department {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  version: number;
+}
+export interface PermissionCatalog {
+  modules: Array<{ module: string; label: string; actions: string[] }>;
+  supportedScopes: DataScope[];
+}
+
 /** Flat, machine-readable API error-code body. */
 export interface ApiErrorBody {
   error: string;

@@ -5,6 +5,14 @@ import {
   createJourney,
   createService,
   createStatus,
+  updateJourney,
+  deactivateJourney,
+  updateStatus,
+  reorderStatuses,
+  updateField,
+  readJourneyFields,
+  upsertFieldJourneySetting,
+  unmapFieldJourneySetting,
   deactivateField,
   deactivateService,
   deactivateStatus,
@@ -29,7 +37,7 @@ export function registerConfigurationRoutes(
     permissionRepository: deps.permissionRepository,
     configurationRepository: deps.configurationRepository,
   });
-  const bind = (method: 'POST' | 'PUT' | 'DELETE', path: string, handler: Handler) => {
+  const bind = (method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, handler: Handler) => {
     server.route({
       method,
       url: path,
@@ -72,6 +80,12 @@ export function registerConfigurationRoutes(
   bind('POST', '/api/v1/journeys', (r, b) =>
     createJourney({ ...base(r), key: String(b.key), name: String(b.name) }),
   );
+  bind('PATCH', '/api/v1/journeys/:journeyId', (r, b, p) =>
+    updateJourney({ ...base(r), journeyId: String(p.journeyId), name: String(b.name) }),
+  );
+  bind('DELETE', '/api/v1/journeys/:journeyId', (r, _b, p) =>
+    deactivateJourney({ ...base(r), journeyId: String(p.journeyId) }),
+  );
   bind('POST', '/api/v1/journeys/:journeyId/statuses', (r, b, p) =>
     createStatus({
       ...base(r),
@@ -91,6 +105,24 @@ export function registerConfigurationRoutes(
       ...(typeof b.replacementStatusId === 'string'
         ? { replacementStatusId: b.replacementStatusId }
         : {}),
+    }),
+  );
+  bind('PATCH', '/api/v1/statuses/:statusId', (r, b, p) =>
+    updateStatus({
+      ...base(r),
+      journeyId: String(b.journeyId),
+      statusId: String(p.statusId),
+      name: String(b.name),
+      outcomeType: String(b.outcomeType),
+      behaviorType: String(b.behaviorType),
+      sortOrder: Number(b.sortOrder),
+    }),
+  );
+  bind('PUT', '/api/v1/journeys/:journeyId/status-order', (r, b, p) =>
+    reorderStatuses({
+      ...base(r),
+      journeyId: String(p.journeyId),
+      statusIds: Array.isArray(b.statusIds) ? b.statusIds.map(String) : [],
     }),
   );
   bind('POST', '/api/v1/services', (r, b) =>
@@ -120,6 +152,45 @@ export function registerConfigurationRoutes(
   );
   bind('DELETE', '/api/v1/fields/:fieldId', (r, _b, p) =>
     deactivateField({ ...base(r), fieldId: String(p.fieldId) }),
+  );
+  bind('PATCH', '/api/v1/fields/:fieldId', (r, b, p) =>
+    updateField({
+      ...base(r),
+      fieldId: String(p.fieldId),
+      name: String(b.name),
+      fieldType: String(b.fieldType),
+      ...(b.validationRule === undefined ? {} : { validationRule: b.validationRule }),
+      ...(typeof b.section === 'string' || b.section === null ? { section: b.section } : {}),
+      editMode: String(b.editMode),
+      source: String(b.source),
+    }),
+  );
+  server.get(
+    '/api/v1/journeys/:journeyId/fields',
+    { preHandler: authenticate(deps), schema: { tags: ['configuration'] } },
+    async (r, reply) =>
+      sendRouteResult(
+        reply,
+        await readJourneyFields({ ...base(r), journeyId: String((r.params as Json).journeyId) }),
+      ),
+  );
+  bind('PUT', '/api/v1/journeys/:journeyId/fields/:fieldId', (r, b, p) =>
+    upsertFieldJourneySetting({
+      ...base(r),
+      journeyId: String(p.journeyId),
+      fieldId: String(p.fieldId),
+      requirement: String(b.requirement),
+      ...(typeof b.requiredFromStatusId === 'string' || b.requiredFromStatusId === null
+        ? { requiredFromStatusId: b.requiredFromStatusId }
+        : {}),
+    }),
+  );
+  bind('DELETE', '/api/v1/journeys/:journeyId/fields/:fieldId', (r, _b, p) =>
+    unmapFieldJourneySetting({
+      ...base(r),
+      journeyId: String(p.journeyId),
+      fieldId: String(p.fieldId),
+    }),
   );
   bind('PUT', '/api/v1/journeys/:journeyId/services', (r, b, p) => {
     const input = { ...base(r), journeyId: String(p.journeyId), serviceId: String(b.serviceId) };

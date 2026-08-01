@@ -118,6 +118,100 @@ export async function createJourney(input: {
     201,
   );
 }
+export async function updateJourney(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+  name: string;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.journeys,
+    'edit',
+    input.journeyId,
+    (service) =>
+      service.updateJourney({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
+        name: input.name,
+      }),
+    200,
+  );
+}
+export async function deactivateJourney(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.journeys,
+    'deactivate',
+    input.journeyId,
+    (service) =>
+      service.deactivateJourney({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
+      }),
+    200,
+  );
+}
+export async function updateStatus(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+  statusId: string;
+  name: string;
+  outcomeType: string;
+  behaviorType: string;
+  sortOrder: number;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.statuses,
+    'edit',
+    input.journeyId,
+    (service) =>
+      service.updateStatus({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
+        statusId: input.statusId,
+        name: input.name,
+        outcomeType: input.outcomeType,
+        behaviorType: input.behaviorType,
+        sortOrder: input.sortOrder,
+      }),
+    200,
+  );
+}
+export async function reorderStatuses(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+  statusIds: string[];
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.statuses,
+    'edit',
+    input.journeyId,
+    (service) =>
+      service.reorderStatuses({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
+        statusIds: input.statusIds,
+      }),
+    200,
+  );
+}
 export async function deactivateStatus(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
@@ -270,6 +364,113 @@ export async function deactivateField(input: {
       service.deactivateField({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
+        fieldId: input.fieldId,
+      }),
+    200,
+  );
+}
+export async function updateField(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  fieldId: string;
+  name: string;
+  fieldType: string;
+  validationRule?: unknown;
+  section?: string | null;
+  editMode: string;
+  source: string;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.fields,
+    'edit',
+    undefined,
+    (service) =>
+      service.updateField({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        fieldId: input.fieldId,
+        name: input.name,
+        fieldType: input.fieldType,
+        ...(input.validationRule === undefined ? {} : { validationRule: input.validationRule }),
+        ...(input.section === undefined ? {} : { section: input.section }),
+        editMode: input.editMode,
+        source: input.source,
+      }),
+    200,
+  );
+}
+export async function readJourneyFields(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+}): Promise<ConfigurationRouteResult> {
+  const decision = await resolveAuthorization({
+    repository: input.permissionRepository,
+    request: {
+      organizationId: input.auth.user.organizationId,
+      userId: input.auth.user.id,
+      module: 'fields',
+      action: 'view',
+      journeyId: input.journeyId,
+    },
+  });
+  if (!decision.allowed) return { status: 403, body: { error: 'forbidden' } };
+  return {
+    status: 200,
+    body: await new ConfigurationService(input.configurationRepository).listJourneyFieldSettings({
+      organizationId: input.auth.user.organizationId,
+      journeyId: input.journeyId,
+    }),
+  };
+}
+export async function upsertFieldJourneySetting(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+  fieldId: string;
+  requirement: string;
+  requiredFromStatusId?: string | null;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.fieldJourneySettings,
+    'edit',
+    input.journeyId,
+    (service) =>
+      service.upsertFieldJourneySetting({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
+        fieldId: input.fieldId,
+        requirement: input.requirement,
+        ...(input.requiredFromStatusId === undefined
+          ? {}
+          : { requiredFromStatusId: input.requiredFromStatusId }),
+      }),
+    200,
+  );
+}
+export async function unmapFieldJourneySetting(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  journeyId: string;
+  fieldId: string;
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.fieldJourneySettings,
+    'edit',
+    input.journeyId,
+    (service) =>
+      service.deleteFieldJourneySetting({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        journeyId: input.journeyId,
         fieldId: input.fieldId,
       }),
     200,

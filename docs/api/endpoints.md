@@ -7,6 +7,7 @@ Versioned under `/api/v1`. All endpoints enforce `docs/permissions/access-model.
 POST   /auth/login
 POST   /auth/logout
 GET    /auth/me
+GET    /auth/capabilities              -- caller's own effective grants; authenticated without role-config view permission
 POST   /auth/password-reset/request
 POST   /auth/password-reset/complete
 ```
@@ -48,6 +49,7 @@ GET    /journeys
 POST   /journeys
 PATCH  /journeys/:id
 DELETE /journeys/:id
+PUT    /journeys/:id/status-order      -- body: complete ordered statusIds array; atomic
 
 GET    /journeys/:id/statuses
 POST   /journeys/:id/statuses
@@ -71,6 +73,7 @@ PATCH  /fields/:id
 DELETE /fields/:id
 GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
+DELETE /journeys/:id/fields/:fieldId   -- semantic unmap/deactivate
 PUT    /roles/:roleId/field-visibility/:fieldId -- body: { accessLevel }
 ```
 
@@ -147,6 +150,11 @@ Configuration endpoints operate on tenant-scoped IDs/keys and never depend on We
 - Statuses: create, edit, deactivate. Deactivation is blocked while active process instances use the Status unless the request supplies a replacement Status in the same Journey. Reassignment-assisted deactivation writes both one `system_audit_logs` row for the builder change and one `activity_logs` `status_change` row per affected lead.
 - Services: create, edit, deactivate, and Journey-to-Service map/unmap. Services are not hard-deleted; Journey-to-Service unmapping is a real delete of the mapping row with system audit history.
 - Fields: create, edit, deactivate. Field values already stored on leads are preserved. Field-to-Journey setting and field-visibility rows are mapping rows and are deleted on unmap/revoke with system audit history.
+- Select Field definitions store their configurable choices as
+  `validationRule.options: string[]`. Option labels are configuration data;
+  clients must not branch on a Field key or name. Unknown future Field types
+  remain readable as configuration and require an explicitly documented
+  renderer before they become editable controls.
 - Field visibility: uses the existing `field_visibility` allow-list contract consumed by the permission engine. No separate visibility evaluator exists in the API.
 
 ### Mapping row deletion rule

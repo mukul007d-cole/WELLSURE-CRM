@@ -18,7 +18,10 @@ interface PrismaPermissionClient {
     findMany(args: unknown): Promise<UserRow[]>;
   };
   role: { findUnique(args: unknown): Promise<RoleRow | null> };
-  rolePermission: { findUnique(args: unknown): Promise<RolePermissionRow | null> };
+  rolePermission: {
+    findUnique(args: unknown): Promise<RolePermissionRow | null>;
+    findMany(args: unknown): Promise<RolePermissionRow[]>;
+  };
   roleJourneyAccess: {
     findUnique(args: unknown): Promise<JourneyAccessRow | null>;
     findMany(args: unknown): Promise<JourneyAccessRow[]>;
@@ -106,6 +109,14 @@ export class PrismaPermissionRepository implements PermissionRepository {
     return row === null ? null : { module: row.module, action: row.action, scope: row.scope };
   }
 
+  async listRolePermissions(input: { roleId: string; organizationId: string }) {
+    return this.prisma.rolePermission.findMany({
+      where: input,
+      select: { module: true, action: true, scope: true },
+      orderBy: [{ module: 'asc' }, { action: 'asc' }],
+    });
+  }
+
   async hasJourneyAccess(input: {
     roleId: string;
     organizationId: string;
@@ -140,6 +151,14 @@ export class PrismaPermissionRepository implements PermissionRepository {
         fieldId: { in: [...input.fieldIds] },
       },
       select: { fieldId: true, accessLevel: true },
+    });
+  }
+
+  async listFieldVisibility(input: { roleId: string; organizationId: string }) {
+    return this.prisma.fieldVisibility.findMany({
+      where: input,
+      select: { fieldId: true, accessLevel: true },
+      orderBy: { fieldId: 'asc' },
     });
   }
 

@@ -5,6 +5,7 @@ import {
   createField,
   createJourney,
   deactivateStatus,
+  reorderStatuses,
   upsertFieldVisibility,
 } from '../routes/configuration.js';
 import {
@@ -148,6 +149,36 @@ describe('configuration engine API', () => {
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'invalid',
+      source: 'manual',
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('reorders a complete status list atomically and audits every changed row', async () => {
+    const repository = new MemoryConfigurationRepository();
+    const response = await reorderStatuses({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      journeyId,
+      statusIds: [replacementStatusId, statusId],
+    });
+    expect(response.status).toBe(200);
+    expect(repository.rows.statuses.get(replacementStatusId)?.sortOrder).toBe(0);
+    expect(repository.rows.statuses.get(statusId)?.sortOrder).toBe(1);
+    expect(repository.systemAudits.filter((audit) => audit.action === 'reorder')).toHaveLength(2);
+  });
+
+  it('requires unique non-blank options for select Fields', async () => {
+    const response = await createField({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: new MemoryConfigurationRepository(),
+      key: 'test_select',
+      name: 'Test Select',
+      fieldType: 'select',
+      validationRule: { options: ['One', 'One'] },
+      editMode: 'manual',
       source: 'manual',
     });
     expect(response.status).toBe(400);
