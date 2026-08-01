@@ -20,7 +20,7 @@ export async function bootstrapFirstAdmin(input: {
   const { token: opaqueToken, tokenHash, expiresAt } = preparePasswordReset(input.authConfig, now);
   const email = text(input.email, 'email').toLowerCase();
   const result = await input.prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.organizationId);
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.organizationId);
     if (!(await tx.organization.findUnique({ where: { id: input.organizationId } })))
       throw new AdminError('not_found', 'organization not found');
     if (await tx.user.count({ where: { organizationId: input.organizationId } }))

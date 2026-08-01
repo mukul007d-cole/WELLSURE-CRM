@@ -14,15 +14,21 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
     const db = await createAdminPostgres();
     cleanup = db.cleanup;
     const migration = await readFile(
-      'packages/database/prisma/migrations/00000000000000_initial/migration.sql',
+      new URL(
+        '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
+        import.meta.url,
+      ),
       'utf8',
     );
-    await db.prisma.$executeRawUnsafe(migration);
+    await db.sql.unsafe(migration);
     const authMigration = await readFile(
-      'packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
+      new URL(
+        '../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
+        import.meta.url,
+      ),
       'utf8',
     );
-    await db.prisma.$executeRawUnsafe(authMigration);
+    await db.sql.unsafe(authMigration);
     const organization = await db.prisma.organization.create({
       data: { name: 'Synthetic Organization' },
     });

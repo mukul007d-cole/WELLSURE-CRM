@@ -223,7 +223,8 @@ export class PrismaAdminRepository implements AdminRepository {
   }
   replacePermissions(org: string, actor: string, roleId: string, rows: PermissionInput[]) {
     return this.prisma.$transaction(async (tx) => {
-      await lockRole(tx as Tx, org, roleId);
+      const targetRole = await lockRole(tx as Tx, org, roleId);
+      if (!targetRole.active) throw new AdminError('conflict', 'cannot edit an inactive role');
       const old = await tx.rolePermission.findMany({
         where: { organizationId: org, roleId },
         select: permissionSelect,
@@ -231,13 +232,18 @@ export class PrismaAdminRepository implements AdminRepository {
       });
       const retainsEdit = rows.some((r) => r.module === 'roles_permissions' && r.action === 'edit');
       const [targetUsers, otherAdministrators] = await Promise.all([
-        tx.user.count({ where: { organizationId: org, active: true, roleId } }),
+        tx.user.count({
+          where: { organizationId: org, active: true, roleId, role: { active: true } },
+        }),
         tx.user.count({
           where: {
             organizationId: org,
             active: true,
             roleId: { not: roleId },
-            role: { permissions: { some: { module: 'roles_permissions', action: 'edit' } } },
+            role: {
+              active: true,
+              permissions: { some: { module: 'roles_permissions', action: 'edit' } },
+            },
           },
         }),
       ]);

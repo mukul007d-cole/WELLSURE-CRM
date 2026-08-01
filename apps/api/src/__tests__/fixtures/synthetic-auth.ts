@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import postgres from 'postgres';
@@ -24,8 +25,22 @@ export async function createPostgresDatabase(): Promise<{
   cleanup: () => Promise<void>;
 }> {
   if (directPostgresUrl !== undefined) {
-    const sql = postgres(directPostgresUrl, { max: 1 });
-    return { sql, cleanup: () => sql.end() };
+    const schema = `falcon_test_${randomUUID().replaceAll('-', '')}`;
+    const admin = postgres(directPostgresUrl, { max: 1 });
+    await admin.unsafe(`CREATE SCHEMA "${schema}"`);
+    const separator = directPostgresUrl.includes('?') ? '&' : '?';
+    const sql = postgres(
+      `${directPostgresUrl}${separator}options=${encodeURIComponent(`-c search_path=${schema}`)}`,
+      { max: 1 },
+    );
+    return {
+      sql,
+      cleanup: async () => {
+        await sql.end();
+        await admin.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+        await admin.end();
+      },
+    };
   }
 
   const container = await new PostgreSqlContainer('postgres:17.5-alpine3.21').start();
