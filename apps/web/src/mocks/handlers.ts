@@ -20,6 +20,8 @@ import {
 } from './session';
 
 const API_BASE = '/api/v1';
+const MOCK_ROLES = USERS.map((user) => ({ id: user.roleId, key: user.roleId.replaceAll('-', '_'), name: user.roleName, active: true, version: 1, permissions: user.permissions, journeyAccess: JOURNEYS.map((j) => ({ journeyId: j.id })), fieldVisibility: FIELDS.filter((f) => !user.restrictedFieldIds.includes(f.id)).map((f) => ({ fieldId: f.id, accessLevel: 'EDIT' })) }));
+const MOCK_DEPARTMENTS = [{ id: 'department-synthetic', key: 'synthetic_unit', name: 'Synthetic unit', active: true, version: 1 }];
 
 function errorBody(error: string, details?: Record<string, unknown>) {
   return { error, ...(details ? { details } : {}) };
@@ -154,11 +156,16 @@ export const handlers = [
       roleName: user.roleName,
     });
   }),
+  http.get(`${API_BASE}/auth/capabilities`, () => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    return HttpResponse.json({ permissions: user.permissions, journeyIds: JOURNEYS.map((x) => x.id), fieldVisibility: FIELDS.filter((x) => !user.restrictedFieldIds.includes(x.id)).map((x) => ({ fieldId: x.id, accessLevel: 'EDIT' })) });
+  }),
 
-  http.get(`${API_BASE}/journeys`, async () => {
+  http.get(`${API_BASE}/journeys`, async ({ request }) => {
     await delay(250);
     if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    return HttpResponse.json(JOURNEYS);
+    return new URL(request.url).searchParams.has('pageSize') ? HttpResponse.json({ page: 1, pageSize: 25, total: JOURNEYS.length, items: JOURNEYS.map((j) => ({ ...j, active: j.isActive, statuses: STATUSES.filter((s) => s.journeyId === j.id) })) }) : HttpResponse.json(JOURNEYS);
   }),
 
   http.get(`${API_BASE}/journeys/:id/statuses`, async ({ params }) => {
@@ -167,12 +174,12 @@ export const handlers = [
     return HttpResponse.json(STATUSES.filter((status) => status.journeyId === params.id));
   }),
 
-  http.get(`${API_BASE}/fields`, async () => {
+  http.get(`${API_BASE}/fields`, async ({ request }) => {
     await delay(200);
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
     const visible = FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id));
-    return HttpResponse.json(visible);
+    return new URL(request.url).searchParams.has('pageSize') ? HttpResponse.json({ page: 1, pageSize: 25, total: visible.length, items: visible.map((f) => ({ id: f.id, key: f.key, name: f.label, fieldType: f.type, validationRule: f.options ? { options: f.options } : null, section: null, editMode: 'manual', source: 'manual', active: true })) }) : HttpResponse.json(visible);
   }),
 
   http.get(`${API_BASE}/services`, async () => {
@@ -180,6 +187,15 @@ export const handlers = [
     if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
     return HttpResponse.json(SERVICES);
   }),
+  http.get(`${API_BASE}/permissions/catalog`, () => HttpResponse.json({ modules: [{ module: 'users', label: 'Users & Departments', actions: ['view','create','edit','deactivate'] }, { module: 'roles_permissions', label: 'Roles & Permissions', actions: ['view','create','edit'] }, { module: 'fields', label: 'Fields', actions: ['view','create','edit','delete'] }, { module: 'journeys_statuses', label: 'Journeys & Statuses', actions: ['view','create','edit','delete'] }], supportedScopes: ['SELF','TEAM','DEPARTMENT','ORGANIZATION'] })),
+  http.get(`${API_BASE}/roles`, () => HttpResponse.json({ page: 1, pageSize: 25, total: MOCK_ROLES.length, items: MOCK_ROLES })),
+  http.get(`${API_BASE}/roles/:id`, ({ params }) => { const row = MOCK_ROLES.find((x) => x.id === params.id); return row ? HttpResponse.json(row) : HttpResponse.json(errorBody('not_found'), { status: 404 }); }),
+  http.get(`${API_BASE}/users`, () => HttpResponse.json({ page: 1, pageSize: 25, total: USERS.length, items: USERS.map((user) => ({ id: user.id, name: user.name, email: user.email, roleId: user.roleId, roleName: user.roleName, departmentId: null, managerId: null, active: true })) })),
+  http.get(`${API_BASE}/departments`, () => HttpResponse.json({ page: 1, pageSize: 25, total: MOCK_DEPARTMENTS.length, items: MOCK_DEPARTMENTS })),
+  http.put(`${API_BASE}/roles/:id/permissions`, async ({ request }) => HttpResponse.json(await request.json())),
+  http.put(`${API_BASE}/roles/:id/journey-access`, async ({ request }) => HttpResponse.json(await request.json())),
+  http.put(`${API_BASE}/roles/:id/field-visibility`, async ({ request }) => HttpResponse.json(await request.json())),
+  http.post(`${API_BASE}/users/:id/deactivate`, ({ params }) => HttpResponse.json({ id: params.id, active: false })),
 
   http.get(`${API_BASE}/leads`, async ({ request }) => {
     await delay(550);

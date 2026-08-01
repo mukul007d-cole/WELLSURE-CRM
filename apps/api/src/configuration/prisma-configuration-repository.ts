@@ -119,6 +119,13 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       },
     }) as Promise<ConfigRow | null>;
   }
+  listJourneyFieldSettings(org: string, journeyId: string) {
+    return this.prisma.fieldJourneySetting.findMany({
+      where: { organizationId: org, journeyId, active: true },
+      orderBy: [{ fieldId: 'asc' }],
+      include: { field: true },
+    }) as Promise<ConfigRow[]>;
+  }
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
   }

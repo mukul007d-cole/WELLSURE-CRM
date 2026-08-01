@@ -6,6 +6,7 @@ import {
   fieldRequirements,
   fieldSources,
   requireConfigKey,
+  requireFieldValidationRule,
   requireNonBlank,
   requireNonNegativeInteger,
   requireOneOf,
@@ -59,6 +60,7 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     active: boolean | undefined,
     accessibleJourneyIds: readonly string[],
   ): Promise<ConfigRow | null>;
+  listJourneyFieldSettings(organizationId: string, journeyId: string): Promise<ConfigRow[]>;
   createJourney(input: Record<string, unknown>): Promise<ConfigRow>;
   updateJourney(
     organizationId: string,
@@ -359,6 +361,63 @@ export class ConfigurationService {
     });
   }
 
+  async updateStatus(input: {
+    organizationId: string;
+    actorUserId: string;
+    journeyId: string;
+    statusId: string;
+    name: string;
+    outcomeType: string;
+    behaviorType: string;
+    sortOrder: number;
+  }) {
+    return this.repository.transaction(async (tx) => {
+      const oldValue = await requireFound(tx.findStatus(input.organizationId, input.statusId));
+      if (oldValue.journeyId !== input.journeyId)
+        throw new ConfigurationError('not_found', 'configuration record not found');
+      const row = await requireFound(
+        tx.updateStatus(input.organizationId, input.statusId, {
+          name: requireNonBlank(input.name, 'status name'),
+          outcomeType: requireOneOf(input.outcomeType, statusOutcomeTypes, 'outcome type'),
+          behaviorType: requireOneOf(input.behaviorType, statusBehaviorTypes, 'behavior type'),
+          sortOrder: requireNonNegativeInteger(input.sortOrder, 'sort order'),
+          updatedById: input.actorUserId,
+        }),
+      );
+      await tx.writeSystemAudit(audit(input, 'status', input.statusId, 'edit', oldValue, row));
+      return row;
+    });
+  }
+
+  async reorderStatuses(input: {
+    organizationId: string;
+    actorUserId: string;
+    journeyId: string;
+    statusIds: string[];
+  }) {
+    if (new Set(input.statusIds).size !== input.statusIds.length)
+      throw new ConfigurationError('validation_error', 'statusIds must be unique');
+    return this.repository.transaction(async (tx) => {
+      const current = await Promise.all(
+        input.statusIds.map((id) => requireFound(tx.findStatus(input.organizationId, id))),
+      );
+      if (current.some((row) => row.journeyId !== input.journeyId))
+        throw new ConfigurationError('validation_error', 'all statuses must belong to the journey');
+      const rows: ConfigRow[] = [];
+      for (const [sortOrder, oldValue] of current.entries()) {
+        const row = await requireFound(
+          tx.updateStatus(input.organizationId, oldValue.id, {
+            sortOrder,
+            updatedById: input.actorUserId,
+          }),
+        );
+        await tx.writeSystemAudit(audit(input, 'status', oldValue.id, 'reorder', oldValue, row));
+        rows.push(row);
+      }
+      return rows;
+    });
+  }
+
   async createService(input: {
     organizationId: string;
     actorUserId: string;
@@ -425,7 +484,7 @@ export class ConfigurationService {
         key: requireConfigKey(input.key),
         name: requireNonBlank(input.name, 'field name'),
         fieldType: requireNonBlank(input.fieldType, 'field type'),
-        validationRule: input.validationRule ?? null,
+        validationRule: requireFieldValidationRule(input.fieldType, input.validationRule),
         section: input.section ?? null,
         editMode: requireOneOf(input.editMode, fieldEditModes, 'edit mode'),
         source: requireOneOf(input.source, fieldSources, 'source'),
@@ -457,6 +516,39 @@ export class ConfigurationService {
       await tx.writeSystemAudit(audit(input, 'field', input.fieldId, 'deactivate', oldValue, row));
       return row;
     });
+  }
+
+  async updateField(input: {
+    organizationId: string;
+    actorUserId: string;
+    fieldId: string;
+    name: string;
+    fieldType: string;
+    validationRule?: unknown;
+    section?: string | null;
+    editMode: string;
+    source: string;
+  }) {
+    return this.repository.transaction(async (tx) => {
+      const oldValue = await requireFound(tx.findField(input.organizationId, input.fieldId));
+      const row = await requireFound(
+        tx.updateField(input.organizationId, input.fieldId, {
+          name: requireNonBlank(input.name, 'field name'),
+          fieldType: requireNonBlank(input.fieldType, 'field type'),
+          validationRule: requireFieldValidationRule(input.fieldType, input.validationRule),
+          section: input.section ?? null,
+          editMode: requireOneOf(input.editMode, fieldEditModes, 'edit mode'),
+          source: requireOneOf(input.source, fieldSources, 'source'),
+          updatedById: input.actorUserId,
+        }),
+      );
+      await tx.writeSystemAudit(audit(input, 'field', input.fieldId, 'edit', oldValue, row));
+      return row;
+    });
+  }
+
+  listJourneyFieldSettings(input: { organizationId: string; journeyId: string }) {
+    return this.repository.listJourneyFieldSettings(input.organizationId, input.journeyId);
   }
 
   async mapJourneyService(input: {

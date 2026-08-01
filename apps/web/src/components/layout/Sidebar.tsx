@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import { useAuth } from '../../app/AuthContext';
 
 interface NavItem {
   label: string;
@@ -43,6 +44,13 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onNavigate }: SidebarProps) {
+  const { can } = useAuth();
+  const adminItems: NavItem[] = [
+    ...(can('journeys_statuses', 'view') ? [{ label: 'Journeys', to: '/admin/journeys', icon: <Icon d="M4 6h16M4 12h12M4 18h8" /> }] : []),
+    ...(can('fields', 'view') ? [{ label: 'Fields', to: '/admin/fields', icon: <Icon d="M5 5h14v14H5z" /> }] : []),
+    ...(can('users', 'view') ? [{ label: 'Users', to: '/admin/users', icon: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8" /> }, { label: 'Departments', to: '/admin/departments', icon: <Icon d="M4 21V7l8-4 8 4v14M9 21v-5h6v5" /> }] : []),
+    ...(can('roles_permissions', 'view') ? [{ label: 'Roles', to: '/admin/roles', icon: <Icon d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" /> }] : []),
+  ];
   return (
     <div className="surface-ink flex h-full w-64 flex-col bg-ink text-on-ink">
       <div className="flex items-center gap-2.5 px-5 py-6">
@@ -80,6 +88,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             </li>
           ))}
         </ul>
+
+        {adminItems.length ? <><p className="mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-on-ink-soft">Administration</p><ul className="mt-2 flex flex-col gap-1">{adminItems.map((item) => <li key={item.label}><NavLink to={item.to ?? '#'} onClick={onNavigate} className={({ isActive }) => cn('flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-colors', isActive ? 'bg-ink-raised text-on-ink border-l-2 border-gold pl-[10px]' : 'text-on-ink-soft hover:bg-ink-raised hover:text-on-ink')}>{item.icon}{item.label}</NavLink></li>)}</ul></> : null}
 
         <p className="mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-on-ink-soft">
           Coming soon

@@ -118,6 +118,11 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
     const row = find(this.rows.fields, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
+  async listJourneyFieldSettings(org: string, journey: string) {
+    return [...this.rows.fieldSettings.values()].filter(
+      (row) => row.organizationId === org && row.journeyId === journey && row.active !== false,
+    );
+  }
   async writeSystemAudit(input: ConfigurationAuditInput) {
     this.systemAudits.push(input);
   }

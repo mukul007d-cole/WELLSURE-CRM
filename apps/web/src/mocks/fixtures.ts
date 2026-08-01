@@ -89,6 +89,7 @@ export interface MockUser {
   dataScope: 'SELF' | 'ORGANIZATION';
   /** Field ids this role cannot view/edit — the concrete permission-engine demo. */
   restrictedFieldIds: string[];
+  permissions: Array<{ module: string; action: string; scope: 'SELF' | 'ORGANIZATION' }>;
 }
 
 export const USERS: MockUser[] = [
@@ -98,9 +99,10 @@ export const USERS: MockUser[] = [
     email: 'admin@wellsure.com',
     password: 'Wellsure@123',
     roleId: 'role-admin',
-    roleName: 'Administrator',
+    roleName: 'Synthetic role A',
     dataScope: 'ORGANIZATION',
     restrictedFieldIds: [],
+    permissions: ['journeys_statuses:view','journeys_statuses:create','journeys_statuses:edit','journeys_statuses:delete','fields:view','fields:create','fields:edit','fields:delete','users:view','users:create','users:edit','users:deactivate','roles_permissions:view','roles_permissions:create','roles_permissions:edit'].map((value) => { const [module, action] = value.split(':') as [string, string]; return { module, action, scope: 'ORGANIZATION' as const }; }),
   },
   {
     id: 'user-rep',
@@ -108,9 +110,10 @@ export const USERS: MockUser[] = [
     email: 'rep@wellsure.com',
     password: 'Wellsure@123',
     roleId: 'role-sales-rep',
-    roleName: 'Sales Representative',
+    roleName: 'Synthetic role B',
     dataScope: 'SELF',
     restrictedFieldIds: ['field-deal-value'],
+    permissions: [{ module: 'leads', action: 'view', scope: 'SELF' }],
   },
 ];
 

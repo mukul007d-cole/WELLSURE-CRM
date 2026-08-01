@@ -8,7 +8,12 @@ export type ConfigurationAuditEntityType =
   | 'field_visibility';
 
 export type ConfigurationAuditAction =
-  'create' | 'edit' | 'deactivate' | 'delete' | 'reassign_and_deactivate';
+  | 'create'
+  | 'edit'
+  | 'reorder'
+  | 'deactivate'
+  | 'delete'
+  | 'reassign_and_deactivate';
 
 export interface ConfigurationAuditInput {
   organizationId: string;

@@ -37,6 +37,8 @@ describe('Fastify HTTP transport', () => {
     });
     expect(unauthenticatedProfile.statusCode).toBe(401);
     expect(unauthenticatedProfile.json()).toEqual({ error: 'unauthenticated' });
+    const unauthenticatedCapabilities = await server.inject({ method: 'GET', url: '/api/v1/auth/capabilities' });
+    expect(unauthenticatedCapabilities.statusCode).toBe(401);
 
     const denied = await server.inject({ method: 'GET', url: '/api/v1/leads' });
     expect(denied.statusCode).toBe(401);

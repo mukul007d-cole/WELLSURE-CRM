@@ -46,3 +46,13 @@ export function requireNonNegativeInteger(value: number, label: string): number 
   }
   return value;
 }
+
+export function requireFieldValidationRule(fieldType: string, value: unknown): unknown {
+  if (fieldType !== 'select') return value ?? null;
+  if (typeof value !== 'object' || value === null || !Array.isArray((value as { options?: unknown }).options))
+    throw new ConfigurationError('validation_error', 'select fields require validationRule.options');
+  const options = (value as { options: unknown[] }).options;
+  if (options.length === 0 || options.some((option) => typeof option !== 'string' || option.trim() === '') || new Set(options).size !== options.length)
+    throw new ConfigurationError('validation_error', 'select field options must be unique non-blank strings');
+  return { ...(value as Record<string, unknown>), options: options.map((option) => String(option).trim()) };
+}

@@ -11,10 +11,11 @@ export class AdminService {
     private readonly authConfig: AuthConfig,
   ) {}
   listUsers(ctx: AdminContext, query: Record<string, unknown>) {
+    const active = parseBoolean(query.active);
     return this.repository.listUsers(ctx.organizationId, pagination(query.page, query.pageSize), {
       ...(typeof query.roleId === 'string' ? { roleId: query.roleId } : {}),
       ...(typeof query.departmentId === 'string' ? { departmentId: query.departmentId } : {}),
-      ...(typeof query.active === 'boolean' ? { active: query.active } : {}),
+      ...(active === undefined ? {} : { active }),
     });
   }
   getUser(ctx: AdminContext, id: string) {
@@ -47,7 +48,7 @@ export class AdminService {
     return this.repository.listRoles(
       ctx.organizationId,
       pagination(q.page, q.pageSize),
-      typeof q.active === 'boolean' ? q.active : undefined,
+      parseBoolean(q.active),
     );
   }
   getRole(ctx: AdminContext, id: string) {
@@ -95,7 +96,7 @@ export class AdminService {
     return this.repository.listDepartments(
       ctx.organizationId,
       pagination(q.page, q.pageSize),
-      typeof q.active === 'boolean' ? q.active : undefined,
+      parseBoolean(q.active),
     );
   }
   getDepartment(ctx: AdminContext, id: string) {
@@ -117,6 +118,11 @@ export class AdminService {
       text(name, 'name'),
     );
   }
+}
+function parseBoolean(value: unknown): boolean | undefined {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
 }
 function normalizeUser(input: UserWriteInput): UserWriteInput {
   return {
