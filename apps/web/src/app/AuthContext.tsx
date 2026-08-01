@@ -59,8 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   }, []);
 
-  const can = useCallback((module: string, action: string) => capabilities?.permissions.some((grant) => grant.module === module && grant.action === action) ?? false, [capabilities]);
-  const value = useMemo(() => ({ status, user, capabilities, can, login, logout }), [status, user, capabilities, can, login, logout]);
+  const can = useCallback(
+    (module: string, action: string) =>
+      capabilities?.permissions.some(
+        (grant) => grant.module === module && grant.action === action,
+      ) ?? false,
+    [capabilities],
+  );
+  const value = useMemo(
+    () => ({ status, user, capabilities, can, login, logout }),
+    [status, user, capabilities, can, login, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

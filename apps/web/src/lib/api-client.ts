@@ -10,10 +10,18 @@ import type {
   Service,
   SessionUser,
   Status,
-  CapabilitySet, Page, AdminJourney, AdminField, AdminUser, AdminRole, Department, PermissionCatalog,
+  CapabilitySet,
+  Page,
+  AdminJourney,
+  AdminField,
+  AdminUser,
+  AdminRole,
+  Department,
+  PermissionCatalog,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
+export const ADMIN_PAGE_SIZE = 25;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -63,39 +71,92 @@ export const authApi = {
   capabilities: () => request<CapabilitySet>('/auth/capabilities'),
 };
 
-const json = (method: string, body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+const json = (method: string, body?: unknown): RequestInit => ({
+  method,
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
 export const adminApi = {
-  journeys: (page = 1, active?: boolean) => request<Page<AdminJourney>>(`/journeys${toQuery({ page, pageSize: 25, active: active === undefined ? undefined : String(active) })}`),
+  journeys: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<AdminJourney>>(
+      `/journeys${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
   journey: (id: string) => request<AdminJourney>(`/journeys/${id}`),
-  createJourney: (body: { key: string; name: string }) => request<AdminJourney>('/journeys', json('POST', body)),
-  editJourney: (id: string, body: { name: string }) => request<AdminJourney>(`/journeys/${id}`, json('PATCH', body)),
+  createJourney: (body: { key: string; name: string }) =>
+    request<AdminJourney>('/journeys', json('POST', body)),
+  editJourney: (id: string, body: { name: string }) =>
+    request<AdminJourney>(`/journeys/${id}`, json('PATCH', body)),
   deactivateJourney: (id: string) => request<AdminJourney>(`/journeys/${id}`, json('DELETE')),
-  createStatus: (journeyId: string, body: object) => request<Status>(`/journeys/${journeyId}/statuses`, json('POST', body)),
+  createStatus: (journeyId: string, body: object) =>
+    request<Status>(`/journeys/${journeyId}/statuses`, json('POST', body)),
   editStatus: (id: string, body: object) => request<Status>(`/statuses/${id}`, json('PATCH', body)),
-  reorderStatuses: (journeyId: string, statusIds: string[]) => request<Status[]>(`/journeys/${journeyId}/status-order`, json('PUT', { statusIds })),
-  journeyFields: (journeyId: string) => request<Array<{ fieldId: string; journeyId: string; requirement: string; requiredFromStatusId: string | null; field: AdminField }>>(`/journeys/${journeyId}/fields`),
-  setJourneyField: (journeyId: string, fieldId: string, body: object) => request(`/journeys/${journeyId}/fields/${fieldId}`, json('PUT', body)),
-  unmapJourneyField: (journeyId: string, fieldId: string) => request(`/journeys/${journeyId}/fields/${fieldId}`, json('DELETE')),
-  fields: (page = 1, active?: boolean) => request<Page<AdminField>>(`/fields${toQuery({ page, pageSize: 25, active: active === undefined ? undefined : String(active) })}`),
+  deactivateStatus: (id: string, body: { journeyId: string; replacementStatusId?: string }) =>
+    request<Status>(`/statuses/${id}`, json('DELETE', body)),
+  reorderStatuses: (journeyId: string, statusIds: string[]) =>
+    request<Status[]>(`/journeys/${journeyId}/status-order`, json('PUT', { statusIds })),
+  journeyFields: (journeyId: string) =>
+    request<
+      Array<{
+        fieldId: string;
+        journeyId: string;
+        requirement: string;
+        requiredFromStatusId: string | null;
+        field: AdminField;
+      }>
+    >(`/journeys/${journeyId}/fields`),
+  setJourneyField: (journeyId: string, fieldId: string, body: object) =>
+    request(`/journeys/${journeyId}/fields/${fieldId}`, json('PUT', body)),
+  unmapJourneyField: (journeyId: string, fieldId: string) =>
+    request(`/journeys/${journeyId}/fields/${fieldId}`, json('DELETE')),
+  fields: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<AdminField>>(
+      `/fields${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
   createField: (body: object) => request<AdminField>('/fields', json('POST', body)),
-  editField: (id: string, body: object) => request<AdminField>(`/fields/${id}`, json('PATCH', body)),
+  editField: (id: string, body: object) =>
+    request<AdminField>(`/fields/${id}`, json('PATCH', body)),
   deactivateField: (id: string) => request<AdminField>(`/fields/${id}`, json('DELETE')),
-  users: (query: { page?: number; roleId?: string; departmentId?: string; active?: boolean; search?: string } = {}) => request<Page<AdminUser>>(`/users${toQuery({ page: query.page, pageSize: 25, roleId: query.roleId, departmentId: query.departmentId, active: query.active === undefined ? undefined : String(query.active), search: query.search })}`),
+  users: (
+    query: {
+      page?: number;
+      pageSize?: number;
+      roleId?: string;
+      departmentId?: string;
+      active?: boolean;
+      search?: string;
+    } = {},
+  ) =>
+    request<Page<AdminUser>>(
+      `/users${toQuery({ page: query.page, pageSize: query.pageSize ?? ADMIN_PAGE_SIZE, roleId: query.roleId, departmentId: query.departmentId, active: query.active === undefined ? undefined : String(query.active), search: query.search })}`,
+    ),
   createUser: (body: object) => request<AdminUser>('/users', json('POST', body)),
   editUser: (id: string, body: object) => request<AdminUser>(`/users/${id}`, json('PUT', body)),
   deactivateUser: (id: string) => request<AdminUser>(`/users/${id}/deactivate`, json('POST')),
-  roles: (page = 1, active?: boolean) => request<Page<AdminRole>>(`/roles${toQuery({ page, pageSize: 25, active: active === undefined ? undefined : String(active) })}`),
+  roles: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<AdminRole>>(
+      `/roles${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
   role: (id: string) => request<AdminRole>(`/roles/${id}`),
   createRole: (body: object) => request<AdminRole>('/roles', json('POST', body)),
   editRole: (id: string, body: object) => request<AdminRole>(`/roles/${id}`, json('PUT', body)),
-  deactivateRole: (id: string, replacementRoleId?: string) => request<AdminRole>(`/roles/${id}/deactivate`, json('POST', replacementRoleId ? { replacementRoleId } : {})),
+  deactivateRole: (id: string, replacementRoleId?: string) =>
+    request<AdminRole>(
+      `/roles/${id}/deactivate`,
+      json('POST', replacementRoleId ? { replacementRoleId } : {}),
+    ),
   catalog: () => request<PermissionCatalog>('/permissions/catalog'),
-  savePermissions: (id: string, permissions: CapabilitySet['permissions']) => request(`/roles/${id}/permissions`, json('PUT', { permissions })),
-  saveJourneyAccess: (id: string, journeyIds: string[]) => request(`/roles/${id}/journey-access`, json('PUT', { journeyIds })),
-  saveFieldVisibility: (id: string, fieldVisibility: CapabilitySet['fieldVisibility']) => request(`/roles/${id}/field-visibility`, json('PUT', { fieldVisibility })),
-  departments: (page = 1, active?: boolean) => request<Page<Department>>(`/departments${toQuery({ page, pageSize: 25, active: active === undefined ? undefined : String(active) })}`),
+  savePermissions: (id: string, permissions: CapabilitySet['permissions']) =>
+    request(`/roles/${id}/permissions`, json('PUT', { permissions })),
+  saveJourneyAccess: (id: string, journeyIds: string[]) =>
+    request(`/roles/${id}/journey-access`, json('PUT', { journeyIds })),
+  saveFieldVisibility: (id: string, fieldVisibility: CapabilitySet['fieldVisibility']) =>
+    request(`/roles/${id}/field-visibility`, json('PUT', { fieldVisibility })),
+  departments: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<Department>>(
+      `/departments${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
   createDepartment: (body: object) => request<Department>('/departments', json('POST', body)),
-  editDepartment: (id: string, body: object) => request<Department>(`/departments/${id}`, json('PUT', body)),
+  editDepartment: (id: string, body: object) =>
+    request<Department>(`/departments/${id}`, json('PUT', body)),
 };
 
 export const sellersApi = {

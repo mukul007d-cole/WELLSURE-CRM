@@ -102,7 +102,26 @@ export const USERS: MockUser[] = [
     roleName: 'Synthetic role A',
     dataScope: 'ORGANIZATION',
     restrictedFieldIds: [],
-    permissions: ['journeys_statuses:view','journeys_statuses:create','journeys_statuses:edit','journeys_statuses:delete','fields:view','fields:create','fields:edit','fields:delete','users:view','users:create','users:edit','users:deactivate','roles_permissions:view','roles_permissions:create','roles_permissions:edit'].map((value) => { const [module, action] = value.split(':') as [string, string]; return { module, action, scope: 'ORGANIZATION' as const }; }),
+    permissions: [
+      'journeys_statuses:view',
+      'journeys_statuses:create',
+      'journeys_statuses:edit',
+      'journeys_statuses:delete',
+      'fields:view',
+      'fields:create',
+      'fields:edit',
+      'fields:delete',
+      'users:view',
+      'users:create',
+      'users:edit',
+      'users:deactivate',
+      'roles_permissions:view',
+      'roles_permissions:create',
+      'roles_permissions:edit',
+    ].map((value) => {
+      const [module, action] = value.split(':') as [string, string];
+      return { module, action, scope: 'ORGANIZATION' as const };
+    }),
   },
   {
     id: 'user-rep',

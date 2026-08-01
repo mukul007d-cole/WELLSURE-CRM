@@ -3,11 +3,14 @@ import { afterAll, afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 
-import { handlers } from '../mocks/handlers';
+import { handlers, resetAdminMockState } from '../mocks/handlers';
 
-const server = setupServer(...handlers);
+export const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  resetAdminMockState();
+});
 afterAll(() => server.close());
 
 // globals: false in vitest.config.ts means Testing Library can't

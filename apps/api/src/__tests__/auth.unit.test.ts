@@ -83,14 +83,28 @@ describe('sessions', () => {
 describe('self capabilities', () => {
   it('returns the authenticated caller role grants without a role-management check', async () => {
     const body = await capabilitiesRoute({
-      auth: { user: { id: 'user', organizationId: 'org', roleId: 'role', active: true, departmentId: null, managerId: null }, session: {} as never },
+      auth: {
+        user: {
+          id: 'user',
+          organizationId: 'org',
+          roleId: 'role',
+          active: true,
+          departmentId: null,
+          managerId: null,
+        },
+        session: {} as never,
+      },
       repository: {
         listRolePermissions: async () => [{ module: 'users', action: 'view', scope: 'TEAM' }],
         listAccessibleJourneyIds: async () => ['journey-b', 'journey-a'],
         listFieldVisibility: async () => [{ fieldId: 'field-a', accessLevel: 'VIEW' }],
       } as never,
     });
-    expect(body.body).toEqual({ permissions: [{ module: 'users', action: 'view', scope: 'TEAM' }], journeyIds: ['journey-a', 'journey-b'], fieldVisibility: [{ fieldId: 'field-a', accessLevel: 'VIEW' }] });
+    expect(body.body).toEqual({
+      permissions: [{ module: 'users', action: 'view', scope: 'TEAM' }],
+      journeyIds: ['journey-a', 'journey-b'],
+      fieldVisibility: [{ fieldId: 'field-a', accessLevel: 'VIEW' }],
+    });
   });
 });
 

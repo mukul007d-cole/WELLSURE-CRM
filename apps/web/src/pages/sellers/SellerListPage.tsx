@@ -85,7 +85,9 @@ export function SellerListPage() {
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-4 border-b border-line bg-surface px-4 py-5 sm:px-6">
-        {(location.state as { forbiddenFrom?: string } | null)?.forbiddenFrom ? <Banner tone="error">You do not have permission to open that administration page.</Banner> : null}
+        {(location.state as { forbiddenFrom?: string } | null)?.forbiddenFrom ? (
+          <Banner tone="error">You do not have permission to open that administration page.</Banner>
+        ) : null}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-display text-2xl font-bold text-ink">Sellers</h2>

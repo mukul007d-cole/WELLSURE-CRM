@@ -13,9 +13,21 @@ import type { AuthenticatedContext } from '../auth/middleware.js';
 import type { PermissionRepository } from '@falcon/permission-engine';
 
 export interface CapabilityReader {
-  listRolePermissions(input: { roleId: string; organizationId: string }): Promise<readonly { module: string; action: string; scope: 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION' }[]>;
-  listAccessibleJourneyIds(input: { roleId: string; organizationId: string }): Promise<readonly string[]>;
-  listFieldVisibility(input: { roleId: string; organizationId: string }): Promise<readonly { fieldId: string; accessLevel: 'VIEW' | 'EDIT' }[]>;
+  listRolePermissions(input: { roleId: string; organizationId: string }): Promise<
+    readonly {
+      module: string;
+      action: string;
+      scope: 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION';
+    }[]
+  >;
+  listAccessibleJourneyIds(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<readonly string[]>;
+  listFieldVisibility(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<readonly { fieldId: string; accessLevel: 'VIEW' | 'EDIT' }[]>;
 }
 
 export async function capabilitiesRoute(input: {

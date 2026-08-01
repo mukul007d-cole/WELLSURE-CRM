@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 
 import {
   completePasswordResetRoute,
-  capabilitiesRoute, type CapabilityReader,
+  capabilitiesRoute,
+  type CapabilityReader,
   loginRoute,
   logoutRoute,
   requestPasswordResetRoute,
@@ -88,7 +89,10 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
             properties: {
               permissions: { type: 'array', items: { type: 'object', additionalProperties: true } },
               journeyIds: { type: 'array', items: { type: 'string' } },
-              fieldVisibility: { type: 'array', items: { type: 'object', additionalProperties: true } },
+              fieldVisibility: {
+                type: 'array',
+                items: { type: 'object', additionalProperties: true },
+              },
             },
           },
           401: errorSchema,
@@ -98,7 +102,11 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
     async (request, reply) =>
       sendRouteResult(
         reply,
-        await capabilitiesRoute({ auth: request.auth, repository: deps.permissionRepository as typeof deps.permissionRepository & CapabilityReader }),
+        await capabilitiesRoute({
+          auth: request.auth,
+          repository: deps.permissionRepository as typeof deps.permissionRepository &
+            CapabilityReader,
+        }),
       ),
   );
   server.post(
