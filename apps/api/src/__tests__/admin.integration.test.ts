@@ -1,18 +1,61 @@
 import { readFile } from 'node:fs/promises';
 
+import { permissionCatalog } from '@falcon/permission-engine';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { bootstrapFirstAdmin } from '../admin/bootstrap.js';
 import { defaultAuthConfig } from '../auth/config.js';
+import { runBootstrap } from '../bootstrap-cli.js';
 import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
 
-let cleanup: (() => Promise<void>) | undefined;
-afterAll(async () => cleanup?.());
+const cleanups: Array<() => Promise<void>> = [];
+afterAll(async () => Promise.all(cleanups.map((cleanup) => cleanup())));
 
 describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', () => {
+  it('runs the CLI operation once and refuses a second run without duplicates', async () => {
+    const db = await createAdminPostgres();
+    cleanups.push(db.cleanup);
+    for (const path of [
+      '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
+      '../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
+    ]) {
+      await db.sql.unsafe(await readFile(new URL(path, import.meta.url), 'utf8'));
+    }
+    const delivered: string[] = [];
+    const dependencies = {
+      prisma: db.prisma,
+      authConfig: defaultAuthConfig,
+      emailSender: {
+        sendPasswordReset({ token }: { token: string }) {
+          delivered.push(token);
+          return Promise.resolve();
+        },
+      },
+    };
+    const options = {
+      organizationName: 'Synthetic CLI Organization',
+      adminName: 'Synthetic CLI Administrator',
+      adminEmail: 'cli-admin@example.test',
+    };
+
+    const firstRun = await runBootstrap(options, dependencies);
+    expect(firstRun.organizationId).toEqual(expect.any(String) as string);
+    expect(firstRun.userId).toEqual(expect.any(String) as string);
+    await expect(runBootstrap(options, dependencies)).rejects.toThrow('Bootstrap refused');
+    expect(await db.prisma.organization.count()).toBe(1);
+    expect(await db.prisma.user.count()).toBe(1);
+    expect(await db.prisma.rolePermission.count()).toBe(
+      permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
+    );
+    expect(await db.prisma.rolePermission.count({ where: { scope: 'ORGANIZATION' } })).toBe(
+      permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
+    );
+    expect(delivered).toHaveLength(1);
+  }, 120_000);
+
   it('serializes bootstrap and provisions the canonical four authorization axes once', async () => {
     const db = await createAdminPostgres();
-    cleanup = db.cleanup;
+    cleanups.push(db.cleanup);
     const migration = await readFile(
       new URL(
         '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
