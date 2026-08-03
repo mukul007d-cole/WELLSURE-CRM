@@ -82,9 +82,10 @@ pnpm --filter @falcon/api bootstrap -- \
 The values may instead be supplied as `FALCON_BOOTSTRAP_ORGANIZATION_NAME`,
 `FALCON_BOOTSTRAP_ADMIN_NAME`, and `FALCON_BOOTSTRAP_ADMIN_EMAIL`. The normal API
 environment variables, including `FALCON_DATABASE_URL`, are also required.
-Configure password-reset email delivery before running the command: the initial
-administrator receives an opaque, expiring setup token by email and uses the
-password-reset flow to choose a password. The token is never printed.
+`FALCON_EMAIL_TRANSPORT` defaults to `console` for local development. That
+transport prints the opaque, expiring setup token and a copy-pasteable password
+reset request; treat the output as a credential. An explicitly selected transport
+that has not yet been implemented fails loudly instead of discarding the reset.
 
 This command refuses with a non-zero exit code if any Organization or User
 already exists. It is not an admin recovery or additional-user creation tool;

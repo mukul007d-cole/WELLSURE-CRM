@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { bootstrapFirstAdmin } from '../admin/bootstrap.js';
 import { defaultAuthConfig } from '../auth/config.js';
+import { createEmailSender } from '../auth/email-sender.js';
 import { runBootstrap } from '../bootstrap-cli.js';
 import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
 
@@ -21,16 +22,15 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
     ]) {
       await db.sql.unsafe(await readFile(new URL(path, import.meta.url), 'utf8'));
     }
-    const delivered: string[] = [];
+    const consoleMessages: string[] = [];
     const dependencies = {
       prisma: db.prisma,
       authConfig: defaultAuthConfig,
-      emailSender: {
-        sendPasswordReset({ token }: { token: string }) {
-          delivered.push(token);
-          return Promise.resolve();
-        },
-      },
+      emailSender: createEmailSender({
+        transport: 'console',
+        httpPort: 3000,
+        write: (message) => consoleMessages.push(message),
+      }),
     };
     const options = {
       organizationName: 'Synthetic CLI Organization',
@@ -50,7 +50,11 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
     expect(await db.prisma.rolePermission.count({ where: { scope: 'ORGANIZATION' } })).toBe(
       permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
     );
-    expect(delivered).toHaveLength(1);
+    expect(consoleMessages).toHaveLength(1);
+    expect(consoleMessages[0]).toContain('Reset token:');
+    expect(consoleMessages[0]).toContain(
+      "curl --request POST 'http://localhost:3000/api/v1/auth/password-reset/complete'",
+    );
   }, 120_000);
 
   it('serializes bootstrap and provisions the canonical four authorization axes once', async () => {
