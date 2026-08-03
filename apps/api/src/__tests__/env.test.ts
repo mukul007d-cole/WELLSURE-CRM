@@ -20,8 +20,22 @@ describe('parseEnv', () => {
       }),
     ).toMatchObject({
       httpPort: 3000,
+      emailTransport: 'console',
       sessionCookieSecure: false,
       corsOrigins: ['http://localhost:5173', 'https://app.example.test'],
     });
+  });
+
+  it('preserves an explicitly selected email transport', () => {
+    expect(
+      parseEnv({
+        FALCON_DATABASE_URL: 'postgresql://falcon:secret@localhost/falcon',
+        FALCON_HTTP_PORT: '3000',
+        FALCON_CORS_ORIGIN: 'http://localhost:5173',
+        FALCON_EMAIL_TRANSPORT: 'smtp',
+        FALCON_LOG_LEVEL: 'info',
+        FALCON_SESSION_COOKIE_SECURE: 'false',
+      }).emailTransport,
+    ).toBe('smtp');
   });
 });

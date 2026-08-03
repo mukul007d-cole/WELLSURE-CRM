@@ -20,4 +20,4 @@ Permission replacement uses a transactional role row lock. Role version is incre
 
 API validation, tests, bootstrap, and the catalog endpoint import one immutable catalog. Product labels in the catalog are vocabulary, not configurable role, Journey, Field, Status, or Department instances. New permission identifiers require updating the catalog and this documented access matrix together.
 
-Operations must configure email delivery before bootstrap. The opaque initial-password token is sent through the password-reset delivery abstraction and is never returned, logged, or stored in plaintext.
+The opaque initial-password token is sent through the password-reset delivery abstraction and is never returned or stored in plaintext. Local development defaults to an explicit console delivery transport, which logs the token and a password-completion request so first-run bootstrap is usable before a real transport exists. Console output must be treated as a credential; explicitly selecting an unimplemented transport fails loudly.

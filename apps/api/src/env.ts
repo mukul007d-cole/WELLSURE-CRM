@@ -2,6 +2,7 @@ export interface ApiEnv {
   databaseUrl: string;
   httpPort: number;
   corsOrigins: string[];
+  emailTransport: string;
   logLevel: string;
   sessionCookieSecure: boolean;
 }
@@ -16,6 +17,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
   const databaseUrl = required('FALCON_DATABASE_URL');
   const portText = required('FALCON_HTTP_PORT');
   const originText = required('FALCON_CORS_ORIGIN');
+  const emailTransport = env.FALCON_EMAIL_TRANSPORT?.trim() || 'console';
   const logLevel = required('FALCON_LOG_LEVEL');
   const secureText = required('FALCON_SESSION_COOKIE_SECURE');
   const httpPort = Number(portText);
@@ -51,6 +53,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
     databaseUrl,
     httpPort,
     corsOrigins,
+    emailTransport,
     logLevel,
     sessionCookieSecure: secureText === 'true',
   };
