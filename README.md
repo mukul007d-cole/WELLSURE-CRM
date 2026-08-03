@@ -67,6 +67,29 @@ pnpm test
 pnpm build
 ```
 
+## First administrator bootstrap
+
+On a fully migrated, empty database, provision the one-time initial organization
+and administrator with:
+
+```bash
+pnpm --filter @falcon/api bootstrap -- \
+  --organization-name "Example Organization" \
+  --admin-name "Example Administrator" \
+  --admin-email "admin@example.com"
+```
+
+The values may instead be supplied as `FALCON_BOOTSTRAP_ORGANIZATION_NAME`,
+`FALCON_BOOTSTRAP_ADMIN_NAME`, and `FALCON_BOOTSTRAP_ADMIN_EMAIL`. The normal API
+environment variables, including `FALCON_DATABASE_URL`, are also required.
+Configure password-reset email delivery before running the command: the initial
+administrator receives an opaque, expiring setup token by email and uses the
+password-reset flow to choose a password. The token is never printed.
+
+This command refuses with a non-zero exit code if any Organization or User
+already exists. It is not an admin recovery or additional-user creation tool;
+use the authenticated user-administration API after first-run provisioning.
+
 ## Terraform structure
 
 Environment roots and module contracts live under `infra/terraform`. They create

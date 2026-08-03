@@ -6,6 +6,7 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "bootstrap": "pnpm build && node dist/bootstrap-cli.js",
     "dev": "tsc -p tsconfig.json && node --watch dist/main.js",
     "start": "node dist/main.js",
     "lint": "eslint src",

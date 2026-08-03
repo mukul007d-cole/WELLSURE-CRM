@@ -1,30 +1,22 @@
-import { createPrismaClient } from '@falcon/database';
-
-import { defaultAuthConfig } from './auth/config.js';
 import { PrismaAdminRepository } from './admin/prisma-admin-repository.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
-import { parseEnv } from './env.js';
 import { buildServer } from './http/build-server.js';
 import { PrismaLeadRepository } from './leads/prisma-lead-repository.js';
 import { PrismaPermissionRepository } from './permissions/prisma-permission-repository.js';
+import { createRuntime } from './runtime.js';
 
-const env = parseEnv(process.env);
-const prisma = createPrismaClient(env.databaseUrl);
+const { env, prisma, emailSender, authConfig } = createRuntime(process.env);
 const authRepository = new PrismaAuthRepository(prisma);
 const server = buildServer({
   authRepository,
   audit: authRepository,
-  emailSender: {
-    sendPasswordReset() {
-      return Promise.reject(new Error('Password reset email delivery is not configured'));
-    },
-  },
+  emailSender,
   permissionRepository: new PrismaPermissionRepository(prisma as never),
   leadRepository: new PrismaLeadRepository(prisma as never),
   configurationRepository: new PrismaConfigurationRepository(prisma),
   adminRepository: new PrismaAdminRepository(prisma),
-  authConfig: { ...defaultAuthConfig, secureCookies: env.sessionCookieSecure },
+  authConfig,
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,
 });
