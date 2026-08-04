@@ -52,7 +52,7 @@ export function NotificationBell() {
                     onClick={() => {
                       read.mutate(item.id);
                       setOpen(false);
-                      if (item.referenceLeadId) navigate(`/sellers/${item.referenceLeadId}`);
+                      if (item.referenceLeadId) void navigate(`/sellers/${item.referenceLeadId}`);
                     }}
                   >
                     <span className="block">{item.message}</span>

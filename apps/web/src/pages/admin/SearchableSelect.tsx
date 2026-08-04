@@ -26,28 +26,32 @@ export function SearchableSelect({
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       setLoading(true);
-      try{
+      setLoadError(false);
+      try {
         const result = await loadPage(page);
-        if(!cancelled) {
+        if (!cancelled) {
           setOptions((current) =>
-          page === 1
-          ? result.items
-          : [
-            ...current,
-            ...result.items.filter((item) => !current.some((old) => old.id === item.id)),
-          ],
-        );
-        setTotal(result.total);
+            page === 1
+              ? result.items
+              : [
+                  ...current,
+                  ...result.items.filter((item) => !current.some((old) => old.id === item.id)),
+                ],
+          );
+          setTotal(result.total);
         }
-      } finally{
-        if(!cancelled) setLoading(false);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
-    void run()
+    void run();
     return () => {
       cancelled = true;
     };
@@ -88,6 +92,7 @@ export function SearchableSelect({
           Load more
         </Button>
       ) : null}
+      {loadError ? <p className="text-sm text-danger">Unable to load options.</p> : null}
     </div>
   );
 }

@@ -56,25 +56,15 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       data: { id: role, organizationId: org, key: 'synthetic_role', name: 'Synthetic role' },
     });
     await prisma.user.createMany({
-      data: [owner, actor, other, revoked, expired]
-        .map((id, i) => ({
-          id,
-          organizationId: org,
-          name: `Synthetic ${i}`,
-          email: `synthetic-${i}@example.test`,
-          roleId: role,
-          ...(id === other ? { managerId: revoked } : {}),
-        }))
-        .concat([
-          {
-            id: inactive,
-            organizationId: org,
-            name: 'Inactive synthetic',
-            email: 'inactive@example.test',
-            roleId: role,
-            active: false,
-          },
-        ]),
+      data: [owner, actor, other, revoked, expired, inactive].map((id, i) => ({
+        id,
+        organizationId: org,
+        name: id === inactive ? 'Inactive synthetic' : `Synthetic ${i}`,
+        email: id === inactive ? 'inactive@example.test' : `synthetic-${i}@example.test`,
+        roleId: role,
+        ...(id === other ? { managerId: revoked } : {}),
+        ...(id === inactive ? { active: false } : {}),
+      })),
     });
     await prisma.rolePermission.createMany({
       data: ['view', 'edit', 'comment', 'delete'].map((action) => ({
@@ -184,19 +174,21 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userAgent: null,
     };
     const authRepository = {
-      async findSessionByTokenHash() {
-        return session;
+      findSessionByTokenHash() {
+        return Promise.resolve(session);
       },
-      async touchSession() {},
-      async getUserSnapshot() {
-        return {
+      touchSession() {
+        return Promise.resolve();
+      },
+      getUserSnapshot() {
+        return Promise.resolve({
           id: actor,
           organizationId: org,
           roleId: role,
           active: true,
           departmentId: null,
           managerId: null,
-        };
+        });
       },
     };
     const server = buildServer({
