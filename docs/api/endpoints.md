@@ -88,10 +88,26 @@ PATCH  /leads/:id/reassign
 POST   /leads/:id/services
 GET    /leads/:id/activity
 POST   /leads/:id/comments
+GET    /leads/:id/shares
+POST   /leads/:id/shares
+PUT    /leads/:id/shares/:shareId
+DELETE /leads/:id/shares/:shareId
+POST   /leads/:id/deactivate
 POST   /leads/bulk/reassign
 POST   /leads/bulk/status
 GET    /leads/export
 POST   /leads/import
+```
+
+
+### Notifications
+```
+GET    /notifications
+GET    /notifications/unread-count
+PATCH  /notifications/:id/read
+GET    /notification-rules
+POST   /notification-rules
+PUT    /notification-rules/:id
 ```
 
 ### Tasks

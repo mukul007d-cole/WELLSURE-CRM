@@ -27,6 +27,13 @@ export * from './leads/service.js';
 export * from './leads/errors.js';
 export * from './leads/validation.js';
 export { PrismaLeadRepository } from './leads/prisma-lead-repository.js';
+export { LeadSharingService, shareCapabilities } from './leads/sharing.js';
+export {
+  NotificationService,
+  notificationTriggers,
+  recipientResolvers,
+} from './notifications/service.js';
+export { seedExampleNotificationRules } from './notifications/seed-example-rules.js';
 export type { PrismaLeadClient } from './leads/prisma-lead-repository.js';
 
 export * from './routes/configuration.js';

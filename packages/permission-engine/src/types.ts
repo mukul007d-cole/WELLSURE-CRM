@@ -51,6 +51,7 @@ export interface DirectGrantSnapshot {
   organizationId: string;
   expiresAt: Date | null;
   revokedAt: Date | null;
+  actions: readonly string[];
 }
 
 export interface AssignmentSnapshot {
@@ -117,6 +118,7 @@ export interface PermissionRepository {
     userId: string;
     leadId: string;
     now: Date;
+    action: string;
   }): Promise<DirectGrantSnapshot | null>;
 }
 
@@ -147,6 +149,7 @@ export interface RecordPredicate {
   assignmentTypes: readonly string[];
   journeyIds: readonly string[];
   includeDirectGrantsForUserId: string;
+  directGrantAction: string;
 }
 
 export interface AuthorizationDecision {

@@ -128,6 +128,7 @@ export async function resolveAuthorization(input: {
       assignmentTypes,
       journeyIds: predicateJourneyIds,
       userId: user.id,
+      action: input.request.action,
     });
 
     if (input.request.leadId !== undefined) {
@@ -150,6 +151,7 @@ export async function resolveAuthorization(input: {
         userId: user.id,
         leadId: input.request.leadId,
         now,
+        action: input.request.action,
       });
       if (grant !== null) {
         recordAllowed = true;

@@ -84,6 +84,7 @@ export interface LeadCoreRecord {
 }
 
 export interface SellerListRow extends LeadCoreRecord {
+  shared?: boolean;
   processInstances?: Array<{
     processInstanceId: string;
     journeyId: string;
@@ -121,6 +122,41 @@ export interface SellerListInput {
   sortDirection?: 'asc' | 'desc' | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
+  accessMode?: 'mine' | 'shared_with_me' | 'all';
+}
+
+export type ShareCapability = 'view' | 'edit' | 'comment';
+export interface LeadShare {
+  id: string;
+  userId: string;
+  userName: string;
+  grantedByUserId: string;
+  capabilities: ShareCapability[];
+  createdAt: string;
+}
+export interface NotificationItem {
+  id: string;
+  type: string;
+  message: string;
+  referenceLeadId: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+export interface NotificationRuleRecipient {
+  resolverType: string;
+  parameters: Record<string, unknown>;
+  sortOrder: number;
+}
+export interface NotificationRule {
+  id: string;
+  key: string;
+  name: string;
+  triggerType: string;
+  scope: Record<string, unknown> | null;
+  active: boolean;
+  version: number;
+  recipients: NotificationRuleRecipient[];
 }
 
 export interface SellerListResponse {

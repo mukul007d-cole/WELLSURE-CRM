@@ -8,6 +8,7 @@ import type {
   LeadRepository,
 } from './service.js';
 import type { LeadFieldSetting } from './validation.js';
+import { NotificationService } from '../notifications/service.js';
 import type {
   LeadDetailRecord,
   Seller360Record,
@@ -88,6 +89,8 @@ interface LeadRow {
   createdAt?: Date;
   updatedAt?: Date;
   processInstances?: ProcessRow[];
+  grants?: Array<{ userId: string }>;
+  active?: boolean;
 }
 
 interface ProcessRow {
@@ -122,11 +125,21 @@ interface AssignmentRow {
 export class PrismaLeadRepository
   implements LeadRepository, LeadReadRepository, SellerReadRepository
 {
-  constructor(private readonly prisma: PrismaLeadClient) {}
+  constructor(
+    private readonly prisma: PrismaLeadClient,
+    private readonly notifications?: NotificationService,
+  ) {}
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
     if (this.prisma.$transaction === undefined) return work(this);
-    return this.prisma.$transaction((tx) => work(new PrismaLeadRepository(tx)));
+    return this.prisma.$transaction((tx) =>
+      work(
+        new PrismaLeadRepository(
+          tx,
+          this.notifications ? new NotificationService(tx as never) : undefined,
+        ),
+      ),
+    );
   }
 
   async findJourney(organizationId: string, journeyId: string) {
@@ -282,7 +295,7 @@ export class PrismaLeadRepository
   }
 
   async writeActivity(input: LeadActivityInput): Promise<void> {
-    await this.prisma.activityLog.create({
+    const activity = await this.prisma.activityLog.create({
       data: {
         organizationId: input.organizationId,
         leadId: input.leadId,
@@ -294,6 +307,49 @@ export class PrismaLeadRepository
         newValue: input.newValue,
       },
     });
+    if (this.notifications && activity && typeof activity === 'object' && 'id' in activity) {
+      const triggerType =
+        input.actionType === 'field_edit'
+          ? 'field_edited'
+          : input.actionType === 'status_change'
+            ? 'status_changed'
+            : input.actionType === 'reassignment'
+              ? 'lead_reassigned'
+              : input.actionType === 'lead_deactivated'
+                ? 'lead_deactivated'
+                : undefined;
+      if (triggerType)
+        await this.notifications.evaluate({
+          organizationId: input.organizationId,
+          activityLogId: String(activity.id),
+          leadId: input.leadId,
+          ...(input.processInstanceId === undefined
+            ? {}
+            : { processInstanceId: input.processInstanceId }),
+          actorUserId: input.actorUserId,
+          triggerType,
+          oldValue: input.oldValue,
+        });
+      if (
+        input.actionType === 'field_edit' &&
+        (await this.notifications.isActiveShareActor(
+          input.organizationId,
+          input.leadId,
+          input.actorUserId,
+        ))
+      )
+        await this.notifications.evaluate({
+          organizationId: input.organizationId,
+          activityLogId: String(activity.id),
+          leadId: input.leadId,
+          ...(input.processInstanceId === undefined
+            ? {}
+            : { processInstanceId: input.processInstanceId }),
+          actorUserId: input.actorUserId,
+          triggerType: 'shared_lead_modified_by_non_owner',
+          oldValue: input.oldValue,
+        });
+    }
   }
 
   async findSeller360(organizationId: string, leadId: string): Promise<Seller360Record | null> {
@@ -336,6 +392,14 @@ export class PrismaLeadRepository
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
+          grants: {
+            where: {
+              userId: input.recordPredicate.includeDirectGrantsForUserId,
+              revokedAt: null,
+              actions: { has: 'view' },
+            },
+            select: { userId: true },
+          },
           processInstances: {
             where: processWhere(input),
             include: {
@@ -357,6 +421,7 @@ export class PrismaLeadRepository
       rows: rows.map((row) => ({
         ...lead(row),
         processInstances: (row.processInstances ?? []).map(sellerListProcess),
+        shared: Boolean(row.grants?.length),
       })),
       total,
     };
@@ -369,6 +434,7 @@ function sellerWhere(
   const currentProcessWhere = processWhere(input);
   return {
     organizationId: input.organizationId,
+    active: true,
     ...(input.search === undefined || input.search.trim() === ''
       ? {}
       : {
@@ -378,7 +444,43 @@ function sellerWhere(
             { email: { contains: input.search.trim(), mode: 'insensitive' } },
           ],
         }),
-    processInstances: { some: currentProcessWhere },
+    ...(input.accessMode === 'mine'
+      ? { processInstances: { some: currentProcessWhere } }
+      : input.accessMode === 'shared_with_me'
+        ? {
+            grants: {
+              some: {
+                organizationId: input.organizationId,
+                userId: input.recordPredicate.includeDirectGrantsForUserId,
+                revokedAt: null,
+                actions: { has: 'view' },
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+            },
+          }
+        : {
+            OR: [
+              { processInstances: { some: currentProcessWhere } },
+              {
+                grants: {
+                  some: {
+                    organizationId: input.organizationId,
+                    userId: input.recordPredicate.includeDirectGrantsForUserId,
+                    revokedAt: null,
+                    actions: { has: input.recordPredicate.directGrantAction },
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                  },
+                },
+                processInstances: {
+                  some: {
+                    organizationId: input.organizationId,
+                    active: true,
+                    journeyId: { in: [...input.recordPredicate.journeyIds] },
+                  },
+                },
+              },
+            ],
+          }),
   };
 }
 

@@ -3,7 +3,13 @@ export interface LeadActivityInput {
   leadId: string;
   processInstanceId?: string | null;
   actorUserId: string;
-  actionType: 'field_edit' | 'status_change' | 'reassignment';
+  actionType:
+    | 'comment'
+    | 'field_edit'
+    | 'status_change'
+    | 'reassignment'
+    | 'share_changed'
+    | 'lead_deactivated';
   source: string;
   oldValue: unknown;
   newValue: unknown;

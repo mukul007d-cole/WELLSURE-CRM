@@ -64,7 +64,7 @@ failed_login_attempts
 
 user_access_grants
   id, organization_id, user_id, lead_id, granted_by_user_id,
-  expires_at (nullable), revoked_at (nullable), created_at
+  actions (view | edit | comment)[], expires_at (nullable), revoked_at (nullable), created_at
 
 journeys
   id, organization_id, key, name, active, version, is_default,
@@ -102,8 +102,8 @@ field_visibility
 
 leads
   id, organization_id, name, phone, email,
-  field_values (JSONB, GIN indexed),
-  created_at, updated_at
+  field_values (JSONB, GIN indexed), active, deactivated_at (nullable),
+  deactivated_by_user_id (nullable), created_at, updated_at
 
 process_instances
   id, organization_id, lead_id, journey_id, current_status_id,
@@ -128,7 +128,7 @@ lead_links
 activity_logs
   id, organization_id, lead_id, process_instance_id (nullable),
   actor_user_id (nullable), timestamp,
-  action_type (comment | status_change | reassignment | field_edit),
+  action_type (comment | status_change | reassignment | field_edit | share_changed | lead_deactivated),
   source, comment_text, recording_reference_url (nullable),
   old_value, new_value
   -- Append-only. Example sources include manual,
@@ -146,7 +146,15 @@ tasks
 
 notifications
   id, organization_id, user_id, type, reference_lead_id (nullable),
-  message, read, created_at
+  message, read, read_at (nullable), notification_rule_id (nullable),
+  activity_log_id (nullable), created_at
+
+notification_rules
+  id, organization_id, key, name, trigger_type, scope (JSONB nullable), active,
+  version, created_by, updated_by, created_at, updated_at
+
+notification_rule_recipients
+  id, organization_id, rule_id, resolver_type, parameters (JSONB), sort_order
 
 attachments
   id, organization_id, lead_id, field_id (nullable), s3_key,

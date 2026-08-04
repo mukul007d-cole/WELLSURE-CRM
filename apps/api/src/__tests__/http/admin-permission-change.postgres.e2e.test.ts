@@ -30,6 +30,10 @@ describe.runIf(shouldRunAdminPostgres)(
           '../../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
           import.meta.url,
         ),
+        new URL(
+          '../../../../../packages/database/prisma/migrations/00000000000002_lead_sharing_notifications/migration.sql',
+          import.meta.url,
+        ),
       ]) {
         await db.sql.unsafe(await readFile(file, 'utf8'));
       }

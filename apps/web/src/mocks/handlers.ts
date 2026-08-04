@@ -20,6 +20,27 @@ import {
 } from './session';
 
 const API_BASE = '/api/v1';
+const MOCK_SHARES: Array<{
+  id: string;
+  leadId: string;
+  userId: string;
+  userName: string;
+  grantedByUserId: string;
+  capabilities: string[];
+  createdAt: string;
+}> = [];
+const MOCK_NOTIFICATIONS = [
+  {
+    id: 'notification-synthetic',
+    type: 'field_edited',
+    message: 'A synthetic seller was updated',
+    referenceLeadId: 'lead-1',
+    read: false,
+    readAt: null,
+    createdAt: new Date().toISOString(),
+  },
+];
+const MOCK_NOTIFICATION_RULES: unknown[] = [];
 const MOCK_ROLES = USERS.map((user) => ({
   id: user.roleId,
   key: user.roleId.replaceAll('-', '_'),
@@ -722,5 +743,60 @@ export const handlers = [
     }
 
     return HttpResponse.json(serializeDetail(lead, user));
+  }),
+  http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
+    HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),
+  ),
+  http.post(`${API_BASE}/leads/:id/shares`, async ({ request, params }) => {
+    const body = (await request.json()) as { userId: string; capabilities: string[] };
+    const user = USERS.find((u) => u.id === body.userId);
+    const share = {
+      id: `share-${Date.now()}`,
+      leadId: String(params.id),
+      userId: body.userId,
+      userName: user?.name ?? 'Synthetic user',
+      grantedByUserId: USERS[0]!.id,
+      capabilities: body.capabilities,
+      createdAt: new Date().toISOString(),
+    };
+    MOCK_SHARES.push(share);
+    return HttpResponse.json(share, { status: 201 });
+  }),
+  http.delete(`${API_BASE}/leads/:id/shares/:shareId`, ({ params }) => {
+    const i = MOCK_SHARES.findIndex((s) => s.id === params.shareId);
+    if (i >= 0) MOCK_SHARES.splice(i, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.put(`${API_BASE}/leads/:id/shares/:shareId`, async ({ request, params }) => {
+    const row = MOCK_SHARES.find((share) => share.id === params.shareId);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    const body = (await request.json()) as { capabilities: string[] };
+    row.capabilities = body.capabilities;
+    return HttpResponse.json(row);
+  }),
+  http.get(`${API_BASE}/notifications/unread-count`, () =>
+    HttpResponse.json({ count: MOCK_NOTIFICATIONS.filter((n) => !n.read).length }),
+  ),
+  http.get(`${API_BASE}/notifications`, () =>
+    HttpResponse.json({ total: MOCK_NOTIFICATIONS.length, items: MOCK_NOTIFICATIONS }),
+  ),
+  http.patch(`${API_BASE}/notifications/:id/read`, ({ params }) => {
+    const row = MOCK_NOTIFICATIONS.find((n) => n.id === params.id);
+    if (row) {
+      row.read = true;
+      row.readAt = new Date().toISOString();
+    }
+    return row
+      ? HttpResponse.json(row)
+      : HttpResponse.json(errorBody('not_found'), { status: 404 });
+  }),
+  http.get(`${API_BASE}/notification-rules`, () =>
+    HttpResponse.json({ total: MOCK_NOTIFICATION_RULES.length, items: MOCK_NOTIFICATION_RULES }),
+  ),
+  http.post(`${API_BASE}/notification-rules`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const row = { id: `rule-${Date.now()}`, active: true, version: 1, ...body };
+    MOCK_NOTIFICATION_RULES.push(row);
+    return HttpResponse.json(row, { status: 201 });
   }),
 ];

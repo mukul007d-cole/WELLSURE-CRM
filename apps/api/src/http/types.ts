@@ -11,6 +11,8 @@ import type { ConfigurationRepository } from '../configuration/service.js';
 import type { AdminRepository } from '../admin/repository.js';
 import type { LeadRepository } from '../leads/service.js';
 import type { SellerReadRepository } from '../routes/leads.js';
+import type { LeadSharingService } from '../leads/sharing.js';
+import type { NotificationService } from '../notifications/service.js';
 
 export interface ServerDependencies {
   authRepository: LoginRepository & SessionRepository & PasswordResetRepository;
@@ -20,6 +22,8 @@ export interface ServerDependencies {
   leadRepository: LeadRepository & SellerReadRepository;
   configurationRepository: ConfigurationRepository;
   adminRepository?: AdminRepository;
+  leadSharingService?: LeadSharingService;
+  notificationService?: NotificationService;
   authConfig: AuthConfig;
   corsOrigins: readonly string[];
   logLevel?: string;

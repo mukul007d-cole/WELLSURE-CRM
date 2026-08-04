@@ -18,6 +18,10 @@ import type {
   AdminRole,
   Department,
   PermissionCatalog,
+  LeadShare,
+  ShareCapability,
+  NotificationItem,
+  NotificationRule,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -171,6 +175,7 @@ export const sellersApi = {
         sortDirection: input.sortDirection,
         page: input.page,
         pageSize: input.pageSize,
+        accessMode: input.accessMode,
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
@@ -178,6 +183,35 @@ export const sellersApi = {
     request<Seller360Record>('/leads', { method: 'POST', body: JSON.stringify(input) }),
   edit: (id: string, input: EditLeadInput) =>
     request<Seller360Record>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  shares: (id: string, context: { journeyId: string; assignmentTypes: string[] }) =>
+    request<LeadShare[]>(
+      `/leads/${id}/shares${toQuery({ journeyId: context.journeyId, assignmentTypes: context.assignmentTypes.join(',') })}`,
+    ),
+  share: (
+    id: string,
+    body: {
+      journeyId: string;
+      assignmentTypes: string[];
+      userId: string;
+      capabilities: ShareCapability[];
+    },
+  ) => request(`/leads/${id}/shares`, json('POST', body)),
+  updateShare: (id: string, shareId: string, body: object) =>
+    request(`/leads/${id}/shares/${shareId}`, json('PUT', body)),
+  revokeShare: (id: string, shareId: string, journeyId: string) =>
+    request(`/leads/${id}/shares/${shareId}${toQuery({ journeyId })}`, json('DELETE')),
+};
+
+export const notificationsApi = {
+  list: (page = 1) =>
+    request<{ total: number; items: NotificationItem[] }>(`/notifications${toQuery({ page })}`),
+  unread: () => request<{ count: number }>('/notifications/unread-count'),
+  markRead: (id: string) => request(`/notifications/${id}/read`, json('PATCH')),
+  rules: () => request<{ total: number; items: NotificationRule[] }>('/notification-rules'),
+  createRule: (body: object) =>
+    request<NotificationRule>('/notification-rules', json('POST', body)),
+  updateRule: (id: string, body: object) =>
+    request<NotificationRule>(`/notification-rules/${id}`, json('PUT', body)),
 };
 
 export const configApi = {

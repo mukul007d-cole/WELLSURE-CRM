@@ -73,6 +73,7 @@ interface DirectGrantRow {
   organizationId: string;
   expiresAt: Date | null;
   revokedAt: Date | null;
+  actions: string[];
 }
 interface LeadScopeRow {
   id: string;
@@ -260,6 +261,7 @@ export class PrismaPermissionRepository implements PermissionRepository {
     userId: string;
     leadId: string;
     now: Date;
+    action: string;
   }): Promise<DirectGrantSnapshot | null> {
     const row = await this.prisma.userAccessGrant.findFirst({
       where: {
@@ -267,6 +269,7 @@ export class PrismaPermissionRepository implements PermissionRepository {
         userId: input.userId,
         leadId: input.leadId,
         revokedAt: null,
+        actions: { has: input.action },
         OR: [{ expiresAt: null }, { expiresAt: { gt: input.now } }],
       },
       orderBy: { createdAt: 'desc' },

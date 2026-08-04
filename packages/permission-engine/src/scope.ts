@@ -66,6 +66,7 @@ export function buildRecordPredicate(input: {
   assignmentTypes: readonly string[];
   journeyIds: readonly string[];
   userId: string;
+  action: string;
 }): RecordPredicate {
   return {
     organizationId: input.organizationId,
@@ -74,6 +75,7 @@ export function buildRecordPredicate(input: {
     assignmentTypes: input.assignmentTypes,
     journeyIds: input.journeyIds,
     includeDirectGrantsForUserId: input.userId,
+    directGrantAction: input.action,
   };
 }
 

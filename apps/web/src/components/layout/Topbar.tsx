@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { RingAvatar } from '../ui/RingAvatar';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 interface TopbarProps {
   title: string;
@@ -45,6 +46,7 @@ export function Topbar({ title, onOpenMenu }: TopbarProps) {
       <h1 className="font-display text-base font-semibold text-on-ink">{title}</h1>
 
       <div className="ml-auto flex items-center gap-2">
+        <NotificationBell />
         {user ? (
           <div className="relative">
             <button

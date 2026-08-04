@@ -22,6 +22,8 @@ export function SellerListPage() {
   const statusId = params.get('statusId') ?? undefined;
   const search = params.get('search') ?? '';
   const page = Number(params.get('page') ?? '1');
+  const accessMode =
+    (params.get('accessMode') as 'mine' | 'shared_with_me' | 'all' | null) ?? 'all';
 
   // Derived during render (not an effect) so external changes to `search`
   // (browser back/forward, "Clear filters") sync the draft without an
@@ -55,7 +57,7 @@ export function SellerListPage() {
   });
 
   const sellersQuery = useQuery({
-    queryKey: ['sellers', { journeyId, statusId, search, page }],
+    queryKey: ['sellers', { journeyId, statusId, search, page, accessMode }],
     queryFn: () =>
       sellersApi.list({
         journeyId,
@@ -65,6 +67,7 @@ export function SellerListPage() {
         pageSize: DEFAULT_PAGE_SIZE,
         sortBy: 'updatedAt',
         sortDirection: 'desc',
+        accessMode,
       }),
     placeholderData: (previous) => previous,
   });
@@ -101,6 +104,20 @@ export function SellerListPage() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="sm:w-48">
+            <label htmlFor="access-filter" className="sr-only">
+              Lead access
+            </label>
+            <Select
+              id="access-filter"
+              value={accessMode}
+              onChange={(e) => updateParam('accessMode', e.target.value)}
+            >
+              <option value="mine">My leads</option>
+              <option value="shared_with_me">Shared with me</option>
+              <option value="all">All</option>
+            </Select>
+          </div>
           <div className="sm:max-w-xs sm:flex-1">
             <label htmlFor="seller-search" className="sr-only">
               Search sellers
@@ -201,7 +218,12 @@ export function SellerListPage() {
                         <Link to={`/sellers/${row.id}`} className="flex items-center gap-3">
                           <RingAvatar name={row.name} size={34} />
                           <span>
-                            <span className="block text-sm font-medium text-ink">{row.name}</span>
+                            <span className="block text-sm font-medium text-ink">
+                              {row.name}{' '}
+                              {row.shared ? (
+                                <span className="ml-1 text-xs text-accent">Shared</span>
+                              ) : null}
+                            </span>
                             <span className="block text-xs text-ink-soft">
                               {row.phone || row.email || '—'}
                             </span>
@@ -240,7 +262,10 @@ export function SellerListPage() {
                     <Link to={`/sellers/${row.id}`} className="flex items-center gap-3 px-4 py-3">
                       <RingAvatar name={row.name} size={38} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-ink">{row.name}</p>
+                        <p className="truncate text-sm font-medium text-ink">
+                          {row.name}{' '}
+                          {row.shared ? <span className="text-xs text-accent">Shared</span> : null}
+                        </p>
                         <p className="truncate text-xs text-ink-soft">
                           {process?.journeyName ?? '—'} · {process?.ownerName ?? 'Unassigned'}
                         </p>

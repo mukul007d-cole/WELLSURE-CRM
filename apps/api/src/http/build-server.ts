@@ -10,6 +10,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerLeadRoutes } from './routes/leads.js';
+import { registerNotificationRoutes } from './routes/notifications.js';
 import type { ServerDependencies } from './types.js';
 
 export function buildServer(deps: ServerDependencies): FastifyInstance {
@@ -29,6 +30,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
       registerAdminRoutes(app, { ...deps, adminRepository: deps.adminRepository });
     registerConfigurationRoutes(app, deps);
     registerLeadRoutes(app, deps);
+    registerNotificationRoutes(app, deps);
   });
   return server;
 }

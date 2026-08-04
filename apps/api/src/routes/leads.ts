@@ -48,6 +48,7 @@ export interface SellerListProcessSummary {
 
 export interface SellerListRecord extends LeadCoreRecord {
   processInstances: SellerListProcessSummary[];
+  shared?: boolean;
 }
 
 export interface LeadReadRepository {
@@ -80,6 +81,7 @@ export interface SellerListInput {
   pageSize?: number;
   requestedFieldIds: readonly string[];
   assignmentTypes: readonly string[];
+  accessMode?: 'mine' | 'shared_with_me' | 'all';
 }
 
 export type LeadRouteResult =
