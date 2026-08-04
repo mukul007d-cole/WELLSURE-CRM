@@ -60,7 +60,6 @@ export async function seedExampleNotificationRules(input: {
         updatedById: input.actorUserId,
         recipients: {
           create: example.recipients.map(([resolverType, parameters], sortOrder) => ({
-            organizationId: input.organizationId,
             resolverType,
             parameters,
             sortOrder,

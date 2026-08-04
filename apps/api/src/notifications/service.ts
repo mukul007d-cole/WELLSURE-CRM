@@ -98,7 +98,6 @@ export class NotificationService {
           scope: input.scope as never,
           recipients: {
             create: input.recipients.map((r, i) => ({
-              organizationId: input.organizationId,
               resolverType: r.resolverType,
               parameters: (r.parameters ?? {}) as never,
               sortOrder: i,
@@ -151,7 +150,6 @@ export class NotificationService {
           updatedById: input.actorUserId,
           recipients: {
             create: input.recipients.map((r, i) => ({
-              organizationId: input.organizationId,
               resolverType: r.resolverType,
               parameters: (r.parameters ?? {}) as never,
               sortOrder: i,
@@ -251,6 +249,7 @@ export class NotificationService {
           leadId: input.leadId,
           revokedAt: null,
           userId: { not: input.actorUserId },
+          user: { active: true },
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
       });

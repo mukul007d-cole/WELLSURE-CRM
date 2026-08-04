@@ -467,7 +467,7 @@ async function permittedLeadIds(
   skip: number,
   take: number,
 ): Promise<string[]> {
-  const process = where.processInstances.some;
+  const process = where.processInstances?.some ?? where.OR?.[0]?.processInstances?.some;
   const journeyIds: string[] = process.journeyId.in;
   const assignmentTypes: string[] = process.assignments.some.assignmentType.in;
   const rows = await sql<
