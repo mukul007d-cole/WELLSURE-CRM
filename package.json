@@ -14,7 +14,7 @@
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",
     "infra:reset": "docker compose down --volumes --remove-orphans",
-    "infra:up": "docker compose up -d --wait",
+    "infra:up": "docker compose up -d --wait postgres redis minio && docker compose up -d minio-init",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"

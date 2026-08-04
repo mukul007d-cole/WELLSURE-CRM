@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { bootstrapFirstAdmin } from './admin/bootstrap.js';
@@ -92,7 +93,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
