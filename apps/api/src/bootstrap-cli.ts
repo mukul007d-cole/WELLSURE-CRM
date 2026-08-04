@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url';
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { bootstrapFirstAdmin } from './admin/bootstrap.js';
