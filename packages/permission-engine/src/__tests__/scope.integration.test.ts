@@ -64,7 +64,7 @@ describe.runIf(shouldRunPostgresIntegration)('scope resolution against real Post
     await expect(
       expandScopeUserIds({ repository, user: cycleUser, scope: 'TEAM' }),
     ).resolves.toEqual(['pg-cycle-a', 'pg-cycle-b']);
-  });
+  }, 60_000);
 });
 
 describe.skipIf(shouldRunPostgresIntegration)('scope resolution against real Postgres', () => {

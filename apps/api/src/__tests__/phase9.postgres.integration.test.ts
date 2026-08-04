@@ -185,19 +185,21 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userAgent: null,
     };
     const authRepository = {
-      async findSessionByTokenHash() {
-        return session;
+      findSessionByTokenHash() {
+        return Promise.resolve(session);
       },
-      async touchSession() {},
-      async getUserSnapshot() {
-        return {
+      touchSession() {
+        return Promise.resolve();
+      },
+      getUserSnapshot() {
+        return Promise.resolve({
           id: actor,
           organizationId: org,
           roleId: role,
           active: true,
           departmentId: null,
           managerId: null,
-        };
+        });
       },
     };
     const server = buildServer({

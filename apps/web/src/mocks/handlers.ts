@@ -18,6 +18,7 @@ import {
   resolveUserId,
   setCookieHeader,
 } from './session';
+import type { NotificationItem } from '../types/domain';
 
 const API_BASE = '/api/v1';
 const MOCK_SHARES: Array<{
@@ -29,7 +30,7 @@ const MOCK_SHARES: Array<{
   capabilities: string[];
   createdAt: string;
 }> = [];
-const MOCK_NOTIFICATIONS = [
+const MOCK_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notification-synthetic',
     type: 'field_edited',

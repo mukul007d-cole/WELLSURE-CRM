@@ -65,17 +65,22 @@ export function NotificationRulesPage() {
       <Card className="p-5">
         <h3 className="font-semibold">New rule</h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm">
+          <label className="text-sm" htmlFor="notification-rule-key">
             Key
             <Input
+              id="notification-rule-key"
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="synthetic_rule"
             />
           </label>
-          <label className="text-sm">
+          <label className="text-sm" htmlFor="notification-rule-name">
             Name
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="notification-rule-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </label>
           <label className="text-sm">
             Trigger
@@ -97,9 +102,10 @@ export function NotificationRulesPage() {
               ))}
             </Select>
           </label>
-          <label className="text-sm sm:col-span-2">
+          <label className="text-sm sm:col-span-2" htmlFor="notification-rule-parameter">
             Resolver parameter
             <Input
+              id="notification-rule-parameter"
               value={parameter}
               onChange={(e) => setParameter(e.target.value)}
               placeholder="Configured assignment type or permission action"
