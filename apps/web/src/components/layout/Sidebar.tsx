@@ -73,6 +73,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             to: '/admin/roles',
             icon: <Icon d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" />,
           },
+          {
+            label: 'Notification rules',
+            to: '/admin/notification-rules',
+            icon: <Icon d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
+          },
         ]
       : []),
   ];

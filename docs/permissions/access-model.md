@@ -21,7 +21,7 @@ ALLOW =
 
 | Module | Actions |
 |---|---|
-| Leads | view, create, edit, delete, export, bulk_reassign, bulk_status_change |
+| Leads | view, create, edit, comment, delete, export, bulk_reassign, bulk_status_change |
 | Fields | view, create, edit, delete |
 | Journeys & Statuses | view, create, edit, delete |
 | Services | view, create, edit |
@@ -52,6 +52,8 @@ Department permission module. See ADR-0009.
 ## Additional mechanism: direct record grants
 
 For exceptional one-off access that doesn't fit the role/hierarchy model (e.g. a specific person needs temporary visibility into one lead outside their normal scope), use `user_access_grants` rather than creating a new role or assigning a second role. A non-expired direct grant is additive to normal data scope; it never bypasses feature/action, Journey, field, workflow, or active-user checks. One active role per user, always.
+
+Lead shares are action-scoped direct grants supporting `view`, `edit`, and `comment` (“Add notes” in the UI). A share satisfies only record scope for the requested listed action. Revoked or expired shares do not participate in detail, list, or count decisions.
 
 ## Example starting roles (seed data — fully editable)
 

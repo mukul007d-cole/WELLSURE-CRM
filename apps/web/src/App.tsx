@@ -16,6 +16,7 @@ import { DepartmentsPage } from './pages/admin/DepartmentsPage';
 import { RolesPage } from './pages/admin/RolesPage';
 import { JourneyDetailPage } from './pages/admin/JourneyDetailPage';
 import { RoleDetailPage } from './pages/admin/RoleDetailPage';
+import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 
 export function App() {
   return (
@@ -44,6 +45,7 @@ export function App() {
                 <Route element={<PermissionRoute module="roles_permissions" />}>
                   <Route path="/admin/roles" element={<RolesPage />} />
                   <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
+                  <Route path="/admin/notification-rules" element={<NotificationRulesPage />} />
                 </Route>
               </Route>
             </Route>

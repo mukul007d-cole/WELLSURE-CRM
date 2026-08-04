@@ -1,18 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
+import { useState } from 'react';
 import { configApi, sellersApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { formatFieldValue } from '../../lib/format';
 import { Banner } from '../../components/ui/Banner';
-import { ButtonLink } from '../../components/ui/Button';
+import { Button, ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RingAvatar } from '../../components/ui/RingAvatar';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { LeadShareDialog } from './LeadShareDialog';
 
 export function Seller360Page() {
   const { sellerId } = useParams<{ sellerId: string }>();
+  const [shareOpen, setShareOpen] = useState(false);
 
   const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
   const sellerQuery = useQuery({
@@ -21,6 +24,16 @@ export function Seller360Page() {
     enabled: Boolean(sellerId),
     retry: (count, error) =>
       error instanceof ApiError && error.status === 404 ? false : count < 1,
+  });
+  const firstProcess = sellerQuery.data?.processInstances[0];
+  const sharesQuery = useQuery({
+    queryKey: ['lead-shares', sellerId],
+    queryFn: () =>
+      sellersApi.shares(sellerId!, {
+        journeyId: firstProcess!.journeyId,
+        assignmentTypes: firstProcess!.assignments.map((a) => a.assignmentType),
+      }),
+    enabled: Boolean(sellerId && firstProcess),
   });
 
   if (sellerQuery.isError) {
@@ -85,16 +98,35 @@ export function Seller360Page() {
             <p className="text-sm text-ink-soft">
               {seller.phone || '—'} {seller.email ? `· ${seller.email}` : ''}
             </p>
+            {sharesQuery.data?.length ? (
+              <p className="mt-1 text-xs font-semibold text-accent">
+                Shared with {sharesQuery.data.map((s) => s.userName).join(', ')}
+              </p>
+            ) : null}
           </div>
         </div>
-        <ButtonLink
-          to={`/sellers/${seller.id}/edit`}
-          variant="secondary"
-          className="w-full sm:w-auto"
-        >
-          Edit seller
-        </ButtonLink>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setShareOpen(true)}>
+            Share
+          </Button>
+          <ButtonLink
+            to={`/sellers/${seller.id}/edit`}
+            variant="secondary"
+            className="w-full sm:w-auto"
+          >
+            Edit seller
+          </ButtonLink>
+        </div>
       </div>
+
+      {shareOpen && firstProcess ? (
+        <LeadShareDialog
+          leadId={seller.id}
+          journeyId={firstProcess.journeyId}
+          assignmentTypes={firstProcess.assignments.map((a) => a.assignmentType)}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
 
       <Card className="p-5">
         <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-soft">

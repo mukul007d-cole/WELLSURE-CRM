@@ -207,6 +207,7 @@ export function createRepository(state = createFixtureState()): PermissionReposi
             row.userId === input.userId &&
             row.leadId === input.leadId &&
             row.revokedAt === null &&
+            row.actions.includes(input.action) &&
             (row.expiresAt === null || row.expiresAt > input.now),
         ) ?? null,
       );

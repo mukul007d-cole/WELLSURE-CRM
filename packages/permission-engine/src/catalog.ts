@@ -11,7 +11,16 @@ export const permissionCatalog = [
   {
     module: 'leads',
     label: 'Leads',
-    actions: ['view', 'create', 'edit', 'delete', 'export', 'bulk_reassign', 'bulk_status_change'],
+    actions: [
+      'view',
+      'create',
+      'edit',
+      'comment',
+      'delete',
+      'export',
+      'bulk_reassign',
+      'bulk_status_change',
+    ],
   },
   { module: 'fields', label: 'Fields', actions: ['view', 'create', 'edit', 'delete'] },
   {

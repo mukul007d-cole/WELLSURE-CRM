@@ -51,6 +51,7 @@ model Organization {
   importJobs          ImportJob[]
   payments            Payment[]
   notifications       Notification[]
+  notificationRules   NotificationRule[]
   settings            Setting[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -147,38 +148,41 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  role                Role                 @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
-  department          Department?          @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
-  designation         Designation?         @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
-  manager             User?                @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
-  reports             User[]               @relation("ReportingHierarchy")
-  assignments         Assignment[]
-  grants              UserAccessGrant[]    @relation("GrantRecipient")
-  issuedGrants        UserAccessGrant[]    @relation("GrantIssuer")
-  notifications       Notification[]
-  departmentsCreated  Department[]         @relation("DepartmentCreatedBy")
-  departmentsUpdated  Department[]         @relation("DepartmentUpdatedBy")
-  designationsCreated Designation[]        @relation("DesignationCreatedBy")
-  designationsUpdated Designation[]        @relation("DesignationUpdatedBy")
-  rolesCreated        Role[]               @relation("RoleCreatedBy")
-  rolesUpdated        Role[]               @relation("RoleUpdatedBy")
-  journeysCreated     Journey[]            @relation("JourneyCreatedBy")
-  journeysUpdated     Journey[]            @relation("JourneyUpdatedBy")
-  servicesCreated     Service[]            @relation("ServiceCreatedBy")
-  servicesUpdated     Service[]            @relation("ServiceUpdatedBy")
-  statusesCreated     Status[]             @relation("StatusCreatedBy")
-  statusesUpdated     Status[]             @relation("StatusUpdatedBy")
-  fieldsCreated       Field[]              @relation("FieldCreatedBy")
-  fieldsUpdated       Field[]              @relation("FieldUpdatedBy")
-  activities          ActivityLog[]
-  auditLogs           SystemAuditLog[]
-  assignedTasks       Task[]
-  uploadedAttachments Attachment[]
-  importJobs          ImportJob[]
-  settingsUpdated     Setting[]
-  sessions            Session[]
-  passwordResetTokens PasswordResetToken[]
+  organization             Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role                     Role                 @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+  department               Department?          @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  designation              Designation?         @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
+  manager                  User?                @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
+  reports                  User[]               @relation("ReportingHierarchy")
+  assignments              Assignment[]
+  grants                   UserAccessGrant[]    @relation("GrantRecipient")
+  issuedGrants             UserAccessGrant[]    @relation("GrantIssuer")
+  notifications            Notification[]
+  deactivatedLeads         Lead[]               @relation("LeadDeactivatedBy")
+  notificationRulesCreated NotificationRule[]   @relation("NotificationRuleCreatedBy")
+  notificationRulesUpdated NotificationRule[]   @relation("NotificationRuleUpdatedBy")
+  departmentsCreated       Department[]         @relation("DepartmentCreatedBy")
+  departmentsUpdated       Department[]         @relation("DepartmentUpdatedBy")
+  designationsCreated      Designation[]        @relation("DesignationCreatedBy")
+  designationsUpdated      Designation[]        @relation("DesignationUpdatedBy")
+  rolesCreated             Role[]               @relation("RoleCreatedBy")
+  rolesUpdated             Role[]               @relation("RoleUpdatedBy")
+  journeysCreated          Journey[]            @relation("JourneyCreatedBy")
+  journeysUpdated          Journey[]            @relation("JourneyUpdatedBy")
+  servicesCreated          Service[]            @relation("ServiceCreatedBy")
+  servicesUpdated          Service[]            @relation("ServiceUpdatedBy")
+  statusesCreated          Status[]             @relation("StatusCreatedBy")
+  statusesUpdated          Status[]             @relation("StatusUpdatedBy")
+  fieldsCreated            Field[]              @relation("FieldCreatedBy")
+  fieldsUpdated            Field[]              @relation("FieldUpdatedBy")
+  activities               ActivityLog[]
+  auditLogs                SystemAuditLog[]
+  assignedTasks            Task[]
+  uploadedAttachments      Attachment[]
+  importJobs               ImportJob[]
+  settingsUpdated          Setting[]
+  sessions                 Session[]
+  passwordResetTokens      PasswordResetToken[]
 
   @@id([organizationId, id])
   @@unique([organizationId, email])
@@ -451,16 +455,20 @@ model FieldVisibility {
 }
 
 model Lead {
-  id             String   @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  phone          String?
-  email          String?
-  fieldValues    Json     @default("{}") @map("field_values") @db.JsonB
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String    @default(uuid()) @db.Uuid
+  organizationId      String    @map("organization_id") @db.Uuid
+  name                String
+  phone               String?
+  email               String?
+  fieldValues         Json      @default("{}") @map("field_values") @db.JsonB
+  active              Boolean   @default(true)
+  deactivatedAt       DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedByUserId String?   @map("deactivated_by_user_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  deactivatedBy    User?             @relation("LeadDeactivatedBy", fields: [organizationId, deactivatedByUserId], references: [organizationId, id], onDelete: Restrict)
   processInstances ProcessInstance[]
   grants           UserAccessGrant[]
   activities       ActivityLog[]
@@ -473,6 +481,7 @@ model Lead {
   linksTo          LeadLink[]        @relation("LeadLinkTo")
 
   @@id([organizationId, id])
+  @@index([organizationId, active, updatedAt])
   @@index([organizationId, phone])
   @@index([organizationId, email])
   @@index([organizationId, updatedAt])
@@ -562,6 +571,7 @@ model UserAccessGrant {
   grantedByUserId String    @map("granted_by_user_id") @db.Uuid
   expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
   revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  actions         String[]  @default(["view"])
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user          User @relation("GrantRecipient", fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
@@ -590,6 +600,7 @@ model ActivityLog {
   lead            Lead             @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
   processInstance ProcessInstance? @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
   actor           User?            @relation(fields: [organizationId, actorUserId], references: [organizationId, id], onDelete: Restrict)
+  notifications   Notification[]
 
   @@id([organizationId, id])
   @@index([organizationId, leadId, timestamp(sort: Desc)])
@@ -722,22 +733,69 @@ model Payment {
 }
 
 model Notification {
-  id              String   @default(uuid()) @db.Uuid
-  organizationId  String   @map("organization_id") @db.Uuid
-  userId          String   @map("user_id") @db.Uuid
-  type            String
-  referenceLeadId String?  @map("reference_lead_id") @db.Uuid
-  message         String
-  read            Boolean  @default(false)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String    @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  type               String
+  referenceLeadId    String?   @map("reference_lead_id") @db.Uuid
+  message            String
+  read               Boolean   @default(false)
+  readAt             DateTime? @map("read_at") @db.Timestamptz(6)
+  notificationRuleId String?   @map("notification_rule_id") @db.Uuid
+  activityLogId      String?   @map("activity_log_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user          User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
-  referenceLead Lead?        @relation(fields: [organizationId, referenceLeadId], references: [organizationId, id], onDelete: Restrict)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user             User              @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  referenceLead    Lead?             @relation(fields: [organizationId, referenceLeadId], references: [organizationId, id], onDelete: Restrict)
+  notificationRule NotificationRule? @relation(fields: [organizationId, notificationRuleId], references: [organizationId, id], onDelete: Restrict)
+  activityLog      ActivityLog?      @relation(fields: [organizationId, activityLogId], references: [organizationId, id], onDelete: Restrict)
 
   @@id([organizationId, id])
+  @@unique([organizationId, notificationRuleId, activityLogId, userId])
   @@index([organizationId, userId, read, createdAt])
   @@map("notifications")
+}
+
+model NotificationRule {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  triggerType    String   @map("trigger_type")
+  scope          Json?    @db.JsonB
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String   @map("created_by") @db.Uuid
+  updatedById    String   @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy     User                        @relation("NotificationRuleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy     User                        @relation("NotificationRuleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  recipients    NotificationRuleRecipient[]
+  notifications Notification[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, triggerType, active])
+  @@map("notification_rules")
+}
+
+model NotificationRuleRecipient {
+  id             String @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  ruleId         String @map("rule_id") @db.Uuid
+  resolverType   String @map("resolver_type")
+  parameters     Json   @default("{}") @db.JsonB
+  sortOrder      Int    @map("sort_order")
+
+  rule NotificationRule @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Cascade)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, ruleId, sortOrder])
+  @@map("notification_rule_recipients")
 }
 
 model Setting {
