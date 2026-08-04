@@ -3,7 +3,7 @@
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "dev": { "cache": false, "persistent": true },
-    "lint": { "dependsOn": ["^lint"] },
+    "lint": { "dependsOn": ["^build", "^lint"] },
     "test": {
       "dependsOn": ["^build"],
       "env": ["FALCON_POSTGRES_URL", "DOCKER_HOST"]
