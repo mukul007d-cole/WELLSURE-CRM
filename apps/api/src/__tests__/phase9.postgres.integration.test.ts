@@ -63,6 +63,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
           name: `Synthetic ${i}`,
           email: `synthetic-${i}@example.test`,
           roleId: role,
+          active: true,
           ...(id === other ? { managerId: revoked } : {}),
         }))
         .concat([
