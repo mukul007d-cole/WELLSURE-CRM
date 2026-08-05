@@ -3,6 +3,7 @@ import type {
   CreateLeadInput,
   EditLeadInput,
   FieldDefinition,
+  FieldValidationRule,
   Journey,
   Seller360Record,
   SellerListInput,
@@ -214,9 +215,65 @@ export const notificationsApi = {
     request<NotificationRule>(`/notification-rules/${id}`, json('PUT', body)),
 };
 
+/**
+ * The configuration endpoints return raw Prisma rows, whose column names don't
+ * match the client-facing domain types (`active` vs `isActive`, `name` vs
+ * `label`, `fieldType` vs `type`). Normalizing here keeps that drift in one
+ * place instead of leaking a second shape into every consumer.
+ *
+ * Each normalizer accepts either spelling so it works against the API and the
+ * older mock payloads alike.
+ */
+type RawStatus = Omit<Status, 'isActive'> & { isActive?: boolean; active?: boolean };
+type RawField = Partial<FieldDefinition> & {
+  id: string;
+  key: string;
+  name?: string;
+  fieldType?: string;
+  validationRule?: (FieldValidationRule & { options?: readonly string[] }) | null;
+};
+
+function normalizeStatus(row: RawStatus): Status {
+  const { active, ...rest } = row;
+  return { ...rest, isActive: row.isActive ?? active ?? true };
+}
+
+function normalizeField(row: RawField): FieldDefinition {
+  const rule = row.validationRule ?? undefined;
+  const options = row.options ?? rule?.options;
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label ?? row.name ?? row.key,
+    type: (row.type ?? row.fieldType ?? 'text') as FieldDefinition['type'],
+    ...(options ? { options } : {}),
+    ...(rule ? { validationRule: rule } : {}),
+  };
+}
+
+/** Page envelope, tolerating older handlers that returned a bare array. */
+function items<T>(payload: Page<T> | T[]): T[] {
+  return Array.isArray(payload) ? payload : (payload.items ?? []);
+}
+
 export const configApi = {
-  journeys: () => request<Page<Journey>>('/journeys').then((page) => page.items),
-  statuses: (journeyId: string) => request<Status[]>(`/journeys/${journeyId}/statuses`),
-  fields: () => request<Page<FieldDefinition>>('/fields').then((page) => page.items),
-  services: () => request<Page<Service>>('/services').then((page) => page.items),
+  journeys: () => request<Page<Journey> | Journey[]>('/journeys').then(items),
+  /**
+   * `GET /journeys/:id/statuses` is documented but only registered for POST, so
+   * it 404s outside the mocks. `GET /journeys/:id` is registered and already
+   * returns its statuses filtered to active and ordered by sortOrder.
+   */
+  statuses: (journeyId: string) =>
+    request<Omit<AdminJourney, 'statuses'> & { statuses?: RawStatus[] }>(
+      `/journeys/${journeyId}`,
+    ).then((journey) =>
+      (journey.statuses ?? [])
+        .map(normalizeStatus)
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    ),
+  fields: () =>
+    request<Page<RawField> | RawField[]>('/fields')
+      .then(items)
+      .then((rows) => rows.map(normalizeField)),
+  services: () => request<Page<Service> | Service[]>('/services').then(items),
 };

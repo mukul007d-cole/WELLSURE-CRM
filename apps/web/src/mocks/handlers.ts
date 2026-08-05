@@ -282,9 +282,10 @@ export const handlers = [
         (a, b) => a.sortOrder - b.sortOrder,
       ),
     }));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(pageResponse(request, rows))
-      : HttpResponse.json(JOURNEYS);
+    // The API always returns a Page here. Returning a bare array when the
+    // caller omitted pageSize used to make configApi.journeys() resolve to
+    // undefined, which silently emptied the journey tabs.
+    return HttpResponse.json(pageResponse(request, rows));
   }),
   http.get(`${API_BASE}/journeys/:id`, ({ params }) => {
     const journey = JOURNEYS.find((row) => row.id === params.id);
@@ -292,9 +293,11 @@ export const handlers = [
       ? HttpResponse.json({
           ...journey,
           active: journey.isActive,
-          statuses: STATUSES.filter((status) => status.journeyId === journey.id).sort(
-            (a, b) => a.sortOrder - b.sortOrder,
-          ),
+          // Serialized the way Prisma emits it (`active`, not `isActive`) so the
+          // client's normalizer is exercised against the real DTO.
+          statuses: STATUSES.filter((status) => status.journeyId === journey.id)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(({ isActive, ...status }) => ({ ...status, active: isActive })),
         })
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
@@ -318,11 +321,9 @@ export const handlers = [
     return HttpResponse.json({ ...row, active: false });
   }),
 
-  http.get(`${API_BASE}/journeys/:id/statuses`, async ({ params }) => {
-    await delay(250);
-    if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    return HttpResponse.json(STATUSES.filter((status) => status.journeyId === params.id));
-  }),
+  // No GET /journeys/:id/statuses handler on purpose: the API registers only
+  // POST for that path. Mocking the GET let a client call that 404s in
+  // production pass every test. Statuses come from GET /journeys/:id.
   http.post(`${API_BASE}/journeys/:id/statuses`, async ({ params, request }) => {
     const body = (await request.json()) as Omit<
       (typeof STATUSES)[number],
@@ -399,15 +400,14 @@ export const handlers = [
     await delay(200);
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    const visible = FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(
-          pageResponse(
-            request,
-            MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
-          ),
-        )
-      : HttpResponse.json(visible);
+    // Always a Page of API-shaped rows (`name`/`fieldType`), matching what
+    // readConfiguration actually serializes.
+    return HttpResponse.json(
+      pageResponse(
+        request,
+        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
+      ),
+    );
   }),
   http.post(`${API_BASE}/fields`, async ({ request }) => {
     const body = (await request.json()) as Omit<

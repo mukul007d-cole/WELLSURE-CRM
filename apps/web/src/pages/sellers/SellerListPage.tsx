@@ -13,7 +13,7 @@ import { RingAvatar } from '../../components/ui/RingAvatar';
 import { Select } from '../../components/ui/Select';
 import { SellerRowSkeleton } from '../../components/ui/Skeleton';
 import { StatusPill } from '../../components/ui/StatusPill';
-import { JourneyTabs } from './JourneyTabs';
+import { JourneyTabs } from '../../components/journeys/JourneyTabs';
 
 export function SellerListPage() {
   const location = useLocation();

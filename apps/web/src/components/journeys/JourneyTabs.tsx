@@ -5,14 +5,26 @@ interface JourneyTabsProps {
   journeys: Journey[];
   activeJourneyId: string | undefined;
   onSelect: (journeyId: string | undefined) => void;
+  /**
+   * The Seller List and Dashboard can show every journey at once; the board
+   * can't, because its columns are the statuses of one specific journey.
+   */
+  allowAll?: boolean;
 }
 
-export function JourneyTabs({ journeys, activeJourneyId, onSelect }: JourneyTabsProps) {
+export function JourneyTabs({
+  journeys,
+  activeJourneyId,
+  onSelect,
+  allowAll = true,
+}: JourneyTabsProps) {
   return (
     <div role="tablist" aria-label="Journey" className="flex gap-1 overflow-x-auto px-4 sm:px-6">
-      <TabButton active={!activeJourneyId} onClick={() => onSelect(undefined)}>
-        All journeys
-      </TabButton>
+      {allowAll ? (
+        <TabButton active={!activeJourneyId} onClick={() => onSelect(undefined)}>
+          All journeys
+        </TabButton>
+      ) : null}
       {journeys.map((journey) => (
         <TabButton
           key={journey.id}
