@@ -1,6 +1,17 @@
 # Phase 10 — Demo-ready workspace UI
 
-Status: approved 2026-08-05.
+Status: approved 2026-08-05. **Partially delivered.**
+
+Delivered so far: foundations (config-transport fixes, status-tone extraction,
+query-key factory, shared JourneyTabs, Dialog), shell polish (collapsible
+sidebar, scoped Topbar refresh, nav reshuffle), Settings, Dashboard, and the Org
+chart including `buildHierarchy` with cycle/orphan handling and its unit tests.
+
+**Not yet built: the Board (section 2).** No `/board` route, nav entry, or
+`@dnd-kit/core` dependency has been added — the sidebar does not advertise a
+board that doesn't exist. The rejected-drag revert, `board-cache.ts`, and
+`BoardPage.test.tsx` remain outstanding, along with the component tests for
+Dashboard, Settings, OrgChartPage and AppShell.
 
 ## Context
 

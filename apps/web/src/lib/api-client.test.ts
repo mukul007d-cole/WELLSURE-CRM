@@ -26,7 +26,8 @@ describe('api client with the test-only MSW server', () => {
     await signIn();
     const journeys = await configApi.journeys();
     expect(journeys.length).toBeGreaterThan(0);
-    expect(journeys[0]).toMatchObject({ id: expect.any(String), name: expect.any(String) });
+    expect(typeof journeys[0]?.id).toBe('string');
+    expect(typeof journeys[0]?.name).toBe('string');
   });
 
   it('reads statuses off the journey document, ordered by sortOrder and normalized', async () => {

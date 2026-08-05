@@ -14,9 +14,15 @@ import { Select } from '../../components/ui/Select';
 import { SellerRowSkeleton } from '../../components/ui/Skeleton';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { JourneyTabs } from '../../components/journeys/JourneyTabs';
+import { usePageChrome } from '../../app/page-chrome';
+import { densityRowClass, usePreferences } from '../../app/preferences';
+import { qk } from '../../lib/query-keys';
 
 export function SellerListPage() {
   const location = useLocation();
+  const { tableDensity } = usePreferences();
+  const rowPadding = densityRowClass(tableDensity);
+  usePageChrome('Sellers', [qk.sellers(), qk.journeys()]);
   const [params, setParams] = useSearchParams();
   const journeyId = params.get('journeyId') ?? undefined;
   const statusId = params.get('statusId') ?? undefined;
@@ -214,7 +220,7 @@ export function SellerListPage() {
                   const process = row.processInstances?.[0];
                   return (
                     <tr key={row.id} className="border-b border-line last:border-0 hover:bg-paper">
-                      <td className="px-6 py-3">
+                      <td className={`px-6 ${rowPadding}`}>
                         <Link to={`/sellers/${row.id}`} className="flex items-center gap-3">
                           <RingAvatar name={row.name} size={34} />
                           <span>
@@ -230,10 +236,10 @@ export function SellerListPage() {
                           </span>
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-sm text-ink-soft">
+                      <td className={`px-4 ${rowPadding} text-sm text-ink-soft`}>
                         {process?.journeyName ?? '—'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 ${rowPadding}`}>
                         {process ? (
                           <StatusPill
                             name={process.statusName}
@@ -244,7 +250,7 @@ export function SellerListPage() {
                           <span className="text-sm text-ink-soft">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-ink-soft">
+                      <td className={`px-4 ${rowPadding} text-sm text-ink-soft`}>
                         {process?.ownerName ?? 'Unassigned'}
                       </td>
                     </tr>
