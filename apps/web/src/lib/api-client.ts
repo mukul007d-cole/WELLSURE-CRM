@@ -215,8 +215,8 @@ export const notificationsApi = {
 };
 
 export const configApi = {
-  journeys: () => request<Journey[]>('/journeys'),
+  journeys: () => request<Page<Journey>>('/journeys').then((page) => page.items),
   statuses: (journeyId: string) => request<Status[]>(`/journeys/${journeyId}/statuses`),
-  fields: () => request<FieldDefinition[]>('/fields'),
-  services: () => request<Service[]>('/services'),
+  fields: () => request<Page<FieldDefinition>>('/fields').then((page) => page.items),
+  services: () => request<Page<Service>>('/services').then((page) => page.items),
 };

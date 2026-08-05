@@ -80,7 +80,7 @@ export async function resolveAuthorization(input: {
       : [];
   const journeyAllowed =
     input.request.journeyId === undefined
-      ? accessibleJourneyIds.length > 0
+      ? true
       : await input.repository.hasJourneyAccess({
           roleId: role.id,
           organizationId: input.request.organizationId,
