@@ -85,8 +85,10 @@ describe('org chart', () => {
 
     renderOrgChart();
 
-    // Wait for the page itself to mount past the auth spinner first.
-    await screen.findByText(/who reports to whom/i);
+    // Wait for the page itself to mount past the auth spinner first. The
+    // heading now lives on the User management shell, so anchor on a control
+    // this view owns.
+    await screen.findByLabelText('Search people');
     expect(screen.getByText(/loading the full directory/i)).toBeInTheDocument();
     expect(screen.queryByRole('treeitem')).not.toBeInTheDocument();
 

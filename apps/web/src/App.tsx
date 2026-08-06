@@ -18,6 +18,7 @@ import { JourneyDetailPage } from './pages/admin/JourneyDetailPage';
 import { RoleDetailPage } from './pages/admin/RoleDetailPage';
 import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 import { OrgChartPage } from './pages/admin/OrgChartPage';
+import { UserManagementPage } from './pages/admin/UserManagementPage';
 import { BoardPage } from './pages/board/BoardPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
@@ -48,8 +49,11 @@ export function App() {
                     <Route path="/admin/fields" element={<FieldsPage />} />
                   </Route>
                   <Route element={<PermissionRoute module="users" />}>
-                    <Route path="/admin/users" element={<UsersPage />} />
-                    <Route path="/admin/org-chart" element={<OrgChartPage />} />
+                    {/* Directory and org chart are two views of one area. */}
+                    <Route path="/admin/users" element={<UserManagementPage />}>
+                      <Route index element={<UsersPage />} />
+                      <Route path="org-chart" element={<OrgChartPage />} />
+                    </Route>
                     <Route path="/admin/departments" element={<DepartmentsPage />} />
                   </Route>
                   <Route element={<PermissionRoute module="roles_permissions" />}>

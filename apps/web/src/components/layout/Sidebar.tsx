@@ -78,19 +78,32 @@ function navLinkClass(collapsed: boolean) {
     );
 }
 
-function SectionHeading({ label, collapsed }: { label: string; collapsed: boolean }) {
+function SectionHeading({
+  label,
+  collapsed,
+  first,
+}: {
+  label: string;
+  collapsed: boolean;
+  first?: boolean;
+}) {
   if (collapsed) {
     // Keep the grouping audible and visible without the words: a rule stands in
     // for the heading, and the label stays in the accessibility tree.
     return (
       <>
-        <hr className="mx-2 mt-5 border-t border-on-ink-line" />
+        {first ? null : <hr className="mx-2 mt-5 border-t border-on-ink-line" />}
         <p className="sr-only">{label}</p>
       </>
     );
   }
   return (
-    <p className="mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-on-ink-soft">
+    <p
+      className={cn(
+        'px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-on-ink-soft',
+        first ? 'mt-0' : 'mt-6',
+      )}
+    >
       {label}
     </p>
   );
@@ -98,24 +111,36 @@ function SectionHeading({ label, collapsed }: { label: string; collapsed: boolea
 
 export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { can } = useAuth();
-  const adminItems: NavItem[] = [
+  /**
+   * Grouped by what the user is doing, not by which table it writes to:
+   * configuration shapes the pipeline, people & access decides who can act.
+   * Each group still hides entirely when its permission is absent.
+   */
+  const configurationItems: NavItem[] = [
     ...(can('journeys_statuses', 'view')
       ? [{ label: 'Journeys', to: '/admin/journeys', icon: <Icon d="M4 6h16M4 12h12M4 18h8" /> }]
       : []),
     ...(can('fields', 'view')
       ? [{ label: 'Fields', to: '/admin/fields', icon: <Icon d="M5 5h14v14H5z" /> }]
       : []),
+    ...(can('roles_permissions', 'view')
+      ? [
+          {
+            label: 'Notification rules',
+            to: '/admin/notification-rules',
+            icon: <Icon d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
+          },
+        ]
+      : []),
+  ];
+
+  const peopleItems: NavItem[] = [
     ...(can('users', 'view')
       ? [
           {
-            label: 'Users',
+            label: 'User management',
             to: '/admin/users',
             icon: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8" />,
-          },
-          {
-            label: 'Org chart',
-            to: '/admin/org-chart',
-            icon: <Icon d="M12 3v4M6 21v-4M18 21v-4M6 17h12v-4H6zM10 7h4v4h-4z" />,
           },
           {
             label: 'Departments',
@@ -127,14 +152,9 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
     ...(can('roles_permissions', 'view')
       ? [
           {
-            label: 'Roles',
+            label: 'Roles & permissions',
             to: '/admin/roles',
             icon: <Icon d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" />,
-          },
-          {
-            label: 'Notification rules',
-            to: '/admin/notification-rules',
-            icon: <Icon d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
           },
         ]
       : []),
@@ -182,12 +202,20 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
       </div>
 
       <nav id="sidebar-nav" className="flex-1 overflow-y-auto px-3 py-2" aria-label="Primary">
-        <ul className="flex flex-col gap-1">{PRIMARY.map(renderLink)}</ul>
+        <SectionHeading label="Workspace" collapsed={collapsed} first />
+        <ul className="mt-2 flex flex-col gap-1">{PRIMARY.map(renderLink)}</ul>
 
-        {adminItems.length ? (
+        {configurationItems.length ? (
           <>
-            <SectionHeading label="Administration" collapsed={collapsed} />
-            <ul className="mt-2 flex flex-col gap-1">{adminItems.map(renderLink)}</ul>
+            <SectionHeading label="Configuration" collapsed={collapsed} />
+            <ul className="mt-2 flex flex-col gap-1">{configurationItems.map(renderLink)}</ul>
+          </>
+        ) : null}
+
+        {peopleItems.length ? (
+          <>
+            <SectionHeading label="People & access" collapsed={collapsed} />
+            <ul className="mt-2 flex flex-col gap-1">{peopleItems.map(renderLink)}</ul>
           </>
         ) : null}
 

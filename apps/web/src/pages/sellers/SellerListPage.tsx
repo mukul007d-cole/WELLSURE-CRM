@@ -14,6 +14,7 @@ import { Select } from '../../components/ui/Select';
 import { SellerRowSkeleton } from '../../components/ui/Skeleton';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { JourneyTabs } from '../../components/journeys/JourneyTabs';
+import { PageHeader, ResultSummary, Toolbar } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
 import { densityRowClass, usePreferences } from '../../app/preferences';
 import { qk } from '../../lib/query-keys';
@@ -90,6 +91,7 @@ export function SellerListPage() {
 
   const hasFilters = Boolean(search || statusId);
   const rows = sellersQuery.data?.rows ?? [];
+  const total = sellersQuery.data?.total ?? 0;
 
   return (
     <div className="flex flex-col">
@@ -97,20 +99,24 @@ export function SellerListPage() {
         {(location.state as { forbiddenFrom?: string } | null)?.forbiddenFrom ? (
           <Banner tone="error">You do not have permission to open that administration page.</Banner>
         ) : null}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="font-display text-2xl font-bold text-ink">Sellers</h2>
-            <p className="mt-0.5 text-sm text-ink-soft">
-              Every lead and seller across your journeys, in one place.
-            </p>
-          </div>
-          <ButtonLink to="/sellers/new" className="w-full sm:w-auto">
-            New seller
-          </ButtonLink>
-        </div>
+        <PageHeader
+          title="Sellers"
+          description="Every lead and seller across your journeys, in one place."
+          actions={<ButtonLink to="/sellers/new">New seller</ButtonLink>}
+        />
 
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="sm:w-48">
+        <Toolbar
+          trailing={
+            <ResultSummary>
+              {sellersQuery.isPending
+                ? 'Loading…'
+                : `${total.toLocaleString('en-IN')} ${total === 1 ? 'seller' : 'sellers'}${
+                    hasFilters ? ' matching' : ''
+                  }`}
+            </ResultSummary>
+          }
+        >
+          <div className="w-full sm:w-44">
             <label htmlFor="access-filter" className="sr-only">
               Lead access
             </label>
@@ -124,7 +130,7 @@ export function SellerListPage() {
               <option value="all">All</option>
             </Select>
           </div>
-          <div className="sm:max-w-xs sm:flex-1">
+          <div className="w-full sm:max-w-xs sm:flex-1">
             <label htmlFor="seller-search" className="sr-only">
               Search sellers
             </label>
@@ -136,7 +142,7 @@ export function SellerListPage() {
               onChange={(event) => setSearchDraft(event.target.value)}
             />
           </div>
-          <div className="sm:w-56">
+          <div className="w-full sm:w-52">
             <label htmlFor="status-filter" className="sr-only">
               Filter by status
             </label>
@@ -154,7 +160,19 @@ export function SellerListPage() {
               ))}
             </Select>
           </div>
-        </div>
+          {hasFilters ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearchDraft('');
+                setParams(new URLSearchParams());
+              }}
+            >
+              Clear filters
+            </Button>
+          ) : null}
+        </Toolbar>
       </div>
 
       <div className="border-b border-line bg-surface">

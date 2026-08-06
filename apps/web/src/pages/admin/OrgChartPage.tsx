@@ -12,7 +12,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { adminApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { qk } from '../../lib/query-keys';
-import { AdminHeader, loadAllPages } from './shared';
+import { loadAllPages } from './shared';
 import { OrgNode } from './OrgNode';
 import { buildHierarchy, searchHierarchy, type OrgNode as OrgNodeData } from './org-hierarchy';
 
@@ -107,12 +107,7 @@ export function OrgChartPage() {
   const forbidden = usersQuery.error instanceof ApiError && usersQuery.error.status === 403;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
-        title="Org chart"
-        description="Who reports to whom, built from each person's manager."
-      />
-
+    <div className="space-y-4">
       {hierarchy.warnings.map((warning, index) => (
         <Banner key={index} tone="info">
           {warning.kind === 'cycle'

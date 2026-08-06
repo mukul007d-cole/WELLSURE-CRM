@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminField } from '../../types/domain';
+import { PageBody } from '../../components/layout/PageFrame';
 import {
   ActiveFilter,
   AdminHeader,
@@ -64,7 +65,7 @@ export function FieldsPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <PageBody>
       <AdminHeader
         title="Fields"
         description="Manage reusable Field definitions independently from Journeys."
@@ -133,7 +134,7 @@ export function FieldsPage() {
           onPage={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }
 function fieldBody(draft: FieldDraft) {

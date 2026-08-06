@@ -11,6 +11,7 @@ import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminRole } from '../../types/domain';
 import { SearchableSelect } from './SearchableSelect';
+import { PageBody } from '../../components/layout/PageFrame';
 import {
   ActiveFilter,
   AdminHeader,
@@ -61,7 +62,7 @@ export function RolesPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <PageBody>
       <AdminHeader
         title="Roles & permissions"
         description="Roles are configurable grant profiles; names never confer access."
@@ -189,6 +190,6 @@ export function RolesPage() {
           onPage={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }
