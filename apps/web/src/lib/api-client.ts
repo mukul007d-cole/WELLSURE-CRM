@@ -271,6 +271,16 @@ export const configApi = {
         .map(normalizeStatus)
         .sort((left, right) => left.sortOrder - right.sortOrder),
     ),
+  /**
+   * The assignment types actually in use on a Journey. `assignment_type` is a
+   * configurable free-text string with no enum and no other endpoint listing
+   * the permitted values, so this is the only way a client can assign someone
+   * without inventing a literal.
+   */
+  assignmentTypes: (journeyId: string) =>
+    request<{ assignmentTypes?: string[] }>(`/journeys/${journeyId}`).then(
+      (journey) => journey.assignmentTypes ?? [],
+    ),
   fields: () =>
     request<Page<RawField> | RawField[]>('/fields')
       .then(items)

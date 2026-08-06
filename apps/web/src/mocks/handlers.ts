@@ -334,6 +334,19 @@ export const handlers = [
           statuses: STATUSES.filter((status) => status.journeyId === journey.id)
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map(({ isActive, ...status }) => ({ ...status, active: isActive })),
+          // Distinct assignment types actually in use on this journey, matching
+          // the API's derivation from current assignments.
+          assignmentTypes: [
+            ...new Set(
+              LEADS.flatMap((lead) =>
+                lead.processInstances
+                  .filter((process) => process.journeyId === journey.id)
+                  .flatMap((process) =>
+                    process.assignments.map((assignment) => assignment.assignmentType),
+                  ),
+              ),
+            ),
+          ].sort(),
         })
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
@@ -757,7 +770,25 @@ export const handlers = [
       fieldValues?: Record<string, unknown>;
       statusId?: string;
       processInstanceId?: string;
+      assignmentTypes?: string[];
     };
+
+    /*
+     * Mirrors assignmentScopeAllowsLead in the permission engine: a scope
+     * narrower than ORGANIZATION only matches a record through a current
+     * assignment whose type is in the caller's assignmentTypes. Sending none
+     * therefore matches nothing and is refused — which is exactly how a client
+     * that omits the field silently 403s in production.
+     */
+    if (user.dataScope !== 'ORGANIZATION') {
+      const requested = new Set(body.assignmentTypes ?? []);
+      const matches = lead.processInstances.some((process) =>
+        process.assignments.some(
+          (assignment) => assignment.userId === user.id && requested.has(assignment.assignmentType),
+        ),
+      );
+      if (!matches) return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+    }
 
     if (body.name !== undefined) lead.name = body.name;
     if (body.phone !== undefined) lead.phone = body.phone ?? '';

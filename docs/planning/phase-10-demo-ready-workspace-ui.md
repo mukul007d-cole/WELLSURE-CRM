@@ -8,8 +8,16 @@ extraction, query-key factory, shared JourneyTabs, Dialog), shell polish
 Dashboard, the Org chart, and the Board with its optimistic move and
 rejected-drag revert.
 
-Gates at completion: format, lint (0 errors), typecheck, test (87 web tests
-across 20 files), and build all pass.
+Gates at completion: format, lint (0 errors), typecheck, test (94 web tests
+across 21 files, 43 API tests), and build all pass.
+
+The one backend change in this phase is additive and read-only:
+`GET /journeys/:journeyId` now also returns `assignmentTypes`, the distinct
+types currently in use across that Journey's process instances. Nothing else
+enumerated them — `assignments.assignment_type` is configurable free text with
+no enum, and `docs/api/endpoints.md` states the API "does not invent or require
+any canonical owner type string" — so the Lead form had no honest source and
+was hardcoding `'owner'`.
 
 Two deviations from the plan as written, both noted in Risks below:
 
@@ -355,11 +363,22 @@ breakpoint, font size, or column visibility.
 3. **`docs/api/endpoints.md` documents `GET /tasks`, `PATCH /tasks/:id/complete` and five
    `/reports/*` endpoints that do not exist.** Flagged per AGENTS.md rather than resolved
    silently; recommend marking those sections "not implemented" in the docs PR.
-4. **`LeadFormPage` omits `assignmentTypes` (defect 3)**, so a SELF/TEAM/DEPARTMENT user
-   silently 403s when saving — and the Board's rejection dialog links them to exactly that
-   form. It's a one-line fix, but it changes an existing mutation payload, which this
-   phase's scope excludes. **Recommendation: leave it, file it as a follow-up**, and
-   revisit alongside (1), since a rep can't reach the board at all until that's resolved.
+4. **~~`LeadFormPage` omits `assignmentTypes` (defect 3)~~ — fixed.** Both halves were
+   wrong in different ways, and only one of them 403s:
+   - **Edit** omitted `assignmentTypes` entirely, sending `[]`. That is the actual 403:
+     `assignmentScopeAllowsLead` only matches a record through a current assignment whose
+     type is in the caller's set, so any scope narrower than ORGANIZATION was denied. It
+     now sends the lead's real assignment types.
+   - **Create** hardcoded `'owner'`. This never 403s — `decision.ts:114` sets
+     `recordAllowed = leadId === undefined`, so the record-scope check is skipped
+     entirely on create and `assignmentTypes` never reaches it. The defect there is
+     hardcoded business data, plus the downstream effect that a lead created with a type
+     the org doesn't use can't later be edited by a scoped user. It now uses the
+     Journey's configured types.
+
+   A Journey with no leads yet exposes no types; rather than invent one, the form offers
+   a free-text box to name the first, which matches `assignment_type` being a
+   configurable string by design.
 5. **Pre-existing fixtures conflict with the synthetic-names constraint.** `fixtures.ts`
    uses real Wellsure journey names and plausible company names. All fixtures I *add* are
    synthetic; changing the existing ones would churn several tests. Flagging rather than

@@ -53,6 +53,22 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       },
     }) as Promise<ConfigRow | null>;
   }
+  /**
+   * `assignments.assignment_type` is a configurable free-text string, not an
+   * enum, and nothing else in the system enumerates the permitted values. The
+   * types actually in use on a Journey are therefore the only honest source
+   * for a client that needs to assign someone — otherwise it has to invent a
+   * literal, which the API explicitly does not require or define.
+   */
+  async listJourneyAssignmentTypes(org: string, journeyId: string): Promise<string[]> {
+    const rows = await this.prisma.assignment.findMany({
+      where: { organizationId: org, isCurrent: true, processInstance: { journeyId } },
+      distinct: ['assignmentType'],
+      select: { assignmentType: true },
+      orderBy: { assignmentType: 'asc' },
+    });
+    return rows.map((row) => row.assignmentType);
+  }
   async listServices(org: string, active: boolean | undefined, page: number, pageSize: number) {
     const where = { organizationId: org, ...(active === undefined ? {} : { active }) };
     const [total, items] = await Promise.all([

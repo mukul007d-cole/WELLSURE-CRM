@@ -40,6 +40,7 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     accessibleJourneyIds: readonly string[],
   ): Promise<{ total: number; items: ConfigRow[] }>;
   getJourneyDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
+  listJourneyAssignmentTypes(organizationId: string, journeyId: string): Promise<string[]>;
   listServices(
     organizationId: string,
     active: boolean | undefined,
@@ -151,8 +152,25 @@ export class ConfigurationService {
       )
       .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
   }
-  getJourney(input: { organizationId: string; journeyId: string; active: boolean | undefined }) {
-    return this.repository.getJourneyDetail(input.organizationId, input.journeyId, input.active);
+  async getJourney(input: {
+    organizationId: string;
+    journeyId: string;
+    active: boolean | undefined;
+  }) {
+    const journey = await this.repository.getJourneyDetail(
+      input.organizationId,
+      input.journeyId,
+      input.active,
+    );
+    if (journey === null) return null;
+    // Additive and read-only: clients that assign users need to know which
+    // assignment types this Journey actually uses, and no other endpoint
+    // exposes them.
+    const assignmentTypes = await this.repository.listJourneyAssignmentTypes(
+      input.organizationId,
+      input.journeyId,
+    );
+    return { ...journey, assignmentTypes };
   }
   listServices(input: {
     organizationId: string;

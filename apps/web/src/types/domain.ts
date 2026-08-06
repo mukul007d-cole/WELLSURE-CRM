@@ -20,6 +20,9 @@ export interface Journey {
   isActive: boolean;
 }
 
+/** Assignment types in use on a Journey — configurable strings, never an enum. */
+export type JourneyAssignmentTypes = readonly string[];
+
 export interface Status {
   id: string;
   journeyId: string;

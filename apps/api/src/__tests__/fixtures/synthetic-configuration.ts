@@ -85,6 +85,11 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
     const row = find(this.rows.journeys, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
+  /** Overridable per-test; the in-memory rows carry no assignments. */
+  journeyAssignmentTypes = new Map<string, string[]>();
+  async listJourneyAssignmentTypes(_org: string, journeyId: string) {
+    return this.journeyAssignmentTypes.get(journeyId) ?? [];
+  }
   async listServices(org: string, active: boolean | undefined, page: number, pageSize: number) {
     const all = [...this.rows.services.values()].filter(
       (x) => x.organizationId === org && (active === undefined || x.active === active),
