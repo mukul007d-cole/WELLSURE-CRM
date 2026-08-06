@@ -469,9 +469,10 @@ async function permittedLeadIds(
 ): Promise<string[]> {
   const process = where.processInstances?.some ?? where.OR?.[0]?.processInstances?.some;
   const journeyIds: string[] = process.journeyId.in;
-  const assignmentTypes: string[] = process.assignments.some.assignmentType.in;
+  // Optional now: no types supplied means no assignment-type filter.
+  const assignmentTypes: string[] | undefined = process.assignments.some.assignmentType?.in;
   const rows = await sql<
     { id: string }[]
-  >`SELECT DISTINCT l.id FROM leads l JOIN process_instances p ON p.lead_id=l.id JOIN assignments a ON a.process_instance_id=p.id WHERE l.organization_id=${where.organizationId} AND p.active=true AND p.journey_id IN ${sql(journeyIds)} AND a.is_current=true AND a.assignment_type IN ${sql(assignmentTypes)} ORDER BY l.id OFFSET ${skip} LIMIT ${take}`;
+  >`SELECT DISTINCT l.id FROM leads l JOIN process_instances p ON p.lead_id=l.id JOIN assignments a ON a.process_instance_id=p.id WHERE l.organization_id=${where.organizationId} AND p.active=true AND p.journey_id IN ${sql(journeyIds)} AND a.is_current=true ${assignmentTypes ? sql`AND a.assignment_type IN ${sql(assignmentTypes)}` : sql``} ORDER BY l.id OFFSET ${skip} LIMIT ${take}`;
   return rows.map((row) => row.id);
 }
