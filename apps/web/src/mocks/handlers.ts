@@ -1,5 +1,6 @@
 import { http, HttpResponse, delay } from 'msw';
 import {
+  DIRECTORY_USERS,
   FIELDS,
   JOURNEYS,
   LEADS,
@@ -63,6 +64,20 @@ const MOCK_DEPARTMENTS = [
     active: true,
     version: 1,
   },
+  {
+    id: 'department-b',
+    key: 'synthetic_unit_b',
+    name: 'Synthetic unit B',
+    active: true,
+    version: 1,
+  },
+  {
+    id: 'department-c',
+    key: 'synthetic_unit_c',
+    name: 'Synthetic unit C',
+    active: true,
+    version: 1,
+  },
 ];
 const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   id: field.id,
@@ -75,15 +90,18 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   source: 'manual',
   active: true,
 }));
-const MOCK_ADMIN_USERS = USERS.map((user) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  roleId: user.roleId,
-  departmentId: null as string | null,
-  managerId: null as string | null,
-  active: true,
-}));
+const MOCK_ADMIN_USERS = [
+  ...USERS.map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    roleId: user.roleId,
+    departmentId: null as string | null,
+    managerId: null as string | null,
+    active: true,
+  })),
+  ...DIRECTORY_USERS,
+];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
@@ -100,6 +118,23 @@ const INITIAL_ADMIN_STATE = structuredClone({
   users: MOCK_ADMIN_USERS,
 });
 
+/**
+ * Per-(field, journey) required-field rules, matching the shape of
+ * field_journey_settings. Tests push rules onto this to exercise a rejected
+ * status change; it starts empty so the default fixtures stay permissive.
+ */
+export const MOCK_REQUIRED_FIELD_RULES: Array<{
+  fieldId: string;
+  journeyId: string;
+  requiredFromStatusId: string | null;
+}> = [];
+
+function isBlank(value: unknown): boolean {
+  return (
+    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+  );
+}
+
 export function resetAdminMockState() {
   const initial = structuredClone(INITIAL_ADMIN_STATE);
   JOURNEYS.splice(0, JOURNEYS.length, ...initial.journeys);
@@ -109,6 +144,7 @@ export function resetAdminMockState() {
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_JOURNEY_FIELDS.splice(0);
+  MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 
 function pageResponse<T>(request: Request, rows: T[]) {
@@ -739,6 +775,25 @@ export const handlers = [
           status: 400,
         });
       }
+
+      /*
+       * Mirrors validateFieldValues in apps/api: a field is required when its
+       * requirement is 'required' and requiredFromStatusId is either null or an
+       * exact match for the *target* status. sortOrder plays no part.
+       * Only the first offender is reported, exactly as the API does.
+       */
+      const missing = MOCK_REQUIRED_FIELD_RULES.find(
+        (rule) =>
+          rule.journeyId === process.journeyId &&
+          (rule.requiredFromStatusId === null || rule.requiredFromStatusId === body.statusId) &&
+          isBlank(lead.fieldValues[rule.fieldId]),
+      );
+      if (missing) {
+        return HttpResponse.json(errorBody('validation_error', { fieldId: missing.fieldId }), {
+          status: 400,
+        });
+      }
+
       process.statusId = body.statusId;
       process.active = nextStatus.outcomeType === 'open';
     }

@@ -18,6 +18,7 @@ import { JourneyDetailPage } from './pages/admin/JourneyDetailPage';
 import { RoleDetailPage } from './pages/admin/RoleDetailPage';
 import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 import { OrgChartPage } from './pages/admin/OrgChartPage';
+import { BoardPage } from './pages/board/BoardPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
 import { PreferencesProvider } from './app/preferences';
@@ -33,6 +34,7 @@ export function App() {
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell title="Wellsure CRM" />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/board" element={<BoardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/sellers" element={<SellerListPage />} />
                   <Route path="/sellers/new" element={<LeadFormPage />} />

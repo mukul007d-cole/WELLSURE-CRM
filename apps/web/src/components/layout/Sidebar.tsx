@@ -37,6 +37,11 @@ const PRIMARY: NavItem[] = [
     icon: <Icon d="M4 13h6V4H4v9Zm10 7h6V4h-6v16ZM4 20h6v-4H4v4Z" />,
   },
   { label: 'Sellers', to: '/sellers', icon: <Icon d="M4 6h16M4 12h16M4 18h10" /> },
+  {
+    label: 'Board',
+    to: '/board',
+    icon: <Icon d="M4 5h5v14H4zM10 5h5v9h-5zM16 5h4v12h-4z" />,
+  },
 ];
 
 const SETTINGS: NavItem = {

@@ -1,17 +1,28 @@
 # Phase 10 — Demo-ready workspace UI
 
-Status: approved 2026-08-05. **Partially delivered.**
+Status: approved 2026-08-05. **Delivered.**
 
-Delivered so far: foundations (config-transport fixes, status-tone extraction,
-query-key factory, shared JourneyTabs, Dialog), shell polish (collapsible
-sidebar, scoped Topbar refresh, nav reshuffle), Settings, Dashboard, and the Org
-chart including `buildHierarchy` with cycle/orphan handling and its unit tests.
+All five sections are built: foundations (config-transport fixes, status-tone
+extraction, query-key factory, shared JourneyTabs, Dialog), shell polish
+(collapsible sidebar, scoped Topbar refresh, nav reshuffle), Settings,
+Dashboard, the Org chart, and the Board with its optimistic move and
+rejected-drag revert.
 
-**Not yet built: the Board (section 2).** No `/board` route, nav entry, or
-`@dnd-kit/core` dependency has been added — the sidebar does not advertise a
-board that doesn't exist. The rejected-drag revert, `board-cache.ts`, and
-`BoardPage.test.tsx` remain outstanding, along with the component tests for
-Dashboard, Settings, OrgChartPage and AppShell.
+Gates at completion: format, lint (0 errors), typecheck, test (87 web tests
+across 20 files), and build all pass.
+
+Two deviations from the plan as written, both noted in Risks below:
+
+- The route is `/board`, labelled **Board** rather than "Kanban".
+- `@dnd-kit/core`'s shipped types reference the global `JSX` namespace that
+  React 19 removed, so `src/types/jsx-global-shim.d.ts` aliases it to
+  `React.JSX`. Remove that file once dnd-kit ships React 19-compatible types.
+
+Real dragging is not covered by the automated tests — jsdom has no layout, so
+dnd-kit's collision detection can never resolve a drop target. The tests drive
+the identical mutation through each card's Move menu; verifying the drag gesture
+itself is a Playwright/manual task, consistent with quality-gates assigning
+end-to-end flows to Playwright.
 
 ## Context
 
