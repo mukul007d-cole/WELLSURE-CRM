@@ -52,6 +52,57 @@ describe('configuration engine API', () => {
     ]);
   });
 
+  /**
+   * Journey access is an explicit allow-list, and creation used to populate it
+   * for nobody — so a new Journey was filtered out of every list, including for
+   * the role that created it, and came back as an empty 200 rather than a 403.
+   */
+  it('grants the new Journey to config-visible roles so it is not created invisible', async () => {
+    const repository = new MemoryConfigurationRepository();
+    repository.configRoleIds = ['role-config-a', 'role-config-b'];
+
+    const response = await createJourney({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      key: 'test_journey_c',
+      name: 'Test Journey C',
+    });
+
+    expect(response.status).toBe(201);
+    const journeyRow = (response as { status: 201; body: { id: string } }).body;
+    expect(repository.grantedJourneyAccess).toEqual([
+      { journeyId: journeyRow.id, roleIds: ['role-config-a', 'role-config-b'] },
+    ]);
+    // The visibility grant is audited separately from the Journey itself.
+    expect(repository.systemAudits).toMatchObject([
+      { entityType: 'journey', action: 'create' },
+      {
+        entityType: 'journey',
+        action: 'edit',
+        newValue: { grantedRoleIds: repository.configRoleIds },
+      },
+    ]);
+  });
+
+  it('records no access grant when no role can see Journey configuration', async () => {
+    const repository = new MemoryConfigurationRepository();
+    repository.configRoleIds = [];
+
+    await createJourney({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      key: 'test_journey_d',
+      name: 'Test Journey D',
+    });
+
+    expect(repository.grantedJourneyAccess).toHaveLength(1);
+    expect(repository.grantedJourneyAccess[0]?.roleIds).toEqual([]);
+    // Nothing granted, so nothing to audit beyond the creation itself.
+    expect(repository.systemAudits).toHaveLength(1);
+  });
+
   it('blocks status deactivation with active process instances until a same-journey replacement is provided', async () => {
     const repository = new MemoryConfigurationRepository();
     repository.processInstances.push({

@@ -41,6 +41,7 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
   ): Promise<{ total: number; items: ConfigRow[] }>;
   getJourneyDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
   listJourneyAssignmentTypes(organizationId: string, journeyId: string): Promise<string[]>;
+  grantJourneyAccessToConfigRoles(organizationId: string, journeyId: string): Promise<string[]>;
   listServices(
     organizationId: string,
     active: boolean | undefined,
@@ -231,6 +232,16 @@ export class ConfigurationService {
         updatedById: input.actorUserId,
       });
       await tx.writeSystemAudit(audit(input, 'journey', row.id, 'create', null, row));
+
+      // Without this the Journey is visible to nobody, because access is an
+      // explicit allow-list that creation never populated. Audited separately:
+      // it grants visibility, and journey access gates which Leads a role sees.
+      const grantedRoleIds = await tx.grantJourneyAccessToConfigRoles(input.organizationId, row.id);
+      if (grantedRoleIds.length > 0) {
+        await tx.writeSystemAudit(
+          audit(input, 'journey', row.id, 'edit', null, { grantedRoleIds }),
+        );
+      }
       return row;
     });
   }

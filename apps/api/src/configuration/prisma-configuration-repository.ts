@@ -145,6 +145,31 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
   }
+  /**
+   * Journey access is an explicit per-role allow-list, and creating a Journey
+   * used to add nobody to it — so a newly created Journey was invisible to
+   * every role, including its author's. This grants it to the roles that can
+   * already see Journey configuration, which is the set bootstrap seeds.
+   *
+   * Returns the roles granted so the caller can audit the change.
+   */
+  async grantJourneyAccessToConfigRoles(org: string, journeyId: string): Promise<string[]> {
+    const roles = await this.prisma.role.findMany({
+      where: {
+        organizationId: org,
+        active: true,
+        permissions: { some: { organizationId: org, module: 'journeys_statuses', action: 'view' } },
+      },
+      select: { id: true },
+    });
+    if (roles.length === 0) return [];
+
+    await this.prisma.roleJourneyAccess.createMany({
+      data: roles.map((role) => ({ organizationId: org, roleId: role.id, journeyId })),
+      skipDuplicates: true,
+    });
+    return roles.map((role) => role.id);
+  }
   async updateJourney(
     org: string,
     id: string,
