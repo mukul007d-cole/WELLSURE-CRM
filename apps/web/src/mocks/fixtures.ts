@@ -42,6 +42,8 @@ export const STATUSES: Status[] = JOURNEYS.flatMap((journey) =>
     behaviorType: template.behaviorType,
     isActive: true,
     sortOrder: index,
+    // Creating a Lead with no explicit status falls back to this one.
+    isDefaultOnCreate: index === 0,
   })),
 );
 

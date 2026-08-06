@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
@@ -10,6 +10,12 @@ import { server } from '../../test/setup';
 import { LeadFormPage } from './LeadFormPage';
 
 const JOURNEY = JOURNEYS[0]!;
+
+/** Echoes the id so a navigation to /sellers/undefined is unmistakable. */
+function SellerDetailStub() {
+  const { sellerId } = useParams<{ sellerId: string }>();
+  return <p>Seller detail: {sellerId}</p>;
+}
 
 function renderForm(userId: string, path: string, route: string) {
   document.cookie = setCookieHeader(createSession(userId));
@@ -21,7 +27,7 @@ function renderForm(userId: string, path: string, route: string) {
         <AuthProvider>
           <Routes>
             <Route path={route} element={<LeadFormPage />} />
-            <Route path="/sellers/:sellerId" element={<p>Seller detail</p>} />
+            <Route path="/sellers/:sellerId" element={<SellerDetailStub />} />
             <Route path="/sellers" element={<p>Seller list</p>} />
           </Routes>
         </AuthProvider>
@@ -67,7 +73,11 @@ function captureCreate() {
     http.post('/api/v1/leads', async ({ request }) => {
       const body = (await request.json()) as (typeof bodies)[number];
       bodies.push(body);
-      return HttpResponse.json({ id: 'lead-new', processInstances: [] }, { status: 201 });
+      // Mirrors the API: raw rows, no top-level id.
+      return HttpResponse.json(
+        { lead: { id: 'lead-new', name: 'Synthetic Co' }, process: { id: 'pi-new' } },
+        { status: 201 },
+      );
     }),
   );
   return bodies;
@@ -111,7 +121,19 @@ describe('lead form assignment types', () => {
         HttpResponse.json({
           ...JOURNEY,
           active: true,
-          statuses: [],
+          statuses: [
+            {
+              id: 'status-default',
+              journeyId: JOURNEY.id,
+              key: 'new',
+              name: 'New',
+              outcomeType: 'open',
+              behaviorType: 'default',
+              active: true,
+              sortOrder: 0,
+              isDefaultOnCreate: true,
+            },
+          ],
           assignmentTypes: ['synthetic-relationship-lead'],
         }),
       ),
@@ -164,6 +186,81 @@ describe('lead form assignment types', () => {
     expect(bodies).toHaveLength(0);
   });
 
+  it('navigates to the created seller rather than /sellers/undefined', async () => {
+    // POST /leads returns { lead, process }, so reading `id` off the top level
+    // produced undefined and a GET /leads/undefined that 500s on a non-UUID.
+    captureCreate();
+    renderCreate();
+    await waitForFormReady();
+
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    await chooseAssignmentType('owner');
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    expect(await screen.findByText('Seller detail: lead-new')).toBeInTheDocument();
+  });
+
+  it('refuses to submit against a journey with no active statuses', async () => {
+    const bodies = captureCreate();
+    server.use(
+      http.get('/api/v1/journeys/:id', () =>
+        HttpResponse.json({ ...JOURNEY, active: true, statuses: [], assignmentTypes: ['owner'] }),
+      ),
+    );
+
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    await chooseAssignmentType('owner');
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    // Named plainly instead of a bare validation_error from the server.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no active statuses/i);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it('requires an explicit status when the journey has no default-on-create', async () => {
+    const bodies = captureCreate();
+    server.use(
+      http.get('/api/v1/journeys/:id', () =>
+        HttpResponse.json({
+          ...JOURNEY,
+          active: true,
+          assignmentTypes: ['owner'],
+          statuses: [
+            {
+              id: 'status-no-default',
+              journeyId: JOURNEY.id,
+              key: 'triage',
+              name: 'Triage',
+              outcomeType: 'open',
+              behaviorType: 'default',
+              active: true,
+              sortOrder: 0,
+              isDefaultOnCreate: false,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    await chooseAssignmentType('owner');
+
+    // No "use journey default" on offer, because there is no default.
+    await screen.findByRole('option', { name: 'Triage' });
+    expect(screen.queryByRole('option', { name: 'Use journey default' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/choose a status/i);
+    expect(bodies).toHaveLength(0);
+  });
+
   /**
    * The actual defect. assignmentTypes feeds the authorization
    * record-predicate; omitting it sends an empty array, which matches no
@@ -182,7 +279,7 @@ describe('lead form assignment types', () => {
     await waitFor(() => expect(bodies).toHaveLength(1));
     // The lead's real assignment types travel with the request.
     expect(bodies[0]!.assignmentTypes).toEqual(['owner']);
-    expect(await screen.findByText('Seller detail')).toBeInTheDocument();
+    expect(await screen.findByText(/^Seller detail: lead-1$/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 

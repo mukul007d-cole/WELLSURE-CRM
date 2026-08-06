@@ -750,7 +750,15 @@ export const handlers = [
     };
     LEADS.unshift(lead);
 
-    return HttpResponse.json(serializeDetail(lead, user), { status: 201 });
+    // The API returns the raw rows, not a serialized record. Mirroring that
+    // here is what makes `created.lead.id` the correct thing for callers to read.
+    return HttpResponse.json(
+      {
+        lead: { id: lead.id, name: lead.name },
+        process: { id: `pi-${id}`, journeyId: body.journeyId, currentStatusId: statusId },
+      },
+      { status: 201 },
+    );
   }),
 
   http.patch(`${API_BASE}/leads/:id`, async ({ request, params }) => {
@@ -829,7 +837,15 @@ export const handlers = [
       process.active = nextStatus.outcomeType === 'open';
     }
 
-    return HttpResponse.json(serializeDetail(lead, user));
+    // The API returns the raw rows here, not a serialized record.
+    return HttpResponse.json({
+      lead: { id: lead.id, name: lead.name },
+      process: {
+        id: process?.processInstanceId ?? '',
+        journeyId: process?.journeyId ?? '',
+        currentStatusId: process?.statusId ?? '',
+      },
+    });
   }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),

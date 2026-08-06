@@ -41,6 +41,7 @@ const targetStatus: Status = {
   behaviorType: 'default',
   isActive: true,
   sortOrder: 2,
+  isDefaultOnCreate: false,
 };
 
 describe('removeRow', () => {

@@ -5,6 +5,7 @@ import type {
   FieldDefinition,
   FieldValidationRule,
   Journey,
+  LeadMutationResult,
   Seller360Record,
   SellerListInput,
   SellerListResponse,
@@ -180,10 +181,16 @@ export const sellersApi = {
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
+  // These return { lead, process } — the raw rows — not a Seller360Record.
+  // Typing them as the latter meant `created.id` was silently undefined, which
+  // navigated to /sellers/undefined and 500ed on a non-UUID lookup.
   create: (input: CreateLeadInput) =>
-    request<Seller360Record>('/leads', { method: 'POST', body: JSON.stringify(input) }),
+    request<LeadMutationResult>('/leads', { method: 'POST', body: JSON.stringify(input) }),
   edit: (id: string, input: EditLeadInput) =>
-    request<Seller360Record>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    request<LeadMutationResult>(`/leads/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   shares: (id: string, context: { journeyId: string; assignmentTypes: string[] }) =>
     request<LeadShare[]>(
       `/leads/${id}/shares${toQuery({ journeyId: context.journeyId, assignmentTypes: context.assignmentTypes.join(',') })}`,
@@ -224,7 +231,11 @@ export const notificationsApi = {
  * Each normalizer accepts either spelling so it works against the API and the
  * older mock payloads alike.
  */
-type RawStatus = Omit<Status, 'isActive'> & { isActive?: boolean; active?: boolean };
+type RawStatus = Omit<Status, 'isActive' | 'isDefaultOnCreate'> & {
+  isActive?: boolean;
+  active?: boolean;
+  isDefaultOnCreate?: boolean;
+};
 type RawField = Partial<FieldDefinition> & {
   id: string;
   key: string;
@@ -235,7 +246,11 @@ type RawField = Partial<FieldDefinition> & {
 
 function normalizeStatus(row: RawStatus): Status {
   const { active, ...rest } = row;
-  return { ...rest, isActive: row.isActive ?? active ?? true };
+  return {
+    ...rest,
+    isActive: row.isActive ?? active ?? true,
+    isDefaultOnCreate: row.isDefaultOnCreate ?? false,
+  };
 }
 
 function normalizeField(row: RawField): FieldDefinition {

@@ -73,6 +73,15 @@ export function LeadFormPage() {
     queryFn: () => configApi.assignmentTypes(selectedJourneyId),
     enabled: Boolean(selectedJourneyId) && !isEditMode,
   });
+  const activeStatuses = (statusesQuery.data ?? []).filter((status) => status.isActive);
+  /**
+   * Creating without an explicit statusId falls back to the Journey's
+   * default-on-create Status. Offering that when no Status carries the flag is
+   * a trap: the API rejects it with a bare validation_error that names nothing.
+   */
+  const hasDefaultStatus = activeStatuses.some((status) => status.isDefaultOnCreate);
+  const journeyHasNoStatuses =
+    Boolean(selectedJourneyId) && statusesQuery.isSuccess && activeStatuses.length === 0;
   const assignmentTypes = assignmentTypesQuery.data ?? [];
   // A Journey with no leads yet has no assignment types to offer. Rather than
   // invent one, let the user name the first — the column is free text by design.
@@ -100,6 +109,16 @@ export function LeadFormPage() {
         void navigate(`/sellers/${sellerId}`);
       } else {
         if (!user) return;
+        if (journeyHasNoStatuses) {
+          setSubmitError(
+            'This journey has no active statuses yet. Add one to the journey before creating sellers on it.',
+          );
+          return;
+        }
+        if (!hasDefaultStatus && !values.statusId) {
+          setSubmitError('Choose a status — this journey has no default to fall back on.');
+          return;
+        }
         const assignmentType = values.assignmentType?.trim();
         if (!assignmentType) {
           setSubmitError('Choose who this seller is assigned as before saving.');
@@ -117,7 +136,7 @@ export function LeadFormPage() {
           assignments: [{ assignmentType, userId: user.id }],
         });
         await queryClient.invalidateQueries({ queryKey: ['sellers'] });
-        void navigate(`/sellers/${created.id}`);
+        void navigate(`/sellers/${created.lead.id}`);
       }
     } catch (error) {
       setSubmitError(friendlyErrorMessage(error));
@@ -224,9 +243,13 @@ export function LeadFormPage() {
               >
                 {({ inputId }) => (
                   <Select id={inputId} disabled={!selectedJourneyId} {...register('statusId')}>
-                    <option value="">
-                      {isEditMode ? 'Keep current status' : 'Use journey default'}
-                    </option>
+                    {isEditMode ? (
+                      <option value="">Keep current status</option>
+                    ) : hasDefaultStatus ? (
+                      <option value="">Use journey default</option>
+                    ) : (
+                      <option value="">Choose a status</option>
+                    )}
                     {statusesQuery.data?.map((status) => (
                       <option key={status.id} value={status.id}>
                         {status.name}
