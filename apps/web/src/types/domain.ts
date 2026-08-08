@@ -20,6 +20,9 @@ export interface Journey {
   isActive: boolean;
 }
 
+/** Assignment types in use on a Journey — configurable strings, never an enum. */
+export type JourneyAssignmentTypes = readonly string[];
+
 export interface Status {
   id: string;
   journeyId: string;
@@ -29,6 +32,22 @@ export interface Status {
   behaviorType: BehaviorType;
   isActive: boolean;
   sortOrder: number;
+  /**
+   * Creating a Lead without an explicit statusId falls back to the Journey's
+   * default-on-create Status. If no Status carries this flag that fallback
+   * fails, so the client has to know whether one exists.
+   */
+  isDefaultOnCreate: boolean;
+}
+
+/**
+ * What POST /leads and PATCH /leads/:id actually return: the raw lead and
+ * process-instance rows, not a serialized Seller360Record. Only the fields
+ * consumers rely on are declared.
+ */
+export interface LeadMutationResult {
+  lead: { id: string; name: string };
+  process: { id: string; journeyId: string; currentStatusId: string };
 }
 
 export interface Service {

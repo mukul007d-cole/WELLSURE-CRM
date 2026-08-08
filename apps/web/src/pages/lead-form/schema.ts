@@ -7,6 +7,12 @@ export const leadFormSchema = z.object({
   email: z.union([z.literal(''), z.string().email('Enter a valid email address')]).optional(),
   journeyId: z.string().min(1, 'Choose a journey'),
   statusId: z.string().optional(),
+  /**
+   * Required on create only (enforced in the page, which knows the mode).
+   * assignment_type is caller-configured free text — the API defines no
+   * canonical value — so this is never defaulted to a literal.
+   */
+  assignmentType: z.string().optional(),
   fields: z.record(z.string(), z.union([z.string(), z.boolean()])),
 });
 

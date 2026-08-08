@@ -42,6 +42,8 @@ export const STATUSES: Status[] = JOURNEYS.flatMap((journey) =>
     behaviorType: template.behaviorType,
     isActive: true,
     sortOrder: index,
+    // Creating a Lead with no explicit status falls back to this one.
+    isDefaultOnCreate: index === 0,
   })),
 );
 
@@ -254,3 +256,87 @@ LEADS.slice(0, 6).forEach((lead) => {
     assignment.userId = 'user-rep';
   }
 });
+
+/**
+ * Extra directory-only people, used by the org chart. All synthetic.
+ *
+ * Deliberately shaped to exercise the awkward cases: a three-level chain, a
+ * second root, someone reporting to a manager who isn't in the set at all, and
+ * a deactivated user. Reporting *loops* are injected per-test instead of living
+ * here — a cycle in the shared fixture would make every other test's tree odd.
+ */
+export const DIRECTORY_USERS = [
+  {
+    id: 'dir-1',
+    name: 'Alba Fenn',
+    email: 'alba.fenn@example.test',
+    roleId: 'role-admin',
+    departmentId: 'department-synthetic',
+    managerId: null as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-2',
+    name: 'Bo Ridley',
+    email: 'bo.ridley@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-synthetic',
+    managerId: 'dir-1' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-3',
+    name: 'Cass Oyelu',
+    email: 'cass.oyelu@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-1' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-4',
+    name: 'Dara Whitlow',
+    email: 'dara.whitlow@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-2' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-5',
+    name: 'Emeka Sandoval',
+    email: 'emeka.sandoval@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-2' as string | null,
+    active: false,
+  },
+  {
+    id: 'dir-6',
+    name: 'Fern Adeyemi',
+    email: 'fern.adeyemi@example.test',
+    roleId: 'role-admin',
+    departmentId: 'department-c',
+    managerId: null as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-7',
+    name: 'Gil Marchetti',
+    email: 'gil.marchetti@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-c',
+    managerId: 'dir-6' as string | null,
+    active: true,
+  },
+  // Manager sits outside the returned set — deactivated, or filtered by scope.
+  {
+    id: 'dir-8',
+    name: 'Hana Brightwater',
+    email: 'hana.brightwater@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-c',
+    managerId: 'dir-absent' as string | null,
+    active: true,
+  },
+];

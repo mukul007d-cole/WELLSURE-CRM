@@ -1,5 +1,6 @@
 import { http, HttpResponse, delay } from 'msw';
 import {
+  DIRECTORY_USERS,
   FIELDS,
   JOURNEYS,
   LEADS,
@@ -63,6 +64,20 @@ const MOCK_DEPARTMENTS = [
     active: true,
     version: 1,
   },
+  {
+    id: 'department-b',
+    key: 'synthetic_unit_b',
+    name: 'Synthetic unit B',
+    active: true,
+    version: 1,
+  },
+  {
+    id: 'department-c',
+    key: 'synthetic_unit_c',
+    name: 'Synthetic unit C',
+    active: true,
+    version: 1,
+  },
 ];
 const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   id: field.id,
@@ -75,15 +90,18 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   source: 'manual',
   active: true,
 }));
-const MOCK_ADMIN_USERS = USERS.map((user) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  roleId: user.roleId,
-  departmentId: null as string | null,
-  managerId: null as string | null,
-  active: true,
-}));
+const MOCK_ADMIN_USERS = [
+  ...USERS.map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    roleId: user.roleId,
+    departmentId: null as string | null,
+    managerId: null as string | null,
+    active: true,
+  })),
+  ...DIRECTORY_USERS,
+];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
@@ -100,6 +118,23 @@ const INITIAL_ADMIN_STATE = structuredClone({
   users: MOCK_ADMIN_USERS,
 });
 
+/**
+ * Per-(field, journey) required-field rules, matching the shape of
+ * field_journey_settings. Tests push rules onto this to exercise a rejected
+ * status change; it starts empty so the default fixtures stay permissive.
+ */
+export const MOCK_REQUIRED_FIELD_RULES: Array<{
+  fieldId: string;
+  journeyId: string;
+  requiredFromStatusId: string | null;
+}> = [];
+
+function isBlank(value: unknown): boolean {
+  return (
+    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+  );
+}
+
 export function resetAdminMockState() {
   const initial = structuredClone(INITIAL_ADMIN_STATE);
   JOURNEYS.splice(0, JOURNEYS.length, ...initial.journeys);
@@ -109,6 +144,7 @@ export function resetAdminMockState() {
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_JOURNEY_FIELDS.splice(0);
+  MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 
 function pageResponse<T>(request: Request, rows: T[]) {
@@ -282,9 +318,10 @@ export const handlers = [
         (a, b) => a.sortOrder - b.sortOrder,
       ),
     }));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(pageResponse(request, rows))
-      : HttpResponse.json(JOURNEYS);
+    // The API always returns a Page here. Returning a bare array when the
+    // caller omitted pageSize used to make configApi.journeys() resolve to
+    // undefined, which silently emptied the journey tabs.
+    return HttpResponse.json(pageResponse(request, rows));
   }),
   http.get(`${API_BASE}/journeys/:id`, ({ params }) => {
     const journey = JOURNEYS.find((row) => row.id === params.id);
@@ -292,9 +329,24 @@ export const handlers = [
       ? HttpResponse.json({
           ...journey,
           active: journey.isActive,
-          statuses: STATUSES.filter((status) => status.journeyId === journey.id).sort(
-            (a, b) => a.sortOrder - b.sortOrder,
-          ),
+          // Serialized the way Prisma emits it (`active`, not `isActive`) so the
+          // client's normalizer is exercised against the real DTO.
+          statuses: STATUSES.filter((status) => status.journeyId === journey.id)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(({ isActive, ...status }) => ({ ...status, active: isActive })),
+          // Distinct assignment types actually in use on this journey, matching
+          // the API's derivation from current assignments.
+          assignmentTypes: [
+            ...new Set(
+              LEADS.flatMap((lead) =>
+                lead.processInstances
+                  .filter((process) => process.journeyId === journey.id)
+                  .flatMap((process) =>
+                    process.assignments.map((assignment) => assignment.assignmentType),
+                  ),
+              ),
+            ),
+          ].sort(),
         })
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
@@ -318,11 +370,9 @@ export const handlers = [
     return HttpResponse.json({ ...row, active: false });
   }),
 
-  http.get(`${API_BASE}/journeys/:id/statuses`, async ({ params }) => {
-    await delay(250);
-    if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    return HttpResponse.json(STATUSES.filter((status) => status.journeyId === params.id));
-  }),
+  // No GET /journeys/:id/statuses handler on purpose: the API registers only
+  // POST for that path. Mocking the GET let a client call that 404s in
+  // production pass every test. Statuses come from GET /journeys/:id.
   http.post(`${API_BASE}/journeys/:id/statuses`, async ({ params, request }) => {
     const body = (await request.json()) as Omit<
       (typeof STATUSES)[number],
@@ -399,15 +449,14 @@ export const handlers = [
     await delay(200);
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    const visible = FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(
-          pageResponse(
-            request,
-            MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
-          ),
-        )
-      : HttpResponse.json(visible);
+    // Always a Page of API-shaped rows (`name`/`fieldType`), matching what
+    // readConfiguration actually serializes.
+    return HttpResponse.json(
+      pageResponse(
+        request,
+        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
+      ),
+    );
   }),
   http.post(`${API_BASE}/fields`, async ({ request }) => {
     const body = (await request.json()) as Omit<
@@ -701,7 +750,15 @@ export const handlers = [
     };
     LEADS.unshift(lead);
 
-    return HttpResponse.json(serializeDetail(lead, user), { status: 201 });
+    // The API returns the raw rows, not a serialized record. Mirroring that
+    // here is what makes `created.lead.id` the correct thing for callers to read.
+    return HttpResponse.json(
+      {
+        lead: { id: lead.id, name: lead.name },
+        process: { id: `pi-${id}`, journeyId: body.journeyId, currentStatusId: statusId },
+      },
+      { status: 201 },
+    );
   }),
 
   http.patch(`${API_BASE}/leads/:id`, async ({ request, params }) => {
@@ -721,7 +778,25 @@ export const handlers = [
       fieldValues?: Record<string, unknown>;
       statusId?: string;
       processInstanceId?: string;
+      assignmentTypes?: string[];
     };
+
+    /*
+     * Mirrors assignmentScopeAllowsLead in the permission engine: a scope
+     * narrower than ORGANIZATION only matches a record through a current
+     * assignment whose type is in the caller's assignmentTypes. Sending none
+     * therefore matches nothing and is refused — which is exactly how a client
+     * that omits the field silently 403s in production.
+     */
+    if (user.dataScope !== 'ORGANIZATION') {
+      const requested = new Set(body.assignmentTypes ?? []);
+      const matches = lead.processInstances.some((process) =>
+        process.assignments.some(
+          (assignment) => assignment.userId === user.id && requested.has(assignment.assignmentType),
+        ),
+      );
+      if (!matches) return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+    }
 
     if (body.name !== undefined) lead.name = body.name;
     if (body.phone !== undefined) lead.phone = body.phone ?? '';
@@ -739,11 +814,38 @@ export const handlers = [
           status: 400,
         });
       }
+
+      /*
+       * Mirrors validateFieldValues in apps/api: a field is required when its
+       * requirement is 'required' and requiredFromStatusId is either null or an
+       * exact match for the *target* status. sortOrder plays no part.
+       * Only the first offender is reported, exactly as the API does.
+       */
+      const missing = MOCK_REQUIRED_FIELD_RULES.find(
+        (rule) =>
+          rule.journeyId === process.journeyId &&
+          (rule.requiredFromStatusId === null || rule.requiredFromStatusId === body.statusId) &&
+          isBlank(lead.fieldValues[rule.fieldId]),
+      );
+      if (missing) {
+        return HttpResponse.json(errorBody('validation_error', { fieldId: missing.fieldId }), {
+          status: 400,
+        });
+      }
+
       process.statusId = body.statusId;
       process.active = nextStatus.outcomeType === 'open';
     }
 
-    return HttpResponse.json(serializeDetail(lead, user));
+    // The API returns the raw rows here, not a serialized record.
+    return HttpResponse.json({
+      lead: { id: lead.id, name: lead.name },
+      process: {
+        id: process?.processInstanceId ?? '',
+        journeyId: process?.journeyId ?? '',
+        currentStatusId: process?.statusId ?? '',
+      },
+    });
   }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),

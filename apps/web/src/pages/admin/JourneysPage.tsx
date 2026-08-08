@@ -9,6 +9,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
+import { PageBody } from '../../components/layout/PageFrame';
 import {
   ActiveFilter,
   AdminHeader,
@@ -44,7 +45,7 @@ export function JourneysPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <PageBody>
       <AdminHeader
         title="Journeys"
         description="Create pipelines and manage their Status and Field configuration."
@@ -119,7 +120,7 @@ export function JourneysPage() {
           onPage={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }
 

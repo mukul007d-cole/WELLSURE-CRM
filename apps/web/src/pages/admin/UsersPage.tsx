@@ -11,14 +11,8 @@ import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminUser } from '../../types/domain';
 import { SearchableSelect } from './SearchableSelect';
-import {
-  ActiveFilter,
-  AdminHeader,
-  AdminTable,
-  PageControls,
-  activeValue,
-  ADMIN_PAGE_SIZE,
-} from './shared';
+import { Toolbar } from '../../components/layout/PageFrame';
+import { ActiveFilter, AdminTable, PageControls, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
 type UserDraft = {
   id?: string;
@@ -104,16 +98,7 @@ export function UsersPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
-        title="Users"
-        description="Manage access, reporting references, and user lifecycle. Passwords are never collected here."
-        action={
-          can('users', 'create') ? (
-            <Button onClick={() => setDraft(emptyUser())}>Create User</Button>
-          ) : undefined
-        }
-      />
+    <div className="space-y-4">
       {error ? <Banner tone="error">{friendlyErrorMessage(error)}</Banner> : null}
       {draft ? (
         <UserEditor
@@ -127,8 +112,17 @@ export function UsersPage() {
           loading={save.isPending}
         />
       ) : null}
-      <Card className="grid gap-3 p-4 sm:grid-cols-4">
+      <Toolbar
+        trailing={
+          can('users', 'create') ? (
+            <Button size="sm" onClick={() => setDraft(emptyUser())}>
+              Create user
+            </Button>
+          ) : undefined
+        }
+      >
         <Input
+          className="w-full sm:w-56"
           aria-label="Search users"
           placeholder="Search users"
           value={searchDraft}
@@ -172,7 +166,7 @@ export function UsersPage() {
             setPage(1);
           }}
         />
-      </Card>
+      </Toolbar>
       <AdminTable
         loading={query.isPending}
         headers={['Name', 'Email', 'Role', 'Department', 'State', 'Actions']}

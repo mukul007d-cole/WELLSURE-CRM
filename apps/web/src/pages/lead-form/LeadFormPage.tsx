@@ -50,6 +50,7 @@ export function LeadFormPage() {
         email: sellerQuery.data?.email ?? '',
         journeyId: existingProcess?.journeyId ?? '',
         statusId: existingProcess?.currentStatus.id ?? '',
+        assignmentType: '',
         fields: defaultFieldValues(fields, sellerQuery.data?.fieldValues),
       }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,6 +64,28 @@ export function LeadFormPage() {
     queryFn: () => configApi.statuses(selectedJourneyId),
     enabled: Boolean(selectedJourneyId),
   });
+  /**
+   * Only needed when creating: an edit reuses the assignments the lead already
+   * has rather than establishing a new one.
+   */
+  const assignmentTypesQuery = useQuery({
+    queryKey: ['assignment-types', selectedJourneyId],
+    queryFn: () => configApi.assignmentTypes(selectedJourneyId),
+    enabled: Boolean(selectedJourneyId) && !isEditMode,
+  });
+  const activeStatuses = (statusesQuery.data ?? []).filter((status) => status.isActive);
+  /**
+   * Creating without an explicit statusId falls back to the Journey's
+   * default-on-create Status. Offering that when no Status carries the flag is
+   * a trap: the API rejects it with a bare validation_error that names nothing.
+   */
+  const hasDefaultStatus = activeStatuses.some((status) => status.isDefaultOnCreate);
+  const journeyHasNoStatuses =
+    Boolean(selectedJourneyId) && statusesQuery.isSuccess && activeStatuses.length === 0;
+  const assignmentTypes = assignmentTypesQuery.data ?? [];
+  // A Journey with no leads yet has no assignment types to offer. Rather than
+  // invent one, let the user name the first — the column is free text by design.
+  const knownAssignmentTypes = assignmentTypes.length > 0;
 
   async function onSubmit(values: LeadFormValues) {
     setSubmitError(null);
@@ -77,11 +100,30 @@ export function LeadFormPage() {
           email: values.email || null,
           fieldValues: toFieldValues(fields, values.fields),
           statusId: values.statusId || undefined,
+          // Feeds the authorization record-predicate. Omitting it sends an
+          // empty array, which fails the scope check for any role narrower
+          // than ORGANIZATION — a silent 403 on save.
+          assignmentTypes: [...new Set(existingProcess.assignments.map((a) => a.assignmentType))],
         });
         await queryClient.invalidateQueries({ queryKey: ['seller', sellerId] });
         void navigate(`/sellers/${sellerId}`);
       } else {
         if (!user) return;
+        if (journeyHasNoStatuses) {
+          setSubmitError(
+            'This journey has no active statuses yet. Add one to the journey before creating sellers on it.',
+          );
+          return;
+        }
+        if (!hasDefaultStatus && !values.statusId) {
+          setSubmitError('Choose a status — this journey has no default to fall back on.');
+          return;
+        }
+        const assignmentType = values.assignmentType?.trim();
+        if (!assignmentType) {
+          setSubmitError('Choose who this seller is assigned as before saving.');
+          return;
+        }
         const created = await sellersApi.create({
           journeyId: values.journeyId,
           statusId: values.statusId || undefined,
@@ -89,10 +131,12 @@ export function LeadFormPage() {
           phone: values.phone || null,
           email: values.email || null,
           fieldValues: toFieldValues(fields, values.fields),
-          assignments: [{ assignmentType: 'owner', userId: user.id }],
+          // Configured, never a literal: the API defines no canonical owner
+          // type and assignment_type is free text per journey.
+          assignments: [{ assignmentType, userId: user.id }],
         });
         await queryClient.invalidateQueries({ queryKey: ['sellers'] });
-        void navigate(`/sellers/${created.id}`);
+        void navigate(`/sellers/${created.lead.id}`);
       }
     } catch (error) {
       setSubmitError(friendlyErrorMessage(error));
@@ -199,9 +243,13 @@ export function LeadFormPage() {
               >
                 {({ inputId }) => (
                   <Select id={inputId} disabled={!selectedJourneyId} {...register('statusId')}>
-                    <option value="">
-                      {isEditMode ? 'Keep current status' : 'Use journey default'}
-                    </option>
+                    {isEditMode ? (
+                      <option value="">Keep current status</option>
+                    ) : hasDefaultStatus ? (
+                      <option value="">Use journey default</option>
+                    ) : (
+                      <option value="">Choose a status</option>
+                    )}
                     {statusesQuery.data?.map((status) => (
                       <option key={status.id} value={status.id}>
                         {status.name}
@@ -210,6 +258,52 @@ export function LeadFormPage() {
                   </Select>
                 )}
               </Field>
+              {/*
+                Create only. An edit keeps whatever assignments the lead
+                already has, so there is nothing to choose.
+              */}
+              {isEditMode ? null : (
+                <Field
+                  label="Assign as"
+                  required
+                  hint={
+                    !selectedJourneyId
+                      ? 'Choose a journey first'
+                      : knownAssignmentTypes
+                        ? 'How this seller is assigned to you on this journey.'
+                        : 'No assignment types exist on this journey yet — name the first one.'
+                  }
+                  {...(submitError && !watch('assignmentType')?.trim()
+                    ? { error: 'Choose who this seller is assigned as' }
+                    : {})}
+                >
+                  {({ inputId, describedBy }) =>
+                    knownAssignmentTypes ? (
+                      <Select
+                        id={inputId}
+                        aria-describedby={describedBy}
+                        disabled={!selectedJourneyId}
+                        {...register('assignmentType')}
+                      >
+                        <option value="">Choose an assignment type</option>
+                        {assignmentTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        id={inputId}
+                        aria-describedby={describedBy}
+                        disabled={!selectedJourneyId || assignmentTypesQuery.isPending}
+                        placeholder="e.g. the role this person plays on the lead"
+                        {...register('assignmentType')}
+                      />
+                    )
+                  }
+                </Field>
+              )}
             </div>
           </Card>
 

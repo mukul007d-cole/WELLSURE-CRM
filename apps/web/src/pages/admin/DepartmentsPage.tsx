@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
+import { PageBody } from '../../components/layout/PageFrame';
 import {
   ActiveFilter,
   AdminHeader,
@@ -40,7 +41,7 @@ export function DepartmentsPage() {
   });
   const error = query.error ?? save.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <PageBody>
       <AdminHeader
         title="Departments"
         description="Manage organization units used by User assignment and data scope."
@@ -128,6 +129,6 @@ export function DepartmentsPage() {
           onPage={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }

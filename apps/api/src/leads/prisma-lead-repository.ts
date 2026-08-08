@@ -484,7 +484,7 @@ function sellerWhere(
   };
 }
 
-function processWhere(
+export function processWhere(
   input: SellerListInput & { organizationId: string; recordPredicate: RecordPredicate },
 ) {
   const allowedUsers = input.recordPredicate.allowedUserIds;
@@ -499,7 +499,17 @@ function processWhere(
       some: {
         organizationId: input.organizationId,
         isCurrent: true,
-        assignmentType: { in: [...input.recordPredicate.assignmentTypes] },
+        /*
+         * An empty assignmentTypes list means the caller named no particular
+         * type, so no type filter applies — the same way an ALL_ORGANIZATION
+         * scope drops the user filter below. Treating it as `in: []` made it an
+         * impossible predicate, so a caller that simply didn't pass the
+         * parameter got zero rows while assignmentScopeAllowsLead, on the very
+         * same record, said yes. Scope is still enforced by userId.
+         */
+        ...(input.recordPredicate.assignmentTypes.length === 0
+          ? {}
+          : { assignmentType: { in: [...input.recordPredicate.assignmentTypes] } }),
         ...(input.ownerUserId === undefined ? {} : { userId: input.ownerUserId }),
         ...(allowedUsers === 'ALL_ORGANIZATION_USERS' ? {} : { userId: { in: [...allowedUsers] } }),
       },

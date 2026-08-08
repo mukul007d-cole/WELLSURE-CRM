@@ -3,7 +3,9 @@ import type {
   CreateLeadInput,
   EditLeadInput,
   FieldDefinition,
+  FieldValidationRule,
   Journey,
+  LeadMutationResult,
   Seller360Record,
   SellerListInput,
   SellerListResponse,
@@ -179,10 +181,16 @@ export const sellersApi = {
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
+  // These return { lead, process } — the raw rows — not a Seller360Record.
+  // Typing them as the latter meant `created.id` was silently undefined, which
+  // navigated to /sellers/undefined and 500ed on a non-UUID lookup.
   create: (input: CreateLeadInput) =>
-    request<Seller360Record>('/leads', { method: 'POST', body: JSON.stringify(input) }),
+    request<LeadMutationResult>('/leads', { method: 'POST', body: JSON.stringify(input) }),
   edit: (id: string, input: EditLeadInput) =>
-    request<Seller360Record>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    request<LeadMutationResult>(`/leads/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   shares: (id: string, context: { journeyId: string; assignmentTypes: string[] }) =>
     request<LeadShare[]>(
       `/leads/${id}/shares${toQuery({ journeyId: context.journeyId, assignmentTypes: context.assignmentTypes.join(',') })}`,
@@ -214,9 +222,83 @@ export const notificationsApi = {
     request<NotificationRule>(`/notification-rules/${id}`, json('PUT', body)),
 };
 
+/**
+ * The configuration endpoints return raw Prisma rows, whose column names don't
+ * match the client-facing domain types (`active` vs `isActive`, `name` vs
+ * `label`, `fieldType` vs `type`). Normalizing here keeps that drift in one
+ * place instead of leaking a second shape into every consumer.
+ *
+ * Each normalizer accepts either spelling so it works against the API and the
+ * older mock payloads alike.
+ */
+type RawStatus = Omit<Status, 'isActive' | 'isDefaultOnCreate'> & {
+  isActive?: boolean;
+  active?: boolean;
+  isDefaultOnCreate?: boolean;
+};
+type RawField = Partial<FieldDefinition> & {
+  id: string;
+  key: string;
+  name?: string;
+  fieldType?: string;
+  validationRule?: (FieldValidationRule & { options?: readonly string[] }) | null;
+};
+
+function normalizeStatus(row: RawStatus): Status {
+  const { active, ...rest } = row;
+  return {
+    ...rest,
+    isActive: row.isActive ?? active ?? true,
+    isDefaultOnCreate: row.isDefaultOnCreate ?? false,
+  };
+}
+
+function normalizeField(row: RawField): FieldDefinition {
+  const rule = row.validationRule ?? undefined;
+  const options = row.options ?? rule?.options;
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label ?? row.name ?? row.key,
+    type: (row.type ?? row.fieldType ?? 'text') as FieldDefinition['type'],
+    ...(options ? { options } : {}),
+    ...(rule ? { validationRule: rule } : {}),
+  };
+}
+
+/** Page envelope, tolerating older handlers that returned a bare array. */
+function items<T>(payload: Page<T> | T[]): T[] {
+  return Array.isArray(payload) ? payload : (payload.items ?? []);
+}
+
 export const configApi = {
-  journeys: () => request<Page<Journey>>('/journeys').then((page) => page.items),
-  statuses: (journeyId: string) => request<Status[]>(`/journeys/${journeyId}/statuses`),
-  fields: () => request<Page<FieldDefinition>>('/fields').then((page) => page.items),
-  services: () => request<Page<Service>>('/services').then((page) => page.items),
+  journeys: () => request<Page<Journey> | Journey[]>('/journeys').then(items),
+  /**
+   * `GET /journeys/:id/statuses` is documented but only registered for POST, so
+   * it 404s outside the mocks. `GET /journeys/:id` is registered and already
+   * returns its statuses filtered to active and ordered by sortOrder.
+   */
+  statuses: (journeyId: string) =>
+    request<Omit<AdminJourney, 'statuses'> & { statuses?: RawStatus[] }>(
+      `/journeys/${journeyId}`,
+    ).then((journey) =>
+      (journey.statuses ?? [])
+        .map(normalizeStatus)
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    ),
+  /**
+   * The assignment types actually in use on a Journey. `assignment_type` is a
+   * configurable free-text string with no enum and no other endpoint listing
+   * the permitted values, so this is the only way a client can assign someone
+   * without inventing a literal.
+   */
+  assignmentTypes: (journeyId: string) =>
+    request<{ assignmentTypes?: string[] }>(`/journeys/${journeyId}`).then(
+      (journey) => journey.assignmentTypes ?? [],
+    ),
+  fields: () =>
+    request<Page<RawField> | RawField[]>('/fields')
+      .then(items)
+      .then((rows) => rows.map(normalizeField)),
+  services: () => request<Page<Service> | Service[]>('/services').then(items),
 };
