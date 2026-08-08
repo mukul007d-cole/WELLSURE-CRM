@@ -68,8 +68,10 @@ describe('app shell', () => {
     // Labels are visually hidden, not removed.
     expect(await screen.findByRole('link', { name: 'Sellers' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Board' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    // The board is a view of the sellers module now, reached from its view
+    // switcher rather than competing for a sidebar row of its own.
+    expect(screen.queryByRole('link', { name: 'Board' })).not.toBeInTheDocument();
   });
 
   it('opens the mobile drawer expanded even when the rail is collapsed', async () => {

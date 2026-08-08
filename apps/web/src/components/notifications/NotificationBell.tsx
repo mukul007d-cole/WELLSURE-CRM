@@ -33,7 +33,7 @@ export function NotificationBell() {
       >
         🔔
         {unread.data?.count ? (
-          <span className="absolute -right-1 -top-1 rounded-full bg-accent px-1 text-[10px] text-ink">
+          <span className="absolute -right-1 -top-1 rounded-full bg-gold px-1 text-[10px] font-semibold text-ink">
             {unread.data.count}
           </span>
         ) : null}

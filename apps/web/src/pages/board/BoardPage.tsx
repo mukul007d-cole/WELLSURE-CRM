@@ -16,6 +16,7 @@ import { useAuth } from '../../app/AuthContext';
 import { usePageChrome } from '../../app/page-chrome';
 import { JourneyTabs } from '../../components/journeys/JourneyTabs';
 import { Banner } from '../../components/ui/Banner';
+import { ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Select } from '../../components/ui/Select';
@@ -24,7 +25,8 @@ import { configApi, sellersApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { qk } from '../../lib/query-keys';
 import type { SellerListRow, Status } from '../../types/domain';
-import { AdminHeader } from '../admin/shared';
+import { PageHeader } from '../../components/layout/PageFrame';
+import { ViewSwitcher } from '../../components/layout/ViewSwitcher';
 import { BoardCardBody } from './BoardCard';
 import { BoardColumn } from './BoardColumn';
 import { MoveRejectedDialog } from './MoveRejectedDialog';
@@ -171,9 +173,20 @@ export function BoardPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-4 p-4 pb-0 sm:p-6 sm:pb-0">
-        <AdminHeader
-          title="Board"
+        <PageHeader
+          title="Sellers"
           description="Sellers by status. Drag a card, or use its Move menu, to change status."
+          actions={
+            <>
+              <ViewSwitcher
+                views={[
+                  { label: 'Table', to: '/sellers', icon: 'table' },
+                  { label: 'Board', to: '/sellers/board', icon: 'board' },
+                ]}
+              />
+              <ButtonLink to="/sellers/new">New seller</ButtonLink>
+            </>
+          }
         />
 
         {!canEdit ? (

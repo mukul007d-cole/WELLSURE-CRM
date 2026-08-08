@@ -99,7 +99,7 @@ export function Seller360Page() {
               {seller.phone || '—'} {seller.email ? `· ${seller.email}` : ''}
             </p>
             {sharesQuery.data?.length ? (
-              <p className="mt-1 text-xs font-semibold text-accent">
+              <p className="mt-1 text-xs font-semibold text-status-followup">
                 Shared with {sharesQuery.data.map((s) => s.userName).join(', ')}
               </p>
             ) : null}

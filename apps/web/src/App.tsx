@@ -35,7 +35,7 @@ export function App() {
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell title="Wellsure CRM" />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/board" element={<BoardPage />} />
+                  <Route path="/sellers/board" element={<BoardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/sellers" element={<SellerListPage />} />
                   <Route path="/sellers/new" element={<LeadFormPage />} />
