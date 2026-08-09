@@ -11,7 +11,7 @@ describe('LeadShareDialog', () => {
       >
         <LeadShareDialog
           leadId="lead-1"
-          journeyId="journey-overlapping"
+          journeyId="journey-alpha"
           assignmentTypes={['synthetic_owner']}
           onClose={vi.fn()}
         />

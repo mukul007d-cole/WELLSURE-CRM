@@ -13,6 +13,14 @@ interface AuthContextValue {
   can: (module: string, action: string) => boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Re-read the signed-in user's grants.
+   *
+   * Capabilities are provider state rather than a cached query, so an admin
+   * editing their own role has nothing for `invalidateQueries` to match and
+   * `can()` stays stale until a reload. This is the handle that fixes it.
+   */
+  refreshCapabilities: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -59,6 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   }, []);
 
+  const refreshCapabilities = useCallback(async () => {
+    // Best-effort by contract. Callers reach here *after* a save has already
+    // succeeded, so a failed re-read must neither sign the user out nor reject
+    // onto the caller and turn a successful save into an error banner. The
+    // previous grants stay in place until the next successful read.
+    try {
+      setCapabilities(await authApi.capabilities());
+    } catch {
+      // Intentionally ignored — see above.
+    }
+  }, []);
+
   const can = useCallback(
     (module: string, action: string) =>
       capabilities?.permissions.some(
@@ -67,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [capabilities],
   );
   const value = useMemo(
-    () => ({ status, user, capabilities, can, login, logout }),
-    [status, user, capabilities, can, login, logout],
+    () => ({ status, user, capabilities, can, login, logout, refreshCapabilities }),
+    [status, user, capabilities, can, login, logout, refreshCapabilities],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

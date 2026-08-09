@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
@@ -55,6 +56,7 @@ function AxisActions({
 export function RoleDetailPage() {
   const { roleId = '' } = useParams();
   const qc = useQueryClient();
+  const { refreshCapabilities } = useAuth();
   const role = useQuery({
     queryKey: ['admin', 'role', roleId],
     queryFn: () => adminApi.role(roleId),
@@ -82,7 +84,10 @@ export function RoleDetailPage() {
 
   const saved = async () => {
     await qc.invalidateQueries({ queryKey: ['admin', 'role', roleId] });
-    await qc.invalidateQueries({ queryKey: ['auth-capabilities'] });
+    // Capabilities aren't a cached query — invalidating a key here matched
+    // nothing, so an admin editing their own role kept the old `can()` until a
+    // reload. Ask the provider to re-read them instead.
+    await refreshCapabilities();
   };
   const savePermissions = useMutation({
     mutationFn: () => adminApi.savePermissions(roleId, permissions),

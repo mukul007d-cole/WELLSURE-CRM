@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthProvider } from '../../app/AuthContext';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { RoleDetailPage } from './RoleDetailPage';
 
@@ -19,9 +20,13 @@ describe('Role full-replacement editor', () => {
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <MemoryRouter initialEntries={['/admin/roles/role-admin']}>
-          <Routes>
-            <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
-          </Routes>
+          {/* Saving now re-reads the signed-in user's own grants, so the page
+              needs the auth provider it gets in the real route tree. */}
+          <AuthProvider>
+            <Routes>
+              <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
+            </Routes>
+          </AuthProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

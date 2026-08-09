@@ -82,7 +82,7 @@ describe('administration resource flows', () => {
     );
     renderPage(
       <JourneyDetailPage />,
-      '/admin/journeys/journey-overlapping',
+      '/admin/journeys/journey-alpha',
       '/admin/journeys/:journeyId',
     );
     await screen.findByRole('heading', { level: 2 });

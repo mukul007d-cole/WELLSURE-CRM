@@ -9,10 +9,15 @@ import type {
 
 export const ORGANIZATION_ID = 'org-wellsure';
 
+/*
+ * Synthetic throughout, per AGENTS.md: journeys, statuses, services and fields
+ * are admin configuration, so a fixture that names a real one invites code
+ * that only works because the name is what it is.
+ */
 export const JOURNEYS: Journey[] = [
-  { id: 'journey-overlapping', key: 'overlapping', name: 'Overlapping', isActive: true },
-  { id: 'journey-private-label', key: 'private_label', name: 'Private Label', isActive: true },
-  { id: 'journey-spn-bd', key: 'spn_bd', name: 'SPN & BD', isActive: true },
+  { id: 'journey-alpha', key: 'journey_alpha', name: 'Journey Alpha', isActive: true },
+  { id: 'journey-beta', key: 'journey_beta', name: 'Journey Beta', isActive: true },
+  { id: 'journey-gamma', key: 'journey_gamma', name: 'Journey Gamma', isActive: true },
 ];
 
 interface StatusSeed {
@@ -48,15 +53,10 @@ export const STATUSES: Status[] = JOURNEYS.flatMap((journey) =>
 );
 
 export const SERVICES: Service[] = [
-  { id: 'service-ppc', key: 'ppc', name: 'PPC Management', isActive: true },
-  { id: 'service-fba-prep', key: 'fba_prep', name: 'FBA Prep', isActive: true },
-  { id: 'service-cataloging', key: 'cataloging', name: 'Cataloging', isActive: true },
-  {
-    id: 'service-account-health',
-    key: 'account_health',
-    name: 'Account Health Audit',
-    isActive: true,
-  },
+  { id: 'service-one', key: 'service_one', name: 'Service One', isActive: true },
+  { id: 'service-two', key: 'service_two', name: 'Service Two', isActive: true },
+  { id: 'service-three', key: 'service_three', name: 'Service Three', isActive: true },
+  { id: 'service-four', key: 'service_four', name: 'Service Four', isActive: true },
 ];
 
 export const FIELDS: FieldDefinition[] = [
