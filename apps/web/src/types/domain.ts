@@ -144,6 +144,38 @@ export interface SellerListInput {
   accessMode?: 'mine' | 'shared_with_me' | 'all';
 }
 
+/**
+ * The engine's closed set of activity kinds. The timeline keys its icon and
+ * phrasing off these, never off a status, journey or role name — same
+ * discipline `statusTone` follows for colour.
+ */
+export type ActivityActionType =
+  | 'comment'
+  | 'field_edit'
+  | 'status_change'
+  | 'reassignment'
+  | 'share_changed'
+  | 'lead_deactivated';
+
+export interface ActivityEntry {
+  id: string;
+  processInstanceId: string | null;
+  actorUserId: string | null;
+  /** Null for system-authored rows. */
+  actorName: string | null;
+  timestamp: string;
+  /**
+   * Normally an `ActivityActionType`, but `action_type` is a plain text column
+   * rather than a DB enum, so the renderer falls back instead of narrowing.
+   */
+  actionType: string;
+  source: string;
+  commentText: string | null;
+  /** Whole-lead snapshots, already redacted server-side to visible fields. */
+  oldValue: unknown;
+  newValue: unknown;
+}
+
 export type ShareCapability = 'view' | 'edit' | 'comment';
 export interface LeadShare {
   id: string;

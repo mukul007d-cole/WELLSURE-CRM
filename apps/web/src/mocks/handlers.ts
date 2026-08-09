@@ -31,6 +31,102 @@ const MOCK_SHARES: Array<{
   capabilities: string[];
   createdAt: string;
 }> = [];
+
+interface MockActivityEntry {
+  id: string;
+  processInstanceId: string | null;
+  actorUserId: string | null;
+  actorName: string | null;
+  timestamp: string;
+  actionType: string;
+  source: string;
+  commentText: string | null;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/** Comments, reassignments and deactivations appended during a session. */
+const MOCK_ACTIVITY: Record<string, MockActivityEntry[]> = {};
+
+/**
+ * A seeded history so the dev demo shows a populated timeline rather than an
+ * empty state, covering every `actionType` the renderer handles.
+ *
+ * Deterministic offsets from the lead's own index keep ordering stable across
+ * reloads; the real endpoint sorts by timestamp desc.
+ */
+function activityFor(leadId: string): MockActivityEntry[] {
+  const lead = LEADS.find((row) => row.id === leadId);
+  if (!lead) return MOCK_ACTIVITY[leadId] ?? [];
+  const process = lead.processInstances[0];
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  const [first, second] = USERS;
+
+  const seeded: MockActivityEntry[] = [
+    {
+      id: `${leadId}-activity-status`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: first!.id,
+      actorName: first!.name,
+      timestamp: at(1),
+      actionType: 'status_change',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { statusId: `status-${JOURNEYS[0]!.key}-new` },
+      newValue: { statusId: process?.statusId ?? '' },
+    },
+    {
+      id: `${leadId}-activity-edit`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: second!.id,
+      actorName: second!.name,
+      timestamp: at(3),
+      actionType: 'field_edit',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { name: lead.name, fieldValues: { ...lead.fieldValues, category: 'Unassigned' } },
+      newValue: { name: lead.name, fieldValues: lead.fieldValues },
+    },
+    {
+      id: `${leadId}-activity-share`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: first!.id,
+      actorName: first!.name,
+      timestamp: at(5),
+      actionType: 'share_changed',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: null,
+      newValue: { userId: second!.id },
+    },
+    {
+      id: `${leadId}-activity-comment`,
+      processInstanceId: null,
+      actorUserId: second!.id,
+      actorName: second!.name,
+      timestamp: at(6),
+      actionType: 'comment',
+      source: 'lead_api',
+      commentText: 'Left a voicemail, trying again tomorrow morning.',
+      oldValue: null,
+      newValue: null,
+    },
+    {
+      id: `${leadId}-activity-created`,
+      processInstanceId: process?.processInstanceId ?? null,
+      // A system-authored row: the renderer must not print a blank actor.
+      actorUserId: null,
+      actorName: null,
+      timestamp: at(9),
+      actionType: 'field_edit',
+      source: 'import',
+      commentText: null,
+      oldValue: null,
+      newValue: { name: lead.name, fieldValues: lead.fieldValues },
+    },
+  ];
+  return [...(MOCK_ACTIVITY[leadId] ?? []), ...seeded];
+}
 const MOCK_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notification-synthetic',
@@ -846,6 +942,61 @@ export const handlers = [
         currentStatusId: process?.statusId ?? '',
       },
     });
+  }),
+  http.get(`${API_BASE}/leads/:id/activity`, ({ params }) => {
+    const items = activityFor(String(params.id));
+    return HttpResponse.json({ page: 1, pageSize: 25, total: items.length, items });
+  }),
+  http.post(`${API_BASE}/leads/:id/comments`, async ({ request, params }) => {
+    const body = (await request.json()) as { text: string };
+    if (!body.text.trim()) return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    const entry = {
+      id: `activity-comment-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'comment',
+      source: 'lead_api',
+      commentText: body.text.trim(),
+      oldValue: null,
+      newValue: null,
+    };
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift(entry);
+    return HttpResponse.json(entry, { status: 201 });
+  }),
+  http.patch(`${API_BASE}/leads/:id/reassign`, async ({ request, params }) => {
+    const body = (await request.json()) as { assignmentType: string; userId: string };
+    const user = USERS.find((candidate) => candidate.id === body.userId);
+    if (!user) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift({
+      id: `activity-reassign-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'reassignment',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { assignmentType: body.assignmentType },
+      newValue: { assignmentType: body.assignmentType, userId: body.userId },
+    });
+    return HttpResponse.json({ ok: true });
+  }),
+  http.post(`${API_BASE}/leads/:id/deactivate`, ({ params }) => {
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift({
+      id: `activity-deactivate-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'lead_deactivated',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: null,
+      newValue: null,
+    });
+    return HttpResponse.json({ ok: true });
   }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),

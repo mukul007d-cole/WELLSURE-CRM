@@ -14,6 +14,7 @@ export const qk = {
   journeyStatuses: (journeyId: string) => ['statuses', journeyId] as const,
   fields: () => ['fields'] as const,
   seller: (leadId: string) => ['seller', leadId] as const,
+  sellerActivity: (leadId: string) => ['seller', leadId, 'activity'] as const,
   sellers: () => ['sellers'] as const,
   notifications: () => ['notifications'] as const,
 

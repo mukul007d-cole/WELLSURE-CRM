@@ -20,6 +20,7 @@ import type {
   AdminRole,
   Department,
   PermissionCatalog,
+  ActivityEntry,
   LeadShare,
   ShareCapability,
   NotificationItem,
@@ -208,6 +209,36 @@ export const sellersApi = {
     request(`/leads/${id}/shares/${shareId}`, json('PUT', body)),
   revokeShare: (id: string, shareId: string, journeyId: string) =>
     request(`/leads/${id}/shares/${shareId}${toQuery({ journeyId })}`, json('DELETE')),
+
+  /*
+   * The four below reach endpoints that have existed since phase 9 with no
+   * client method at all, so nothing in the UI could call them.
+   */
+  activity: (
+    id: string,
+    context: { requestedFieldIds: string[]; assignmentTypes: string[]; page?: number },
+  ) =>
+    request<{ page: number; pageSize: number; total: number; items: ActivityEntry[] }>(
+      `/leads/${id}/activity${toQuery({
+        requestedFieldIds: context.requestedFieldIds.join(','),
+        assignmentTypes: context.assignmentTypes.join(','),
+        page: context.page,
+      })}`,
+    ),
+  comment: (id: string, body: { journeyId: string; assignmentTypes: string[]; text: string }) =>
+    request<ActivityEntry>(`/leads/${id}/comments`, json('POST', body)),
+  reassign: (
+    id: string,
+    body: {
+      journeyId: string;
+      assignmentTypes: string[];
+      processInstanceId: string;
+      assignmentType: string;
+      userId: string;
+    },
+  ) => request(`/leads/${id}/reassign`, json('PATCH', body)),
+  deactivate: (id: string, body: { journeyId: string; assignmentTypes: string[] }) =>
+    request(`/leads/${id}/deactivate`, json('POST', body)),
 };
 
 export const notificationsApi = {
