@@ -1,7 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { resolveAuthorization } from '@falcon/permission-engine';
 
-import { createLead, editLead, getSeller360, listSellers } from '../../routes/leads.js';
+import {
+  createLead,
+  editLead,
+  getLeadActivity,
+  getSeller360,
+  listSellers,
+} from '../../routes/leads.js';
 import { sendRouteResult } from '../errors.js';
 import { authenticate } from '../plugins/authenticate.js';
 import type { ServerDependencies } from '../types.js';
@@ -99,6 +105,27 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
           permissionRepository: deps.permissionRepository,
           requestedFieldIds: strings(query.requestedFieldIds),
           assignmentTypes: strings(query.assignmentTypes),
+        }),
+      );
+    },
+  );
+  server.get(
+    '/api/v1/leads/:id/activity',
+    { preHandler, schema: { tags: ['leads'] } },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const query = request.query as Record<string, unknown>;
+      return sendRouteResult(
+        reply,
+        await getLeadActivity({
+          auth: request.auth,
+          leadId: id,
+          sellerRepository: deps.leadRepository,
+          permissionRepository: deps.permissionRepository,
+          requestedFieldIds: strings(query.requestedFieldIds),
+          assignmentTypes: strings(query.assignmentTypes),
+          ...(query.page ? { page: Number(query.page) } : {}),
+          ...(query.pageSize ? { pageSize: Number(query.pageSize) } : {}),
         }),
       );
     },

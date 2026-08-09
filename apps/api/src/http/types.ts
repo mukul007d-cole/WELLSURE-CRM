@@ -10,7 +10,7 @@ import type { SessionRepository } from '../auth/session.js';
 import type { ConfigurationRepository } from '../configuration/service.js';
 import type { AdminRepository } from '../admin/repository.js';
 import type { LeadRepository } from '../leads/service.js';
-import type { SellerReadRepository } from '../routes/leads.js';
+import type { LeadActivityReadRepository, SellerReadRepository } from '../routes/leads.js';
 import type { LeadSharingService } from '../leads/sharing.js';
 import type { NotificationService } from '../notifications/service.js';
 
@@ -19,7 +19,7 @@ export interface ServerDependencies {
   audit: SecurityAuditWriter;
   emailSender: EmailSender;
   permissionRepository: PermissionRepository;
-  leadRepository: LeadRepository & SellerReadRepository;
+  leadRepository: LeadRepository & SellerReadRepository & LeadActivityReadRepository;
   configurationRepository: ConfigurationRepository;
   adminRepository?: AdminRepository;
   leadSharingService?: LeadSharingService;

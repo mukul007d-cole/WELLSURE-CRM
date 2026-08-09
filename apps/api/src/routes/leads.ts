@@ -1,6 +1,11 @@
 import { resolveAuthorization, type PermissionRepository } from '@falcon/permission-engine';
 
 import type { AuthenticatedContext } from '../auth/middleware.js';
+import {
+  pickVisibleFieldValues,
+  serializeActivityEntry,
+  type LeadActivityRow,
+} from '../leads/activity-read.js';
 import { isLeadError, type LeadError } from '../leads/errors.js';
 import {
   LeadService,
@@ -30,7 +35,13 @@ export interface Seller360Record extends LeadCoreRecord {
     LeadProcessRecord & {
       assignments: LeadAssignmentRecord[];
       journey: { id: string; key: string; name: string };
-      currentStatus: { id: string; key: string; name: string };
+      currentStatus: {
+        id: string;
+        key: string;
+        name: string;
+        outcomeType: string;
+        behaviorType: string;
+      };
     }
   >;
 }
@@ -53,6 +64,18 @@ export interface SellerListRecord extends LeadCoreRecord {
 
 export interface LeadReadRepository {
   findLeadById(organizationId: string, leadId: string): Promise<LeadDetailRecord | null>;
+}
+
+export interface LeadActivityReadRepository {
+  findLeadActivity(
+    organizationId: string,
+    leadId: string,
+    input: {
+      visibleProcessInstanceIds: readonly string[];
+      page: number;
+      pageSize: number;
+    },
+  ): Promise<{ total: number; rows: LeadActivityRow[] }>;
 }
 
 export interface SellerReadRepository {
@@ -281,11 +304,98 @@ export async function getSeller360(input: {
   assignmentTypes: readonly string[];
   now?: Date;
 }): Promise<LeadRouteResult> {
+  const access = await resolveLeadAccess(input);
+  if (access.status !== 200) return access.result;
+  return {
+    status: 200,
+    body: {
+      ...serializeLead(access.lead, [...access.visibleFieldIds]),
+      processInstances: access.visibleProcesses,
+    },
+  };
+}
+
+/**
+ * The lead's append-only history.
+ *
+ * Authorization is the same loop `getSeller360` runs — resolve per active
+ * process instance, keep the ones that pass, union their visible field ids —
+ * so the timeline inherits journey access, record scope and field visibility
+ * without restating any of those rules.
+ */
+export async function getLeadActivity(input: {
+  auth: AuthenticatedContext;
+  leadId: string;
+  sellerRepository: SellerReadRepository & LeadActivityReadRepository;
+  permissionRepository: PermissionRepository;
+  requestedFieldIds: readonly string[];
+  assignmentTypes: readonly string[];
+  page?: number;
+  pageSize?: number;
+  now?: Date;
+}): Promise<LeadRouteResult> {
+  const page = input.page ?? 1;
+  const pageSize = input.pageSize ?? 25;
+  if (!Number.isInteger(page) || page < 1) {
+    return { status: 400, body: { error: 'validation_error', details: { field: 'page' } } };
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    return { status: 400, body: { error: 'validation_error', details: { field: 'pageSize' } } };
+  }
+
+  const access = await resolveLeadAccess(input);
+  if (access.status !== 200) return access.result;
+
+  const { total, rows } = await input.sellerRepository.findLeadActivity(
+    input.auth.user.organizationId,
+    input.leadId,
+    {
+      // Filtering in the query rather than after the fetch: post-filtering a
+      // page would return short pages and an inflated total.
+      visibleProcessInstanceIds: access.visibleProcesses.map((row) => row.id),
+      page,
+      pageSize,
+    },
+  );
+  return {
+    status: 200,
+    body: {
+      page,
+      pageSize,
+      total,
+      items: rows.map((row) => serializeActivityEntry(row, access.visibleFieldIds)),
+    },
+  };
+}
+
+/**
+ * Per-process authorization for one lead, shared by Seller 360 and the
+ * timeline. A lead can sit in several journeys and the viewer may be entitled
+ * to only some of them.
+ */
+async function resolveLeadAccess(input: {
+  auth: AuthenticatedContext;
+  leadId: string;
+  sellerRepository: SellerReadRepository;
+  permissionRepository: PermissionRepository;
+  requestedFieldIds: readonly string[];
+  assignmentTypes: readonly string[];
+  now?: Date;
+}): Promise<
+  | {
+      status: 200;
+      lead: Seller360Record;
+      visibleProcesses: Seller360Record['processInstances'];
+      visibleFieldIds: Set<string>;
+    }
+  | { status: 403 | 404; result: LeadRouteResult }
+> {
   const lead = await input.sellerRepository.findSeller360(
     input.auth.user.organizationId,
     input.leadId,
   );
-  if (lead === null) return { status: 404, body: { error: 'not_found' } };
+  if (lead === null) return { status: 404, result: { status: 404, body: { error: 'not_found' } } };
+
   const visibleProcesses: Seller360Record['processInstances'] = [];
   const visibleFieldIds = new Set<string>();
   for (const process of lead.processInstances.filter((row) => row.active)) {
@@ -308,16 +418,13 @@ export async function getSeller360(input: {
     );
     if (blockingReasons.length === 0) {
       visibleProcesses.push(process);
-      for (const fieldId of decision.fields.visibleFieldIds) {
-        visibleFieldIds.add(fieldId);
-      }
+      for (const fieldId of decision.fields.visibleFieldIds) visibleFieldIds.add(fieldId);
     }
   }
-  if (visibleProcesses.length === 0) return { status: 403, body: { error: 'forbidden' } };
-  return {
-    status: 200,
-    body: { ...serializeLead(lead, [...visibleFieldIds]), processInstances: visibleProcesses },
-  };
+  if (visibleProcesses.length === 0) {
+    return { status: 403, result: { status: 403, body: { error: 'forbidden' } } };
+  }
+  return { status: 200, lead, visibleProcesses, visibleFieldIds };
 }
 
 function serializeLead(
@@ -330,15 +437,12 @@ function serializeLead(
   email: string | null;
   fieldValues: Record<string, unknown>;
 } {
-  const visible = new Set(visibleFieldIds);
   return {
     id: lead.id,
     name: lead.name,
     phone: lead.phone,
     email: lead.email,
-    fieldValues: Object.fromEntries(
-      Object.entries(lead.fieldValues).filter(([fieldId]) => visible.has(fieldId)),
-    ),
+    fieldValues: pickVisibleFieldValues(lead.fieldValues, new Set(visibleFieldIds)),
   };
 }
 

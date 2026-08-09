@@ -439,6 +439,12 @@ function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
         const d = (args as any).data;
         await sql`INSERT INTO activity_logs (organization_id, lead_id, process_instance_id, actor_user_id, action_type, source, old_value, new_value) VALUES (${d.organizationId}, ${d.leadId}, ${d.processInstanceId}, ${d.actorUserId}, ${d.actionType}, ${d.source}, ${d.oldValue === null ? null : sql.json(d.oldValue)}, ${d.newValue === null ? null : sql.json(d.newValue)})`;
       },
+      async findMany() {
+        return [];
+      },
+      async count() {
+        return 0;
+      },
     },
   };
   return client;

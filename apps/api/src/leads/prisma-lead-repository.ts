@@ -56,7 +56,22 @@ export interface PrismaLeadClient {
   };
   activityLog: {
     create(args: unknown): Promise<unknown>;
+    findMany(args: unknown): Promise<ActivityRow[]>;
+    count(args: unknown): Promise<number>;
   };
+}
+
+interface ActivityRow {
+  id: string;
+  processInstanceId: string | null;
+  actorUserId: string | null;
+  actor?: { id: string; name: string } | null;
+  timestamp: Date;
+  actionType: string;
+  source: string;
+  commentText: string | null;
+  oldValue: unknown;
+  newValue: unknown;
 }
 
 interface StatusRow {
@@ -360,7 +375,19 @@ export class PrismaLeadRepository
           where: { active: true },
           include: {
             journey: { select: { id: true, key: true, name: true } },
-            currentStatus: { select: { id: true, key: true, name: true } },
+            // outcomeType/behaviorType drive StatusPill's color. Omitting them
+            // made every status on the record page fall through statusTone to
+            // "open" — a closed-won seller rendered as open in production,
+            // while tests passed because the mock fixtures supplied them.
+            currentStatus: {
+              select: {
+                id: true,
+                key: true,
+                name: true,
+                outcomeType: true,
+                behaviorType: true,
+              },
+            },
             assignments: { where: { isCurrent: true } },
           },
         },
@@ -372,10 +399,51 @@ export class PrismaLeadRepository
       processInstances: (row.processInstances ?? []).map((item) => ({
         ...process(item),
         journey: item.journey!,
-        currentStatus: item.currentStatus!,
+        currentStatus: {
+          id: item.currentStatus!.id,
+          key: item.currentStatus!.key,
+          name: item.currentStatus!.name,
+          outcomeType: item.currentStatus!.outcomeType ?? 'open',
+          behaviorType: item.currentStatus!.behaviorType ?? 'default',
+        },
         assignments: (item.assignments ?? []).map(assignment),
       })),
     };
+  }
+
+  /**
+   * The lead's history, newest first — the access path
+   * `activity_logs_timeline_idx` (organizationId, leadId, timestamp DESC) was
+   * built for.
+   *
+   * Journey visibility is part of the WHERE clause rather than a post-filter,
+   * so pages stay full and `total` stays honest. Rows with no process instance
+   * are lead-level and belong to anyone who can see the lead at all.
+   */
+  async findLeadActivity(
+    organizationId: string,
+    leadId: string,
+    input: { visibleProcessInstanceIds: readonly string[]; page: number; pageSize: number },
+  ): Promise<{ total: number; rows: ActivityRow[] }> {
+    const where = {
+      organizationId,
+      leadId,
+      OR: [
+        { processInstanceId: null },
+        { processInstanceId: { in: [...input.visibleProcessInstanceIds] } },
+      ],
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.activityLog.findMany({
+        where,
+        include: { actor: { select: { id: true, name: true } } },
+        orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      this.prisma.activityLog.count({ where }),
+    ]);
+    return { total, rows };
   }
 
   async listSellers(
