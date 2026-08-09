@@ -11,6 +11,7 @@ import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { cn } from '../../lib/cn';
 import type { CapabilitySet, DataScope, FieldAccessLevel } from '../../types/domain';
+import { usePageChrome } from '../../app/page-chrome';
 import { loadAllPages } from './shared';
 import {
   hasPermission,
@@ -55,6 +56,7 @@ function AxisActions({
 
 export function RoleDetailPage() {
   const { roleId = '' } = useParams();
+  usePageChrome('Role', [['admin', 'role', roleId]]);
   const qc = useQueryClient();
   const { refreshCapabilities } = useAuth();
   const role = useQuery({

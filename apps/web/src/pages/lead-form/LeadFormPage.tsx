@@ -16,8 +16,10 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import { DynamicFieldControl } from './DynamicFieldControl';
 import { defaultFieldValues, leadFormSchema, toFieldValues } from './schema';
 import type { LeadFormValues } from './schema';
+import { usePageChrome } from '../../app/page-chrome';
 
 export function LeadFormPage() {
+  usePageChrome('Seller', []);
   const { sellerId } = useParams<{ sellerId: string }>();
   const isEditMode = Boolean(sellerId);
   const navigate = useNavigate();

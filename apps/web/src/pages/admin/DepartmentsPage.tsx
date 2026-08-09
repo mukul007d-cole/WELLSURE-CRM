@@ -6,20 +6,17 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
+import { Pagination } from '../../components/ui/Pagination';
+import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
-import { PageBody } from '../../components/layout/PageFrame';
-import {
-  ActiveFilter,
-  AdminHeader,
-  AdminTable,
-  PageControls,
-  activeValue,
-  ADMIN_PAGE_SIZE,
-} from './shared';
+import { PageBody, PageHeader } from '../../components/layout/PageFrame';
+import { usePageChrome } from '../../app/page-chrome';
+import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
 type DepartmentDraft = { id?: string; key: string; name: string };
 export function DepartmentsPage() {
+  usePageChrome('Departments', [['admin', 'departments']]);
   const { can } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -42,10 +39,10 @@ export function DepartmentsPage() {
   const error = query.error ?? save.error;
   return (
     <PageBody>
-      <AdminHeader
+      <PageHeader
         title="Departments"
         description="Manage organization units used by User assignment and data scope."
-        action={
+        actions={
           can('users', 'create') ? (
             <Button onClick={() => setDraft({ key: '', name: '' })}>Create Department</Button>
           ) : undefined
@@ -97,36 +94,38 @@ export function DepartmentsPage() {
       />
       <AdminTable
         loading={query.isPending}
-        headers={['Name', 'Stable key', 'State', 'Actions']}
+        headers={['Name', 'Stable key', 'State', { label: 'Actions', align: 'right' as const }]}
         empty={!query.isPending && !query.data?.items.length}
       >
         {query.data?.items.map((department) => (
-          <tr className="border-b last:border-0" key={department.id}>
-            <td className="p-4 font-medium">{department.name}</td>
-            <td className="p-4 text-sm text-ink-soft">{department.key}</td>
-            <td className="p-4 text-sm">{department.active ? 'Active' : 'Inactive'}</td>
-            <td className="p-4">
-              {can('users', 'edit') ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    setDraft({ id: department.id, key: department.key, name: department.name })
-                  }
-                >
-                  Edit
-                </Button>
-              ) : null}
-            </td>
-          </tr>
+          <DataRow key={department.id}>
+            <DataCell primary>{department.name}</DataCell>
+            <DataCell>{department.key}</DataCell>
+            <DataCell>{department.active ? 'Active' : 'Inactive'}</DataCell>
+            <DataCell align="right">
+              <RowActions>
+                {can('users', 'edit') ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setDraft({ id: department.id, key: department.key, name: department.name })
+                    }
+                  >
+                    Edit
+                  </Button>
+                ) : null}
+              </RowActions>
+            </DataCell>
+          </DataRow>
         ))}
       </AdminTable>
       {query.data ? (
-        <PageControls
+        <Pagination
           page={query.data.page}
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
-          onPage={setPage}
+          onPageChange={setPage}
         />
       ) : null}
     </PageBody>

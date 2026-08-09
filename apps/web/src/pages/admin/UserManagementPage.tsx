@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { PageBody, PageHeader, SubNav } from '../../components/layout/PageFrame';
+import { usePageChrome } from '../../app/page-chrome';
 
 /**
  * The directory and the reporting tree are two views of the same thing —
@@ -8,6 +9,7 @@ import { PageBody, PageHeader, SubNav } from '../../components/layout/PageFrame'
  * others reference, not a view of users.
  */
 export function UserManagementPage() {
+  usePageChrome('User management', [['admin', 'users'], ['directory']]);
   return (
     <PageBody>
       <PageHeader

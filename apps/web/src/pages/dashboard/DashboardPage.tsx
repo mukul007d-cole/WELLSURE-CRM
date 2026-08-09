@@ -10,9 +10,9 @@ import { configApi, sellersApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { MAX_CHARTED_STATUSES } from '../../lib/constants';
 import { qk } from '../../lib/query-keys';
-import { AdminHeader } from '../admin/shared';
 import { NotificationsPanel, RecentlyUpdatedPanel } from './RecentlyUpdatedPanel';
 import { StatusDistributionChart, type StatusCount } from './StatusDistributionChart';
+import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 
 function SummaryCard({
   label,
@@ -115,8 +115,8 @@ export function DashboardPage() {
     (statusesQuery.error instanceof ApiError && statusesQuery.error.status === 403);
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
+    <PageBody>
+      <PageHeader
         title="Dashboard"
         description="Where your sellers stand right now, within the data you can see."
       />
@@ -196,6 +196,6 @@ export function DashboardPage() {
         table exists in the schema and docs/api/endpoints.md documents GET
         /tasks, but nothing implements it, so there is nothing honest to show.
       */}
-    </div>
+    </PageBody>
   );
 }

@@ -7,12 +7,14 @@ import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
+import { Pagination } from '../../components/ui/Pagination';
+import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminUser } from '../../types/domain';
 import { SearchableSelect } from './SearchableSelect';
 import { Toolbar } from '../../components/layout/PageFrame';
-import { ActiveFilter, AdminTable, PageControls, activeValue, ADMIN_PAGE_SIZE } from './shared';
+import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
 type UserDraft = {
   id?: string;
@@ -169,23 +171,30 @@ export function UsersPage() {
       </Toolbar>
       <AdminTable
         loading={query.isPending}
-        headers={['Name', 'Email', 'Role', 'Department', 'State', 'Actions']}
+        headers={[
+          'Name',
+          'Email',
+          'Role',
+          'Department',
+          'State',
+          { label: 'Actions', align: 'right' as const },
+        ]}
         empty={!query.isPending && !query.data?.items.length}
       >
         {query.data?.items.map((user) => (
-          <tr className="border-b last:border-0" key={user.id}>
-            <td className="p-4 font-medium">{user.name}</td>
-            <td className="p-4 text-sm">{user.email}</td>
-            <td className="p-4 text-sm">
+          <DataRow key={user.id}>
+            <DataCell primary>{user.name}</DataCell>
+            <DataCell>{user.email}</DataCell>
+            <DataCell>
               {roles.data?.items.find((role) => role.id === user.roleId)?.name ?? user.roleId}
-            </td>
-            <td className="p-4 text-sm">
+            </DataCell>
+            <DataCell>
               {departments.data?.items.find((department) => department.id === user.departmentId)
                 ?.name ?? '—'}
-            </td>
-            <td className="p-4 text-sm">{user.active ? 'Active' : 'Inactive'}</td>
-            <td className="p-4">
-              <div className="flex gap-2">
+            </DataCell>
+            <DataCell>{user.active ? 'Active' : 'Inactive'}</DataCell>
+            <DataCell align="right">
+              <RowActions>
                 {can('users', 'edit') ? (
                   <Button size="sm" variant="ghost" onClick={() => setDraft(fromUser(user))}>
                     Edit
@@ -196,17 +205,17 @@ export function UsersPage() {
                     Deactivate
                   </Button>
                 ) : null}
-              </div>
-            </td>
-          </tr>
+              </RowActions>
+            </DataCell>
+          </DataRow>
         ))}
       </AdminTable>
       {query.data ? (
-        <PageControls
+        <Pagination
           page={query.data.page}
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
-          onPage={setPage}
+          onPageChange={setPage}
         />
       ) : null}
     </div>

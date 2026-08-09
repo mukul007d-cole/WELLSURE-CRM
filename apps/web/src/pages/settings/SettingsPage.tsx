@@ -4,29 +4,10 @@ import { usePageChrome } from '../../app/page-chrome';
 import { usePreferences, type TableDensity } from '../../app/preferences';
 import { useSignOut } from '../../app/use-sign-out';
 import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { RingAvatar } from '../../components/ui/RingAvatar';
 import { Select } from '../../components/ui/Select';
-import { AdminHeader } from '../admin/shared';
-
-function SettingsCard({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="p-5">
-      <h3 className="font-display text-base font-bold text-ink">{title}</h3>
-      <p className="mt-0.5 text-sm text-ink-soft">{description}</p>
-      <div className="mt-4">{children}</div>
-    </Card>
-  );
-}
+import { PageBody, PageHeader, SectionCard } from '../../components/layout/PageFrame';
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   return (
@@ -61,11 +42,11 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader title="Settings" description="Your profile, access, and how this app looks." />
+    <PageBody>
+      <PageHeader title="Settings" description="Your profile, access, and how this app looks." />
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <SettingsCard
+        <SectionCard
           title="Your profile"
           description="Managed by an administrator — ask one to change these."
         >
@@ -82,9 +63,9 @@ export function SettingsPage() {
               <ReadOnlyRow label="Role" value={user.roleName} />
             </>
           ) : null}
-        </SettingsCard>
+        </SectionCard>
 
-        <SettingsCard
+        <SectionCard
           title="Your access"
           description="What your role currently grants you across the app."
         >
@@ -113,9 +94,9 @@ export function SettingsPage() {
               ) : null}
             </ul>
           </details>
-        </SettingsCard>
+        </SectionCard>
 
-        <SettingsCard
+        <SectionCard
           title="Appearance"
           description="Saved in this browser only — these aren't synced to your account."
         >
@@ -141,9 +122,9 @@ export function SettingsPage() {
               <p className="mt-1 text-xs text-ink-soft">Affects table rows on larger screens.</p>
             </div>
           </div>
-        </SettingsCard>
+        </SectionCard>
 
-        <SettingsCard title="Session" description="You're signed in on this device.">
+        <SectionCard title="Session" description="You're signed in on this device.">
           {user ? <ReadOnlyRow label="Signed in as" value={user.email} /> : null}
           <Button
             className="mt-4"
@@ -153,12 +134,12 @@ export function SettingsPage() {
           >
             Sign out
           </Button>
-        </SettingsCard>
+        </SectionCard>
       </div>
 
       <p className="text-xs text-ink-soft">
         Organisation and notification preferences aren&rsquo;t available in this release.
       </p>
-    </div>
+    </PageBody>
   );
 }

@@ -11,7 +11,8 @@ import { Select } from '../../components/ui/Select';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { Status } from '../../types/domain';
-import { AdminHeader } from './shared';
+import { PageBody, PageHeader } from '../../components/layout/PageFrame';
+import { usePageChrome } from '../../app/page-chrome';
 
 type StatusDraft = {
   id?: string;
@@ -24,6 +25,7 @@ type StatusDraft = {
 type SettingDraft = { fieldId: string; requirement: string; requiredFromStatusId: string };
 export function JourneyDetailPage() {
   const { journeyId = '' } = useParams();
+  usePageChrome('Journey', [['admin', 'journey', journeyId]]);
   const { can } = useAuth();
   const qc = useQueryClient();
   const [journeyName, setJourneyName] = useState('');
@@ -119,8 +121,8 @@ export function JourneyDetailPage() {
     setOrder(next);
   };
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
+    <PageBody>
+      <PageHeader
         title={journey.data?.name ?? 'Journey'}
         description="Manage this Journey's identity, ordered Statuses, and attached Field rules."
       />
@@ -334,7 +336,7 @@ export function JourneyDetailPage() {
           ))}
         </ul>
       </Card>
-    </div>
+    </PageBody>
   );
 }
 function fromStatus(status: Status): StatusDraft {
