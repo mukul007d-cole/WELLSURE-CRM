@@ -70,6 +70,12 @@ export interface FieldDefinition {
   type: FieldType;
   options?: readonly string[];
   validationRule?: FieldValidationRule;
+  /**
+   * Administrator-configured grouping, e.g. the sections a record's details are
+   * split into. Already served by the configuration API; this type just never
+   * declared it, so the value was on the wire and unused.
+   */
+  section?: string | null;
 }
 
 export interface JourneyFieldSetting {
@@ -174,6 +180,17 @@ export interface ActivityEntry {
   /** Whole-lead snapshots, already redacted server-side to visible fields. */
   oldValue: unknown;
   newValue: unknown;
+}
+
+export interface AttachmentRecord {
+  id: string;
+  leadId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uploadedById: string;
+  uploadedByName: string | null;
+  uploadedAt: string;
 }
 
 export type ShareCapability = 'view' | 'edit' | 'comment';

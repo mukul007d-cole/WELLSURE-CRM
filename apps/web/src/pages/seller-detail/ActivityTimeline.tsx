@@ -2,13 +2,14 @@ import { Banner } from '../../components/ui/Banner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
-import type { ActivityEntry, FieldDefinition, Status } from '../../types/domain';
+import type { ActivityEntry, AdminUser, FieldDefinition, Status } from '../../types/domain';
 import { TimelineEntry } from './TimelineEntry';
 
 export function ActivityTimeline({
   entries,
   fields,
   statuses,
+  directory,
   isPending,
   error,
   composer,
@@ -16,10 +17,13 @@ export function ActivityTimeline({
   entries: ActivityEntry[];
   fields: readonly FieldDefinition[];
   statuses: readonly Status[];
+  /** Used to name the two sides of a reassignment; empty without users:view. */
+  directory: readonly AdminUser[];
   isPending: boolean;
   error: unknown;
   composer?: React.ReactNode;
 }) {
+  const names = new Map(directory.map((user) => [user.id, user.name]));
   if (error) {
     // A 403 here is a role boundary, not a fault — say which.
     const forbidden = error instanceof ApiError && error.status === 403;
@@ -50,7 +54,13 @@ export function ActivityTimeline({
       ) : (
         <ol className="flex flex-col">
           {entries.map((entry) => (
-            <TimelineEntry key={entry.id} entry={entry} fields={fields} statuses={statuses} />
+            <TimelineEntry
+              key={entry.id}
+              entry={entry}
+              fields={fields}
+              statuses={statuses}
+              directory={names}
+            />
           ))}
         </ol>
       )}

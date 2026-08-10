@@ -2,6 +2,7 @@ import {
   entryCopy,
   fieldChanges,
   hasRedactedChanges,
+  reassignmentParties,
   TONE_CLASSES,
 } from '../../components/activity/entry-copy';
 import { formatFieldValue } from '../../lib/format';
@@ -31,15 +32,18 @@ export function TimelineEntry({
   entry,
   fields,
   statuses,
+  directory,
 }: {
   entry: ActivityEntry;
   fields: readonly FieldDefinition[];
   statuses: readonly Status[];
+  directory: ReadonlyMap<string, string>;
 }) {
   const { verb, tone } = entryCopy(entry.actionType);
   const time = relativeTime(entry.timestamp);
   const changes = fieldChanges(entry, fields);
   const redacted = hasRedactedChanges(entry, changes);
+  const parties = reassignmentParties(entry, directory);
 
   const oldStatus = statusName(
     statuses,
@@ -79,6 +83,18 @@ export function TimelineEntry({
         {entry.commentText ? (
           <p className="mt-1.5 whitespace-pre-wrap rounded-control bg-surface-sunken px-3 py-2 text-sm text-ink-muted">
             {entry.commentText}
+          </p>
+        ) : null}
+
+        {parties ? (
+          <p className="mt-1 text-sm text-ink-muted">
+            {/* Null means no directory to resolve against — never a raw id. */}
+            <span className="text-ink-soft line-through">{parties.from ?? 'another user'}</span>
+            <span aria-hidden="true"> → </span>
+            {parties.to ?? 'another user'}
+            {parties.assignmentType ? (
+              <span className="text-ink-soft"> ({parties.assignmentType})</span>
+            ) : null}
           </p>
         ) : null}
 

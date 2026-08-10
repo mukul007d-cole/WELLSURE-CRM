@@ -3,11 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../../app/AuthContext';
 import { usePageChrome } from '../../app/page-chrome';
-import { configApi, sellersApi } from '../../lib/api-client';
+import { adminApi, configApi, sellersApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
-import { formatFieldValue } from '../../lib/format';
 import { qk } from '../../lib/query-keys';
-import { cn } from '../../lib/cn';
+import { loadAllPages } from '../admin/shared';
+import { Tabs, TabPanel, useTabGroup, type TabItem } from '../../components/ui/Tabs';
 import { Banner } from '../../components/ui/Banner';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -15,24 +15,24 @@ import { PageHeader } from '../../components/layout/PageFrame';
 import { Skeleton } from '../../components/ui/Skeleton';
 import type { ActivityEntry } from '../../types/domain';
 import { ActivityTimeline } from './ActivityTimeline';
+import { CallHistoryTab } from './CallHistoryTab';
 import { CommentComposer } from './CommentComposer';
+import { DetailsTab } from './DetailsTab';
+import { DocumentLockerTab } from './DocumentLockerTab';
+import { RepeatLeadTab, useRepeatLeads } from './RepeatLeadTab';
 import { DeactivateDialog } from './DeactivateDialog';
 import { LeadShareDialog } from './LeadShareDialog';
 import { ReassignDialog } from './ReassignDialog';
 import { RecordSummaryPanel } from './RecordSummaryPanel';
 
-type Tab = 'timeline' | 'details';
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'timeline', label: 'Activity' },
-  { id: 'details', label: 'Details' },
-];
+type Tab = 'timeline' | 'details' | 'documents' | 'repeats' | 'calls';
 
 export function Seller360Page() {
   const { sellerId } = useParams<{ sellerId: string }>();
   const qc = useQueryClient();
   const { can } = useAuth();
   const [tab, setTab] = useState<Tab>('timeline');
+  const tabGroup = useTabGroup();
   const [shareOpen, setShareOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
@@ -70,6 +70,17 @@ export function Seller360Page() {
     queryFn: () => sellersApi.shares(sellerId!, journeyContext!),
     enabled: Boolean(sellerId && journeyContext),
   });
+  // Names for the from/to sides of a reassignment entry. The activity payload
+  // carries user ids only, and there is no batch by-ids endpoint, so this is
+  // the same paged directory the org chart already caches.
+  const directoryQuery = useQuery({
+    queryKey: qk.directoryUsers(),
+    queryFn: () => loadAllPages((page, pageSize) => adminApi.users({ page, pageSize })),
+    enabled: can('users', 'view'),
+    staleTime: 300_000,
+  });
+  const repeatNeedle = (seller?.phone ?? seller?.email ?? '').trim() || null;
+  const repeatsQuery = useRepeatLeads(sellerId ?? '', seller?.phone ?? null, seller?.email ?? null);
   const activityQuery = useQuery({
     queryKey: qk.sellerActivity(sellerId as string),
     queryFn: () =>
@@ -161,6 +172,15 @@ export function Seller360Page() {
   }
 
   const fields = fieldsQuery.data ?? [];
+  const repeatCount = repeatsQuery.data?.length ?? 0;
+  const tabItems: TabItem<Tab>[] = [
+    { id: 'timeline', label: 'Activity' },
+    { id: 'details', label: 'Details' },
+    { id: 'documents', label: 'Documents' },
+    // Only badge a real, non-zero count — a "0" chip reads as a broken feature.
+    { id: 'repeats', label: 'Repeat lead', ...(repeatCount > 0 ? { badge: repeatCount } : {}) },
+    { id: 'calls', label: 'Call history' },
+  ];
 
   return (
     <div className="p-4 sm:p-6">
@@ -202,32 +222,21 @@ export function Seller360Page() {
         />
 
         <section className="min-w-0 rounded-card border border-line bg-surface shadow-[var(--shadow-card)]">
-          <div role="tablist" aria-label="Record sections" className="flex border-b border-line">
-            {TABS.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry.id}
-                onClick={() => setTab(entry.id)}
-                className={cn(
-                  'border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                  tab === entry.id
-                    ? 'border-gold text-ink'
-                    : 'border-transparent text-ink-soft hover:text-ink',
-                )}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            groupId={tabGroup}
+            items={tabItems}
+            active={tab}
+            onChange={setTab}
+            label="Record sections"
+          />
 
-          <div className="p-5">
+          <TabPanel groupId={tabGroup} id={tab} className="p-5">
             {tab === 'timeline' ? (
               <ActivityTimeline
                 entries={activityQuery.data?.items ?? []}
                 fields={fields}
                 statuses={statusesQuery.data ?? []}
+                directory={directoryQuery.data ?? []}
                 isPending={activityQuery.isPending}
                 error={activityQuery.error}
                 composer={
@@ -240,29 +249,25 @@ export function Seller360Page() {
                   ) : null
                 }
               />
-            ) : fieldsQuery.isPending ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <Skeleton key={index} className="h-10 w-full" />
-                ))}
-              </div>
+            ) : tab === 'details' ? (
+              <DetailsTab
+                fields={fields}
+                fieldValues={seller.fieldValues}
+                isPending={fieldsQuery.isPending}
+              />
+            ) : tab === 'documents' ? (
+              <DocumentLockerTab leadId={seller.id} journeyContext={journeyContext} />
+            ) : tab === 'repeats' ? (
+              <RepeatLeadTab
+                matches={repeatsQuery.data ?? []}
+                isPending={repeatsQuery.isPending && repeatNeedle !== null}
+                error={repeatsQuery.error}
+                matchedOn={repeatNeedle}
+              />
             ) : (
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-                {fields
-                  .filter((field) => field.key in seller.fieldValues)
-                  .map((field) => (
-                    <div key={field.id}>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-ink-soft">
-                        {field.label}
-                      </dt>
-                      <dd className="mt-1 text-sm text-ink">
-                        {formatFieldValue(field, seller.fieldValues[field.key])}
-                      </dd>
-                    </div>
-                  ))}
-              </dl>
+              <CallHistoryTab />
             )}
-          </div>
+          </TabPanel>
         </section>
       </div>
 

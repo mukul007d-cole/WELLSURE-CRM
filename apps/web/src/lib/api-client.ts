@@ -21,6 +21,7 @@ import type {
   Department,
   PermissionCatalog,
   ActivityEntry,
+  AttachmentRecord,
   LeadShare,
   ShareCapability,
   NotificationItem,
@@ -54,6 +55,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return body as T;
+}
+
+/**
+ * Upload a file.
+ *
+ * Separate from `request` because that one sets `content-type: application/json`
+ * on any body — and for a FormData body the browser must set the header itself,
+ * since only it knows the multipart boundary.
+ */
+async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  const body: unknown = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      body as { error: string; details?: Record<string, unknown> },
+    );
+  }
+  return body as T;
+}
+
+/**
+ * Fetch binary content. `request` always calls `response.json()`, which would
+ * throw on a document, and parses away the filename header we need.
+ */
+async function requestBlob(path: string): Promise<{ blob: Blob; fileName: string | null }> {
+  const response = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => ({}));
+    throw new ApiError(
+      response.status,
+      body as { error: string; details?: Record<string, unknown> },
+    );
+  }
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  return {
+    blob: await response.blob(),
+    fileName: encoded ? decodeURIComponent(encoded) : null,
+  };
 }
 
 function toQuery(params: Record<string, string | number | undefined>): string {
@@ -239,7 +284,51 @@ export const sellersApi = {
   ) => request(`/leads/${id}/reassign`, json('PATCH', body)),
   deactivate: (id: string, body: { journeyId: string; assignmentTypes: string[] }) =>
     request(`/leads/${id}/deactivate`, json('POST', body)),
+  moveJourney: (
+    id: string,
+    body: {
+      journeyId: string;
+      assignmentTypes: string[];
+      processInstanceId: string;
+      targetJourneyId: string;
+      statusId?: string;
+    },
+  ) => request<{ processInstanceId: string }>(`/leads/${id}/journey`, json('PATCH', body)),
 };
+
+export const attachmentsApi = {
+  list: (leadId: string, context: LeadContext) =>
+    request<{ items: AttachmentRecord[] }>(
+      `/leads/${leadId}/attachments${leadContextQuery(context)}`,
+    ).then((page) => page.items),
+  upload: (leadId: string, context: LeadContext, input: { file: File; name: string }) => {
+    const form = new FormData();
+    // Name first: the server reads it from the fields already parsed when the
+    // file part arrives, and busboy exposes only what it has seen so far.
+    form.append('name', input.name);
+    form.append('file', input.file);
+    return requestMultipart<AttachmentRecord>(
+      `/leads/${leadId}/attachments${leadContextQuery(context)}`,
+      form,
+    );
+  },
+  download: (attachmentId: string, context: LeadContext) =>
+    requestBlob(`/attachments/${attachmentId}${leadContextQuery(context)}`),
+  remove: (attachmentId: string, context: LeadContext) =>
+    request(`/attachments/${attachmentId}${leadContextQuery(context)}`, json('DELETE')),
+};
+
+/** Every lead-scoped call is authorized against a journey plus claimed types. */
+export interface LeadContext {
+  journeyId: string;
+  assignmentTypes: string[];
+}
+
+const leadContextQuery = (context: LeadContext) =>
+  toQuery({
+    journeyId: context.journeyId,
+    assignmentTypes: context.assignmentTypes.join(','),
+  });
 
 export const notificationsApi = {
   list: (page = 1) =>
@@ -294,6 +383,9 @@ function normalizeField(row: RawField): FieldDefinition {
     type: (row.type ?? row.fieldType ?? 'text') as FieldDefinition['type'],
     ...(options ? { options } : {}),
     ...(rule ? { validationRule: rule } : {}),
+    // The API has always sent this; the normalizer just dropped it on the
+    // floor, so the record page had no way to group details by section.
+    ...(row.section === undefined ? {} : { section: row.section }),
   };
 }
 

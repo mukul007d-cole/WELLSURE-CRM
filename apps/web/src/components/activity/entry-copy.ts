@@ -82,6 +82,38 @@ export function fieldChanges(
     }));
 }
 
+export interface ReassignmentParties {
+  assignmentType: string | null;
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * Who a reassignment moved the lead between.
+ *
+ * The activity payload stores user ids only, and there is no batch by-ids
+ * endpoint, so names are resolved against the paged directory the app already
+ * caches. A viewer without `users:view` has no directory — they get null, which
+ * the renderer turns into "another user" rather than a raw UUID.
+ */
+export function reassignmentParties(
+  entry: Pick<ActivityEntry, 'actionType' | 'oldValue' | 'newValue'>,
+  directory: ReadonlyMap<string, string>,
+): ReassignmentParties | null {
+  if (entry.actionType !== 'reassignment') return null;
+  const before = asRecord(entry.oldValue);
+  const after = asRecord(entry.newValue);
+  if (!before && !after) return null;
+  const name = (value: unknown) =>
+    typeof value === 'string' ? (directory.get(value) ?? null) : null;
+  const type = after?.['assignmentType'] ?? before?.['assignmentType'];
+  return {
+    assignmentType: typeof type === 'string' ? type : null,
+    from: name(before?.['userId']),
+    to: name(after?.['userId']),
+  };
+}
+
 /** Whether the two snapshots differ only in ways this viewer cannot see. */
 export function hasRedactedChanges(
   entry: Pick<ActivityEntry, 'actionType' | 'oldValue' | 'newValue'>,

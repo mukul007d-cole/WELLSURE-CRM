@@ -1,3 +1,11 @@
+export interface StorageEnv {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+}
+
 export interface ApiEnv {
   databaseUrl: string;
   httpPort: number;
@@ -5,6 +13,12 @@ export interface ApiEnv {
   emailTransport: string;
   logLevel: string;
   sessionCookieSecure: boolean;
+  /**
+   * Object storage for attachments. Optional on purpose: the API must boot
+   * without a bucket, so a developer who hasn't run `pnpm infra:up` gets a
+   * disabled document locker rather than a server that won't start.
+   */
+  storage?: StorageEnv;
 }
 
 export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
@@ -48,6 +62,15 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
   } catch {
     if (databaseUrl) errors.push('FALCON_DATABASE_URL must be a PostgreSQL URL');
   }
+  // All five or none — a half-configured bucket fails at upload time with a
+  // credentials error, which is a worse signal than "not configured".
+  const storageKeys = ['S3_ENDPOINT', 'S3_REGION', 'S3_BUCKET', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'];
+  const storageValues = storageKeys.map((key) => env[key]?.trim() ?? '');
+  const storageConfigured = storageValues.every((value) => value !== '');
+  if (!storageConfigured && storageValues.some((value) => value !== '')) {
+    errors.push(`Object storage needs all of ${storageKeys.join(', ')} or none of them`);
+  }
+
   if (errors.length) throw new Error(`Invalid Falcon API environment:\n- ${errors.join('\n- ')}`);
   return {
     databaseUrl,
@@ -56,5 +79,16 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
     emailTransport,
     logLevel,
     sessionCookieSecure: secureText === 'true',
+    ...(storageConfigured
+      ? {
+          storage: {
+            endpoint: storageValues[0]!,
+            region: storageValues[1]!,
+            bucket: storageValues[2]!,
+            accessKey: storageValues[3]!,
+            secretKey: storageValues[4]!,
+          },
+        }
+      : {}),
   };
 }

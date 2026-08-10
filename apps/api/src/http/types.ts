@@ -13,6 +13,7 @@ import type { LeadRepository } from '../leads/service.js';
 import type { LeadActivityReadRepository, SellerReadRepository } from '../routes/leads.js';
 import type { LeadSharingService } from '../leads/sharing.js';
 import type { NotificationService } from '../notifications/service.js';
+import type { AttachmentService } from '../attachments/service.js';
 
 export interface ServerDependencies {
   authRepository: LoginRepository & SessionRepository & PasswordResetRepository;
@@ -24,6 +25,8 @@ export interface ServerDependencies {
   adminRepository?: AdminRepository;
   leadSharingService?: LeadSharingService;
   notificationService?: NotificationService;
+  /** Absent when object storage isn't configured; the locker degrades to 503. */
+  attachmentService?: AttachmentService;
   authConfig: AuthConfig;
   corsOrigins: readonly string[];
   logLevel?: string;

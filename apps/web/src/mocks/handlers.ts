@@ -48,6 +48,20 @@ interface MockActivityEntry {
 /** Comments, reassignments and deactivations appended during a session. */
 const MOCK_ACTIVITY: Record<string, MockActivityEntry[]> = {};
 
+interface MockAttachment {
+  id: string;
+  leadId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uploadedById: string;
+  uploadedByName: string | null;
+  uploadedAt: string;
+}
+
+/** In-memory locker. Real uploads need MinIO; the mock just remembers names. */
+const MOCK_ATTACHMENTS: MockAttachment[] = [];
+
 /**
  * A seeded history so the dev demo shows a populated timeline rather than an
  * empty state, covering every `actionType` the renderer handles.
@@ -997,6 +1011,38 @@ export const handlers = [
       newValue: null,
     });
     return HttpResponse.json({ ok: true });
+  }),
+  http.get(`${API_BASE}/leads/:id/attachments`, ({ params }) =>
+    HttpResponse.json({
+      items: MOCK_ATTACHMENTS.filter((row) => row.leadId === String(params.id)),
+    }),
+  ),
+  http.post(`${API_BASE}/leads/:id/attachments`, async ({ request, params }) => {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    }
+    // FormDataEntryValue is string | File; only a string is a usable name.
+    const nameEntry = form.get('name');
+    const name = (typeof nameEntry === 'string' ? nameEntry.trim() : '') || file.name;
+    const record: MockAttachment = {
+      id: `attachment-${Date.now()}`,
+      leadId: String(params.id),
+      fileName: name,
+      mimeType: file.type || null,
+      sizeBytes: file.size,
+      uploadedById: USERS[0]!.id,
+      uploadedByName: USERS[0]!.name,
+      uploadedAt: new Date().toISOString(),
+    };
+    MOCK_ATTACHMENTS.unshift(record);
+    return HttpResponse.json(record, { status: 201 });
+  }),
+  http.delete(`${API_BASE}/attachments/:attachmentId`, ({ params }) => {
+    const index = MOCK_ATTACHMENTS.findIndex((row) => row.id === params.attachmentId);
+    if (index >= 0) MOCK_ATTACHMENTS.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),
