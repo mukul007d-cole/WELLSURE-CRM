@@ -5,6 +5,7 @@ import {
   createLead,
   editLead,
   getLeadActivity,
+  moveLeadJourney,
   getSeller360,
   listSellers,
 } from '../routes/leads.js';
@@ -351,6 +352,104 @@ describe('Lead/Seller core route and service behavior', () => {
   });
 });
 
+describe('Moving a lead between journeys', () => {
+  const move = (
+    repo: MemoryLeadRepository,
+    permissions: PermissionRepository,
+    input: { leadId: string; processInstanceId: string; journeyId: string; statusId?: string },
+  ) =>
+    moveLeadJourney({
+      auth,
+      leadRepository: repo,
+      permissionRepository: permissions,
+      targetJourneyId: journeyB,
+      assignmentTypes: [assignmentType],
+      now,
+      ...input,
+    });
+
+  it('repoints the instance and keeps its assignments and field values', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: { [fieldVisible]: 'kept' } });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.assignments.push({
+      id: 'assignment-1',
+      organizationId: orgA,
+      processInstanceId: process.id,
+      assignmentType,
+      userId: actorId,
+      isCurrent: true,
+    });
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(200);
+    expect(repo.processes[0]?.journeyId).toBe(journeyB);
+    // One row, not a deactivate-and-recreate: the assignment is still on it.
+    expect(repo.processes).toHaveLength(1);
+    expect(repo.assignments[0]?.processInstanceId).toBe(process.id);
+    // The lead's values live on the lead, so a move cannot disturb them.
+    expect(repo.leads[0]?.fieldValues).toEqual({ [fieldVisible]: 'kept' });
+    expect(repo.activities.map((entry) => entry.actionType)).toEqual(['journey_change']);
+  });
+
+  it('refuses a move into a journey the lead is already active in', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedProcess(lead.id, journeyB, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(409);
+  });
+
+  it('reports the field the target journey requires and the lead lacks', async () => {
+    const repo = new MemoryLeadRepository();
+    // Required from the status the lead will land on in the target journey.
+    repo.fieldSettings = [requiredFromField(statusEarly)];
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+      statusId: statusEarly,
+    });
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+    });
+    // Nothing moved.
+    expect(repo.processes[0]?.journeyId).toBe(journeyA);
+  });
+
+  it('requires rights in the destination journey, not just the source', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(403);
+    expect(repo.processes[0]?.journeyId).toBe(journeyA);
+  });
+});
+
 describe('Lead activity timeline', () => {
   /** The endpoint under test, with the boilerplate the cases don't vary. */
   const activity = (
@@ -620,6 +719,17 @@ class MemoryLeadRepository implements LeadRepository {
   async createProcessInstance(input: Omit<LeadProcessRecord, 'id' | 'active'>) {
     const process = { ...input, id: `process-${this.processes.length + 1}`, active: true };
     this.processes.push(process);
+    return process;
+  }
+  async updateProcessInstanceJourney(
+    organizationId: string,
+    processInstanceId: string,
+    patch: { journeyId: string; currentStatusId: string },
+  ) {
+    const process = await this.findProcessInstance(organizationId, processInstanceId);
+    if (process === null) return null;
+    process.journeyId = patch.journeyId;
+    process.currentStatusId = patch.currentStatusId;
     return process;
   }
   async updateProcessInstanceStatus(

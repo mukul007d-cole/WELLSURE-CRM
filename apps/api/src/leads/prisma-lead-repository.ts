@@ -277,6 +277,28 @@ export class PrismaLeadRepository
     return process(await this.prisma.processInstance.create({ data: input }));
   }
 
+  /**
+   * Repoint an instance at another journey.
+   *
+   * Journey and status move together: a status belongs to exactly one journey,
+   * so leaving the old `currentStatusId` behind would put the row in a state
+   * no query could interpret.
+   */
+  async updateProcessInstanceJourney(
+    organizationId: string,
+    processInstanceId: string,
+    patch: { journeyId: string; currentStatusId: string },
+  ): Promise<LeadProcessRecord | null> {
+    const existing = await this.findProcessInstance(organizationId, processInstanceId);
+    if (existing === null) return null;
+    return process(
+      await this.prisma.processInstance.update({
+        where: { organizationId_id: { organizationId, id: processInstanceId } },
+        data: { journeyId: patch.journeyId, currentStatusId: patch.currentStatusId },
+      }),
+    );
+  }
+
   async updateProcessInstanceStatus(
     organizationId: string,
     processInstanceId: string,

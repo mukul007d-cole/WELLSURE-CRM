@@ -19,7 +19,9 @@ import { CallHistoryTab } from './CallHistoryTab';
 import { CommentComposer } from './CommentComposer';
 import { DetailsTab } from './DetailsTab';
 import { DocumentLockerTab } from './DocumentLockerTab';
+import { JourneyDialog, type JourneyAction } from './JourneyDialog';
 import { RepeatLeadTab, useRepeatLeads } from './RepeatLeadTab';
+import { downloadRecordPdf } from './record-pdf';
 import { DeactivateDialog } from './DeactivateDialog';
 import { LeadShareDialog } from './LeadShareDialog';
 import { ReassignDialog } from './ReassignDialog';
@@ -36,6 +38,7 @@ export function Seller360Page() {
   const [shareOpen, setShareOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [journeyAction, setJourneyAction] = useState<JourneyAction | null>(null);
 
   usePageChrome('Seller', sellerId ? [qk.seller(sellerId)] : []);
 
@@ -132,6 +135,47 @@ export function Seller360Page() {
     },
   });
 
+  const journeyMove = useMutation({
+    mutationFn: (input: {
+      processInstanceId: string;
+      targetJourneyId: string;
+      statusId: string | undefined;
+    }): Promise<unknown> =>
+      journeyAction === 'move'
+        ? sellersApi.moveJourney(sellerId!, {
+            ...journeyContext!,
+            processInstanceId: input.processInstanceId,
+            targetJourneyId: input.targetJourneyId,
+            ...(input.statusId ? { statusId: input.statusId } : {}),
+          })
+        : // Adding reuses the create endpoint's existingLeadId path, which
+          // overwrites the lead's core fields — so send the current values
+          // back unchanged rather than letting it blank them.
+          sellersApi.create({
+            existingLeadId: sellerId!,
+            journeyId: input.targetJourneyId,
+            ...(input.statusId ? { statusId: input.statusId } : {}),
+            name: seller?.name ?? '',
+            phone: seller?.phone ?? null,
+            email: seller?.email ?? null,
+            fieldValues: {},
+            assignments:
+              seller?.processInstances[0]?.assignments.map((assignment) => ({
+                assignmentType: assignment.assignmentType,
+                userId: assignment.userId,
+              })) ?? [],
+          }),
+    onSuccess: async () => {
+      setJourneyAction(null);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: qk.seller(sellerId!) }),
+        qc.invalidateQueries({ queryKey: activityKey }),
+        qc.invalidateQueries({ queryKey: qk.sellers() }),
+        qc.invalidateQueries({ queryKey: qk.board() }),
+      ]);
+    },
+  });
+
   const deactivate = useMutation({
     mutationFn: () => sellersApi.deactivate(sellerId!, journeyContext!),
     onSuccess: async () => {
@@ -192,9 +236,31 @@ export function Seller360Page() {
           </Link>
         }
         actions={
-          <ButtonLink to={`/sellers/${seller.id}/edit`} variant="secondary">
-            Edit seller
-          </ButtonLink>
+          <div className="flex items-center gap-1.5">
+            {can('leads', 'edit') ? (
+              <IconButton
+                label="Move to another journey"
+                onClick={() => setJourneyAction('move')}
+                // Two arrows crossing: this record leaves one journey for another.
+                d="M7 7h11l-3-3M17 17H6l3 3"
+              />
+            ) : null}
+            {can('leads', 'create') ? (
+              <IconButton
+                label="Add to another journey"
+                onClick={() => setJourneyAction('add')}
+                d="M12 5v14M5 12h14"
+              />
+            ) : null}
+            <IconButton
+              label="Download as PDF"
+              onClick={() => downloadRecordPdf(seller, fields)}
+              d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
+            />
+            <ButtonLink to={`/sellers/${seller.id}/edit`} variant="secondary">
+              Edit seller
+            </ButtonLink>
+          </div>
         }
       />
 
@@ -288,6 +354,16 @@ export function Seller360Page() {
           error={reassign.error}
         />
       ) : null}
+      {journeyAction ? (
+        <JourneyDialog
+          action={journeyAction}
+          processes={seller.processInstances}
+          onClose={() => setJourneyAction(null)}
+          onSubmit={(input) => journeyMove.mutate(input)}
+          pending={journeyMove.isPending}
+          error={journeyMove.error}
+        />
+      ) : null}
       {deactivateOpen ? (
         <DeactivateDialog
           sellerName={seller.name}
@@ -298,6 +374,33 @@ export function Seller360Page() {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The record's icon actions. No IconButton primitive exists yet and these are
+ * the only three, so the shape stays local rather than inventing a component
+ * for one caller.
+ */
+function IconButton({ label, onClick, d }: { label: string; onClick: () => void; d: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-line text-ink-soft transition-colors hover:border-ink hover:text-ink"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d={d}
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
   );
 }
 

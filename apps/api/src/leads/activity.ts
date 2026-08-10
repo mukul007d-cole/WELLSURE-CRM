@@ -9,7 +9,9 @@ export interface LeadActivityInput {
     | 'status_change'
     | 'reassignment'
     | 'share_changed'
-    | 'lead_deactivated';
+    | 'lead_deactivated'
+    // A process instance moved to a different journey.
+    | 'journey_change';
   source: string;
   oldValue: unknown;
   newValue: unknown;

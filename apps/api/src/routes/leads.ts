@@ -162,6 +162,60 @@ export async function createLead(input: {
   }
 }
 
+/**
+ * Move a lead's process instance into a different journey.
+ *
+ * Authorized against **both** journeys: `edit` on the one it is leaving and
+ * `create` on the one it is entering. Checking only the source would let
+ * someone push a record into a journey they have no rights to; checking only
+ * the target would let them pull one out of a journey they cannot touch.
+ */
+export async function moveLeadJourney(input: {
+  auth: AuthenticatedContext;
+  leadRepository: LeadRepository;
+  permissionRepository: PermissionRepository;
+  leadId: string;
+  processInstanceId: string;
+  journeyId: string;
+  targetJourneyId: string;
+  assignmentTypes: readonly string[];
+  statusId?: string;
+  now?: Date;
+}): Promise<LeadRouteResult> {
+  for (const [journeyId, action] of [
+    [input.journeyId, editAction],
+    [input.targetJourneyId, createAction],
+  ] as const) {
+    const decision = await resolveAuthorization({
+      repository: input.permissionRepository,
+      request: {
+        organizationId: input.auth.user.organizationId,
+        userId: input.auth.user.id,
+        module: leadsModule,
+        action,
+        journeyId,
+        leadId: input.leadId,
+        assignmentTypes: input.assignmentTypes,
+        ...(input.now === undefined ? {} : { now: input.now }),
+      },
+    });
+    if (!decision.allowed) return { status: 403, body: { error: 'forbidden' } };
+  }
+  try {
+    const result = await new LeadService(input.leadRepository).moveJourney({
+      organizationId: input.auth.user.organizationId,
+      actorUserId: input.auth.user.id,
+      processInstanceId: input.processInstanceId,
+      targetJourneyId: input.targetJourneyId,
+      ...(input.statusId === undefined ? {} : { statusId: input.statusId }),
+    });
+    return { status: 200, body: result };
+  } catch (error) {
+    if (isLeadError(error)) return toResponse(error);
+    throw error;
+  }
+}
+
 export async function editLead(input: {
   auth: AuthenticatedContext;
   leadRepository: LeadRepository;

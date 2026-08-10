@@ -5,6 +5,7 @@ import {
   createLead,
   editLead,
   getLeadActivity,
+  moveLeadJourney,
   getSeller360,
   listSellers,
 } from '../../routes/leads.js';
@@ -130,6 +131,24 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
       );
     },
   );
+  server.patch('/api/v1/leads/:id/journey', { preHandler }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as Json;
+    return sendRouteResult(
+      reply,
+      await moveLeadJourney({
+        auth: request.auth,
+        leadRepository: deps.leadRepository,
+        permissionRepository: deps.permissionRepository,
+        leadId: id,
+        processInstanceId: String(body.processInstanceId),
+        journeyId: String(body.journeyId),
+        targetJourneyId: String(body.targetJourneyId),
+        assignmentTypes: strings(body.assignmentTypes),
+        ...(optionalString(body.statusId) ? { statusId: String(body.statusId) } : {}),
+      }),
+    );
+  });
   server.patch(
     '/api/v1/leads/:id',
     { preHandler, schema: { tags: ['leads'] } },
