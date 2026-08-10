@@ -13,16 +13,15 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       work(new PrismaConfigurationRepository(tx as FalconPrismaClient)),
     );
   }
-  async listJourneys(
-    org: string,
-    active: boolean | undefined,
-    page: number,
-    pageSize: number,
-    accessibleJourneyIds: readonly string[],
-  ) {
+  async listJourneys(org: string, active: boolean | undefined, page: number, pageSize: number) {
+    // No RoleJourneyAccess filter here. That table gates which journeys' *leads*
+    // a role may reach; the configuration catalog is gated by the
+    // journeys_statuses:view feature permission, already checked upstream in
+    // readConfiguration. Filtering on both meant a role with the permission but
+    // no grants — any role an admin creates before granting journey access —
+    // saw an empty list and could never find the journey to grant.
     const where = {
       organizationId: org,
-      id: { in: [...accessibleJourneyIds] },
       ...(active === undefined ? {} : { active }),
     };
     const [total, items] = await Promise.all([
@@ -87,20 +86,13 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       where: { organizationId: org, id, ...(active === undefined ? {} : { active }) },
     }) as Promise<ConfigRow | null>;
   }
-  async listFields(
-    org: string,
-    active: boolean | undefined,
-    page: number,
-    pageSize: number,
-    accessibleJourneyIds: readonly string[],
-  ) {
+  async listFields(org: string, active: boolean | undefined, page: number, pageSize: number) {
     const where = { organizationId: org, ...(active === undefined ? {} : { active }) };
+    // Fields themselves were never filtered; their per-journey settings were,
+    // so a zero-grant role saw every field with no journey mappings at all.
     const include = {
       settings: {
-        where: {
-          journeyId: { in: [...accessibleJourneyIds] },
-          ...(active === undefined ? {} : { active }),
-        },
+        where: { ...(active === undefined ? {} : { active }) },
         orderBy: { journeyId: 'asc' as const },
       },
     };
@@ -116,20 +108,12 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     ]);
     return { total, items: items as ConfigRow[] };
   }
-  getFieldDetail(
-    org: string,
-    id: string,
-    active: boolean | undefined,
-    accessibleJourneyIds: readonly string[],
-  ) {
+  getFieldDetail(org: string, id: string, active: boolean | undefined) {
     return this.prisma.field.findFirst({
       where: { organizationId: org, id, ...(active === undefined ? {} : { active }) },
       include: {
         settings: {
-          where: {
-            journeyId: { in: [...accessibleJourneyIds] },
-            ...(active === undefined ? {} : { active }),
-          },
+          where: { ...(active === undefined ? {} : { active }) },
           orderBy: { journeyId: 'asc' },
         },
       },

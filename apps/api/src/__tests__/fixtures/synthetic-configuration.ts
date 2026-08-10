@@ -66,18 +66,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async transaction<T>(work: (repository: ConfigurationRepository) => Promise<T>): Promise<T> {
     return work(this);
   }
-  async listJourneys(
-    org: string,
-    active: boolean | undefined,
-    page: number,
-    pageSize: number,
-    accessible: readonly string[],
-  ) {
+  async listJourneys(org: string, active: boolean | undefined, page: number, pageSize: number) {
     const all = [...this.rows.journeys.values()].filter(
-      (x) =>
-        x.organizationId === org &&
-        accessible.includes(x.id) &&
-        (active === undefined || x.active === active),
+      (x) => x.organizationId === org && (active === undefined || x.active === active),
     );
     return { total: all.length, items: all.slice((page - 1) * pageSize, page * pageSize) };
   }
@@ -107,26 +98,13 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
     const row = find(this.rows.services, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
-  async listFields(
-    org: string,
-    active: boolean | undefined,
-    page: number,
-    pageSize: number,
-    _accessible: readonly string[],
-  ) {
-    void _accessible;
+  async listFields(org: string, active: boolean | undefined, page: number, pageSize: number) {
     const all = [...this.rows.fields.values()].filter(
       (x) => x.organizationId === org && (active === undefined || x.active === active),
     );
     return { total: all.length, items: all.slice((page - 1) * pageSize, page * pageSize) };
   }
-  async getFieldDetail(
-    org: string,
-    id: string,
-    active: boolean | undefined,
-    _accessible: readonly string[],
-  ) {
-    void _accessible;
+  async getFieldDetail(org: string, id: string, active: boolean | undefined) {
     const row = find(this.rows.fields, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
@@ -305,7 +283,19 @@ export function auth() {
   };
 }
 
-export function permissionRepository(allowed = true): PermissionRepository {
+/**
+ * @param allowed whether the role holds the feature permission being checked.
+ * @param options.journeyAccess whether the role has any RoleJourneyAccess rows.
+ *   `false` models a role an administrator has created and granted
+ *   `journeys_statuses:view` / `fields:view` to, but not yet given access to
+ *   any journey's records — the state the configuration catalog used to be
+ *   invisible in.
+ */
+export function permissionRepository(
+  allowed = true,
+  options: { journeyAccess?: boolean } = {},
+): PermissionRepository {
+  const journeyAccess = options.journeyAccess ?? true;
   return {
     async getUser() {
       return {
@@ -331,10 +321,10 @@ export function permissionRepository(allowed = true): PermissionRepository {
         : null;
     },
     async hasJourneyAccess(input: { roleId: string; organizationId: string; journeyId: string }) {
-      return input.journeyId === journeyId;
+      return journeyAccess && input.journeyId === journeyId;
     },
     async listAccessibleJourneyIds() {
-      return [journeyId];
+      return journeyAccess ? [journeyId] : [];
     },
     async getFieldVisibility() {
       return [];

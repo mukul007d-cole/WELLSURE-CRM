@@ -5,6 +5,7 @@ import {
   createField,
   createJourney,
   deactivateStatus,
+  readConfiguration,
   reorderStatuses,
   upsertFieldVisibility,
 } from '../routes/configuration.js';
@@ -233,5 +234,91 @@ describe('configuration engine API', () => {
       source: 'manual',
     });
     expect(response.status).toBe(400);
+  });
+});
+
+/**
+ * Regression: RoleJourneyAccess gates which journeys' *records* a role may
+ * reach. It was also being applied to the configuration catalog, on top of the
+ * feature-permission check that already gates it — so a role holding
+ * journeys_statuses:view or fields:view but no journey grants saw nothing, and
+ * had no way to reach the journey it needed in order to be granted access to
+ * it.
+ */
+describe('configuration catalog visibility without journey access', () => {
+  const noJourneyAccess = () => permissionRepository(true, { journeyAccess: false });
+
+  it('lists journeys for a role with the feature permission and zero grants', async () => {
+    const response = await readConfiguration({
+      auth: auth(),
+      permissionRepository: noJourneyAccess(),
+      configurationRepository: new MemoryConfigurationRepository(),
+      kind: 'journeys',
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(response.status).toBe(200);
+    const body = response.body as { total: number; items: Array<{ id: string }> };
+    expect(body.total).toBe(1);
+    expect(body.items.map((item) => item.id)).toEqual([journeyId]);
+  });
+
+  it('reads a journey it has no explicit access to', async () => {
+    const response = await readConfiguration({
+      auth: auth(),
+      permissionRepository: noJourneyAccess(),
+      configurationRepository: new MemoryConfigurationRepository(),
+      kind: 'journeys',
+      id: journeyId,
+      page: 1,
+      pageSize: 25,
+    });
+
+    // The web app reads a journey's statuses from this route, so a 403 here
+    // left every status picker empty even once the list worked.
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ id: journeyId });
+  });
+
+  it('lists fields for a role with zero grants', async () => {
+    const repository = new MemoryConfigurationRepository();
+    const created = await createField({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      key: 'test_field_a',
+      name: 'Test Field A',
+      fieldType: 'text',
+      editMode: 'manual',
+      source: 'manual',
+    });
+    expect(created.status).toBe(201);
+
+    const response = await readConfiguration({
+      auth: auth(),
+      permissionRepository: noJourneyAccess(),
+      configurationRepository: repository,
+      kind: 'fields',
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(response.status).toBe(200);
+    expect((response.body as { total: number }).total).toBe(1);
+  });
+
+  it('still refuses a role that lacks the feature permission', async () => {
+    // The fix removes the journey filter, not the permission check.
+    const response = await readConfiguration({
+      auth: auth(),
+      permissionRepository: permissionRepository(false),
+      configurationRepository: new MemoryConfigurationRepository(),
+      kind: 'journeys',
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
   });
 });

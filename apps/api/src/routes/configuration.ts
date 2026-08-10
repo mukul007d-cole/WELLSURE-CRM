@@ -40,7 +40,12 @@ export async function readConfiguration(input: {
       userId: input.auth.user.id,
       module,
       action: 'view',
-      ...(input.kind === 'journeys' && input.id ? { journeyId: input.id } : {}),
+      // Deliberately no journeyId. Passing it made the engine check
+      // RoleJourneyAccess, so a role holding journeys_statuses:view but no
+      // grants got a 403 reading a journey it could see in the list — and the
+      // web app reads a journey's statuses from this same route, so its status
+      // pickers came back empty too. Record access is enforced on the lead
+      // routes, where it belongs; this is the configuration catalog.
     },
   });
   if (!decision.allowed) return { status: 403, body: { error: 'forbidden' } };
@@ -54,10 +59,6 @@ export async function readConfiguration(input: {
     return { status: 400, body: { error: 'validation_error' } };
   const service = new ConfigurationService(input.configurationRepository);
   const organizationId = input.auth.user.organizationId;
-  const accessibleJourneyIds = await input.permissionRepository.listAccessibleJourneyIds({
-    roleId: input.auth.user.roleId,
-    organizationId,
-  });
   const body =
     input.kind === 'journeys'
       ? input.id
@@ -67,7 +68,6 @@ export async function readConfiguration(input: {
             active: input.active,
             page: input.page,
             pageSize: input.pageSize,
-            accessibleJourneyIds,
           })
       : input.kind === 'services'
         ? input.id
@@ -83,14 +83,12 @@ export async function readConfiguration(input: {
               organizationId,
               fieldId: input.id,
               active: input.active,
-              accessibleJourneyIds,
             })
           : await service.listFields({
               organizationId,
               active: input.active,
               page: input.page,
               pageSize: input.pageSize,
-              accessibleJourneyIds,
             });
   return body === null ? { status: 404, body: { error: 'not_found' } } : { status: 200, body };
 }
