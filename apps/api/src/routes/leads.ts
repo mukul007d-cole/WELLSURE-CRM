@@ -482,13 +482,18 @@ async function resolveLeadAccess(input: {
 }
 
 function serializeLead(
-  lead: Pick<LeadCoreRecord, 'id' | 'name' | 'phone' | 'email' | 'fieldValues'>,
+  lead: Pick<
+    LeadCoreRecord,
+    'id' | 'name' | 'phone' | 'email' | 'fieldValues' | 'createdAt' | 'updatedAt'
+  >,
   visibleFieldIds: readonly string[],
 ): {
   id: string;
   name: string;
   phone: string | null;
   email: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   fieldValues: Record<string, unknown>;
 } {
   return {
@@ -496,6 +501,11 @@ function serializeLead(
     name: lead.name,
     phone: lead.phone,
     email: lead.email,
+    // Columns that have always existed and the serializer simply dropped, so
+    // the record page had no "added on" to show. Optional because the list
+    // query doesn't always select them.
+    ...(lead.createdAt ? { createdAt: lead.createdAt.toISOString() } : {}),
+    ...(lead.updatedAt ? { updatedAt: lead.updatedAt.toISOString() } : {}),
     fieldValues: pickVisibleFieldValues(lead.fieldValues, new Set(visibleFieldIds)),
   };
 }

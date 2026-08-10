@@ -268,6 +268,7 @@ export function Seller360Page() {
         <RecordSummaryPanel
           seller={seller}
           shares={sharesQuery.data ?? []}
+          repeatCount={repeatCount}
           actions={
             <>
               <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>

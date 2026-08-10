@@ -85,6 +85,7 @@ GET    /leads/:id
 PATCH  /leads/:id
 PATCH  /leads/:id/status               -- NOT IMPLEMENTED: status changes ride on PATCH /leads/:id with statusId in the body
 PATCH  /leads/:id/reassign
+PATCH  /leads/:id/journey                -- move a process instance to another journey; authorized on both (see ADR-0012)
 POST   /leads/:id/services             -- NOT IMPLEMENTED
 GET    /leads/:id/activity             -- paginated {page,pageSize,total,items}, newest first; gated on leads:view; old_value/new_value redacted against the caller's visible field set (see ADR-0011)
 POST   /leads/:id/comments
@@ -121,11 +122,15 @@ PATCH  /tasks/:id/complete
 
 ### Attachments
 
-**Not implemented.** No route file exists. Paths below are the V1 target, not the current surface.
+Implemented, and registered **only when object storage is configured** — see
+ADR-0012. Without the `S3_*` environment variables the list and upload routes
+answer `503 storage_not_configured` and the rest are absent.
 
 ```
-POST   /leads/:id/attachments
-GET    /attachments/:id
+GET    /leads/:id/attachments          -- gated on attachments:download (no view action exists)
+POST   /leads/:id/attachments          -- multipart; fields: file, name. attachments:upload
+GET    /attachments/:id                -- streams the object; attachments:download
+DELETE /attachments/:id                -- soft delete (active=false); attachments:delete
 ```
 
 ### Finance

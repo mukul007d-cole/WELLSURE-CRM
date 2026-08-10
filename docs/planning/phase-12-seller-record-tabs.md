@@ -1,6 +1,15 @@
 # Phase 12 — The seller record, finished
 
-Status: approved 2026-08-10.
+Status: approved 2026-08-10. **Delivered.**
+
+Shipped: the shared Tabs component, section-grouped details, the document
+locker on MinIO, journey move and add, repeat-lead matching, PDF export, named
+reassignment parties, the enriched header, and the user-search fix.
+
+Two deviations from the plan, both smaller than expected. The rate-limit
+`keyGenerator` needed no change — its optional chaining already tolerates a
+multipart body. And the MSW users handler already implemented `search`, which
+is exactly why the server-side gap went unnoticed.
 
 ## Context
 

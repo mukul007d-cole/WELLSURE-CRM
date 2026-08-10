@@ -1,6 +1,9 @@
 # Phase 10 — Demo-ready workspace UI
 
-Status: approved 2026-08-05. **Delivered.**
+Status: approved 2026-08-05. **Delivered and closed out.**
+
+Follow-on work continued in phases 11 and 12, which finished the seller record
+this phase left as a two-card stack.
 
 All five sections are built: foundations (config-transport fixes, status-tone
 extraction, query-key factory, shared JourneyTabs, Dialog), shell polish

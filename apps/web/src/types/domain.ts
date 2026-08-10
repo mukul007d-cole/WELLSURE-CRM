@@ -105,6 +105,9 @@ export interface LeadCoreRecord {
   name: string;
   phone: string | null;
   email: string | null;
+  /** Absent on list rows, which don't select the timestamps. */
+  createdAt?: string;
+  updatedAt?: string;
   fieldValues: Record<string, unknown>;
 }
 

@@ -1,5 +1,14 @@
 # Phase 11 — The seller record, and one design system
 
+Status: approved 2026-08-10. **Delivered.**
+
+All five sections shipped: the activity endpoint with field-visibility
+redaction, the five fold-in defects, the Seller 360 restructure, comment /
+reassign / deactivate, and the design-system convergence.
+
+The one item deliberately left for a later phase is §6 — `LeadFormPage` still
+dead-ends on a `journeys_statuses:view` 403.
+
 ## Context
 
 Phase 10 shipped four surfaces and a Freshsales-inspired shell. Two things it
