@@ -37,7 +37,6 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     active: boolean | undefined,
     page: number,
     pageSize: number,
-    accessibleJourneyIds: readonly string[],
   ): Promise<{ total: number; items: ConfigRow[] }>;
   getJourneyDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
   listJourneyAssignmentTypes(organizationId: string, journeyId: string): Promise<string[]>;
@@ -54,13 +53,11 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     active: boolean | undefined,
     page: number,
     pageSize: number,
-    accessibleJourneyIds: readonly string[],
   ): Promise<{ total: number; items: ConfigRow[] }>;
   getFieldDetail(
     organizationId: string,
     id: string,
     active: boolean | undefined,
-    accessibleJourneyIds: readonly string[],
   ): Promise<ConfigRow | null>;
   listJourneyFieldSettings(organizationId: string, journeyId: string): Promise<ConfigRow[]>;
   createJourney(input: Record<string, unknown>): Promise<ConfigRow>;
@@ -141,16 +138,9 @@ export class ConfigurationService {
     active: boolean | undefined;
     page: number;
     pageSize: number;
-    accessibleJourneyIds: readonly string[];
   }) {
     return this.repository
-      .listJourneys(
-        input.organizationId,
-        input.active,
-        input.page,
-        input.pageSize,
-        input.accessibleJourneyIds,
-      )
+      .listJourneys(input.organizationId, input.active, input.page, input.pageSize)
       .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
   }
   async getJourney(input: {
@@ -191,30 +181,13 @@ export class ConfigurationService {
     active: boolean | undefined;
     page: number;
     pageSize: number;
-    accessibleJourneyIds: readonly string[];
   }) {
     return this.repository
-      .listFields(
-        input.organizationId,
-        input.active,
-        input.page,
-        input.pageSize,
-        input.accessibleJourneyIds,
-      )
+      .listFields(input.organizationId, input.active, input.page, input.pageSize)
       .then((x) => ({ page: input.page, pageSize: input.pageSize, ...x }));
   }
-  getField(input: {
-    organizationId: string;
-    fieldId: string;
-    active: boolean | undefined;
-    accessibleJourneyIds: readonly string[];
-  }) {
-    return this.repository.getFieldDetail(
-      input.organizationId,
-      input.fieldId,
-      input.active,
-      input.accessibleJourneyIds,
-    );
+  getField(input: { organizationId: string; fieldId: string; active: boolean | undefined }) {
+    return this.repository.getFieldDetail(input.organizationId, input.fieldId, input.active);
   }
 
   async createJourney(input: {
