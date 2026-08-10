@@ -1,5 +1,6 @@
 import { http, HttpResponse, delay } from 'msw';
 import {
+  DIRECTORY_USERS,
   FIELDS,
   JOURNEYS,
   LEADS,
@@ -30,6 +31,116 @@ const MOCK_SHARES: Array<{
   capabilities: string[];
   createdAt: string;
 }> = [];
+
+interface MockActivityEntry {
+  id: string;
+  processInstanceId: string | null;
+  actorUserId: string | null;
+  actorName: string | null;
+  timestamp: string;
+  actionType: string;
+  source: string;
+  commentText: string | null;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/** Comments, reassignments and deactivations appended during a session. */
+const MOCK_ACTIVITY: Record<string, MockActivityEntry[]> = {};
+
+interface MockAttachment {
+  id: string;
+  leadId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uploadedById: string;
+  uploadedByName: string | null;
+  uploadedAt: string;
+}
+
+/** In-memory locker. Real uploads need MinIO; the mock just remembers names. */
+const MOCK_ATTACHMENTS: MockAttachment[] = [];
+
+/**
+ * A seeded history so the dev demo shows a populated timeline rather than an
+ * empty state, covering every `actionType` the renderer handles.
+ *
+ * Deterministic offsets from the lead's own index keep ordering stable across
+ * reloads; the real endpoint sorts by timestamp desc.
+ */
+function activityFor(leadId: string): MockActivityEntry[] {
+  const lead = LEADS.find((row) => row.id === leadId);
+  if (!lead) return MOCK_ACTIVITY[leadId] ?? [];
+  const process = lead.processInstances[0];
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  const [first, second] = USERS;
+
+  const seeded: MockActivityEntry[] = [
+    {
+      id: `${leadId}-activity-status`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: first!.id,
+      actorName: first!.name,
+      timestamp: at(1),
+      actionType: 'status_change',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { statusId: `status-${JOURNEYS[0]!.key}-new` },
+      newValue: { statusId: process?.statusId ?? '' },
+    },
+    {
+      id: `${leadId}-activity-edit`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: second!.id,
+      actorName: second!.name,
+      timestamp: at(3),
+      actionType: 'field_edit',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { name: lead.name, fieldValues: { ...lead.fieldValues, category: 'Unassigned' } },
+      newValue: { name: lead.name, fieldValues: lead.fieldValues },
+    },
+    {
+      id: `${leadId}-activity-share`,
+      processInstanceId: process?.processInstanceId ?? null,
+      actorUserId: first!.id,
+      actorName: first!.name,
+      timestamp: at(5),
+      actionType: 'share_changed',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: null,
+      newValue: { userId: second!.id },
+    },
+    {
+      id: `${leadId}-activity-comment`,
+      processInstanceId: null,
+      actorUserId: second!.id,
+      actorName: second!.name,
+      timestamp: at(6),
+      actionType: 'comment',
+      source: 'lead_api',
+      commentText: 'Left a voicemail, trying again tomorrow morning.',
+      oldValue: null,
+      newValue: null,
+    },
+    {
+      id: `${leadId}-activity-created`,
+      processInstanceId: process?.processInstanceId ?? null,
+      // A system-authored row: the renderer must not print a blank actor.
+      actorUserId: null,
+      actorName: null,
+      timestamp: at(9),
+      actionType: 'field_edit',
+      source: 'import',
+      commentText: null,
+      oldValue: null,
+      newValue: { name: lead.name, fieldValues: lead.fieldValues },
+    },
+  ];
+  return [...(MOCK_ACTIVITY[leadId] ?? []), ...seeded];
+}
 const MOCK_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notification-synthetic',
@@ -63,6 +174,20 @@ const MOCK_DEPARTMENTS = [
     active: true,
     version: 1,
   },
+  {
+    id: 'department-b',
+    key: 'synthetic_unit_b',
+    name: 'Synthetic unit B',
+    active: true,
+    version: 1,
+  },
+  {
+    id: 'department-c',
+    key: 'synthetic_unit_c',
+    name: 'Synthetic unit C',
+    active: true,
+    version: 1,
+  },
 ];
 const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   id: field.id,
@@ -75,15 +200,18 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   source: 'manual',
   active: true,
 }));
-const MOCK_ADMIN_USERS = USERS.map((user) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  roleId: user.roleId,
-  departmentId: null as string | null,
-  managerId: null as string | null,
-  active: true,
-}));
+const MOCK_ADMIN_USERS = [
+  ...USERS.map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    roleId: user.roleId,
+    departmentId: null as string | null,
+    managerId: null as string | null,
+    active: true,
+  })),
+  ...DIRECTORY_USERS,
+];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
@@ -100,6 +228,23 @@ const INITIAL_ADMIN_STATE = structuredClone({
   users: MOCK_ADMIN_USERS,
 });
 
+/**
+ * Per-(field, journey) required-field rules, matching the shape of
+ * field_journey_settings. Tests push rules onto this to exercise a rejected
+ * status change; it starts empty so the default fixtures stay permissive.
+ */
+export const MOCK_REQUIRED_FIELD_RULES: Array<{
+  fieldId: string;
+  journeyId: string;
+  requiredFromStatusId: string | null;
+}> = [];
+
+function isBlank(value: unknown): boolean {
+  return (
+    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+  );
+}
+
 export function resetAdminMockState() {
   const initial = structuredClone(INITIAL_ADMIN_STATE);
   JOURNEYS.splice(0, JOURNEYS.length, ...initial.journeys);
@@ -109,6 +254,7 @@ export function resetAdminMockState() {
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_JOURNEY_FIELDS.splice(0);
+  MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 
 function pageResponse<T>(request: Request, rows: T[]) {
@@ -282,9 +428,10 @@ export const handlers = [
         (a, b) => a.sortOrder - b.sortOrder,
       ),
     }));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(pageResponse(request, rows))
-      : HttpResponse.json(JOURNEYS);
+    // The API always returns a Page here. Returning a bare array when the
+    // caller omitted pageSize used to make configApi.journeys() resolve to
+    // undefined, which silently emptied the journey tabs.
+    return HttpResponse.json(pageResponse(request, rows));
   }),
   http.get(`${API_BASE}/journeys/:id`, ({ params }) => {
     const journey = JOURNEYS.find((row) => row.id === params.id);
@@ -292,9 +439,24 @@ export const handlers = [
       ? HttpResponse.json({
           ...journey,
           active: journey.isActive,
-          statuses: STATUSES.filter((status) => status.journeyId === journey.id).sort(
-            (a, b) => a.sortOrder - b.sortOrder,
-          ),
+          // Serialized the way Prisma emits it (`active`, not `isActive`) so the
+          // client's normalizer is exercised against the real DTO.
+          statuses: STATUSES.filter((status) => status.journeyId === journey.id)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(({ isActive, ...status }) => ({ ...status, active: isActive })),
+          // Distinct assignment types actually in use on this journey, matching
+          // the API's derivation from current assignments.
+          assignmentTypes: [
+            ...new Set(
+              LEADS.flatMap((lead) =>
+                lead.processInstances
+                  .filter((process) => process.journeyId === journey.id)
+                  .flatMap((process) =>
+                    process.assignments.map((assignment) => assignment.assignmentType),
+                  ),
+              ),
+            ),
+          ].sort(),
         })
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
@@ -318,11 +480,9 @@ export const handlers = [
     return HttpResponse.json({ ...row, active: false });
   }),
 
-  http.get(`${API_BASE}/journeys/:id/statuses`, async ({ params }) => {
-    await delay(250);
-    if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    return HttpResponse.json(STATUSES.filter((status) => status.journeyId === params.id));
-  }),
+  // No GET /journeys/:id/statuses handler on purpose: the API registers only
+  // POST for that path. Mocking the GET let a client call that 404s in
+  // production pass every test. Statuses come from GET /journeys/:id.
   http.post(`${API_BASE}/journeys/:id/statuses`, async ({ params, request }) => {
     const body = (await request.json()) as Omit<
       (typeof STATUSES)[number],
@@ -399,15 +559,14 @@ export const handlers = [
     await delay(200);
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
-    const visible = FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id));
-    return new URL(request.url).searchParams.has('pageSize')
-      ? HttpResponse.json(
-          pageResponse(
-            request,
-            MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
-          ),
-        )
-      : HttpResponse.json(visible);
+    // Always a Page of API-shaped rows (`name`/`fieldType`), matching what
+    // readConfiguration actually serializes.
+    return HttpResponse.json(
+      pageResponse(
+        request,
+        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
+      ),
+    );
   }),
   http.post(`${API_BASE}/fields`, async ({ request }) => {
     const body = (await request.json()) as Omit<
@@ -701,7 +860,15 @@ export const handlers = [
     };
     LEADS.unshift(lead);
 
-    return HttpResponse.json(serializeDetail(lead, user), { status: 201 });
+    // The API returns the raw rows, not a serialized record. Mirroring that
+    // here is what makes `created.lead.id` the correct thing for callers to read.
+    return HttpResponse.json(
+      {
+        lead: { id: lead.id, name: lead.name },
+        process: { id: `pi-${id}`, journeyId: body.journeyId, currentStatusId: statusId },
+      },
+      { status: 201 },
+    );
   }),
 
   http.patch(`${API_BASE}/leads/:id`, async ({ request, params }) => {
@@ -721,7 +888,25 @@ export const handlers = [
       fieldValues?: Record<string, unknown>;
       statusId?: string;
       processInstanceId?: string;
+      assignmentTypes?: string[];
     };
+
+    /*
+     * Mirrors assignmentScopeAllowsLead in the permission engine: a scope
+     * narrower than ORGANIZATION only matches a record through a current
+     * assignment whose type is in the caller's assignmentTypes. Sending none
+     * therefore matches nothing and is refused — which is exactly how a client
+     * that omits the field silently 403s in production.
+     */
+    if (user.dataScope !== 'ORGANIZATION') {
+      const requested = new Set(body.assignmentTypes ?? []);
+      const matches = lead.processInstances.some((process) =>
+        process.assignments.some(
+          (assignment) => assignment.userId === user.id && requested.has(assignment.assignmentType),
+        ),
+      );
+      if (!matches) return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+    }
 
     if (body.name !== undefined) lead.name = body.name;
     if (body.phone !== undefined) lead.phone = body.phone ?? '';
@@ -739,11 +924,125 @@ export const handlers = [
           status: 400,
         });
       }
+
+      /*
+       * Mirrors validateFieldValues in apps/api: a field is required when its
+       * requirement is 'required' and requiredFromStatusId is either null or an
+       * exact match for the *target* status. sortOrder plays no part.
+       * Only the first offender is reported, exactly as the API does.
+       */
+      const missing = MOCK_REQUIRED_FIELD_RULES.find(
+        (rule) =>
+          rule.journeyId === process.journeyId &&
+          (rule.requiredFromStatusId === null || rule.requiredFromStatusId === body.statusId) &&
+          isBlank(lead.fieldValues[rule.fieldId]),
+      );
+      if (missing) {
+        return HttpResponse.json(errorBody('validation_error', { fieldId: missing.fieldId }), {
+          status: 400,
+        });
+      }
+
       process.statusId = body.statusId;
       process.active = nextStatus.outcomeType === 'open';
     }
 
-    return HttpResponse.json(serializeDetail(lead, user));
+    // The API returns the raw rows here, not a serialized record.
+    return HttpResponse.json({
+      lead: { id: lead.id, name: lead.name },
+      process: {
+        id: process?.processInstanceId ?? '',
+        journeyId: process?.journeyId ?? '',
+        currentStatusId: process?.statusId ?? '',
+      },
+    });
+  }),
+  http.get(`${API_BASE}/leads/:id/activity`, ({ params }) => {
+    const items = activityFor(String(params.id));
+    return HttpResponse.json({ page: 1, pageSize: 25, total: items.length, items });
+  }),
+  http.post(`${API_BASE}/leads/:id/comments`, async ({ request, params }) => {
+    const body = (await request.json()) as { text: string };
+    if (!body.text.trim()) return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    const entry = {
+      id: `activity-comment-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'comment',
+      source: 'lead_api',
+      commentText: body.text.trim(),
+      oldValue: null,
+      newValue: null,
+    };
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift(entry);
+    return HttpResponse.json(entry, { status: 201 });
+  }),
+  http.patch(`${API_BASE}/leads/:id/reassign`, async ({ request, params }) => {
+    const body = (await request.json()) as { assignmentType: string; userId: string };
+    const user = USERS.find((candidate) => candidate.id === body.userId);
+    if (!user) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift({
+      id: `activity-reassign-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'reassignment',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: { assignmentType: body.assignmentType },
+      newValue: { assignmentType: body.assignmentType, userId: body.userId },
+    });
+    return HttpResponse.json({ ok: true });
+  }),
+  http.post(`${API_BASE}/leads/:id/deactivate`, ({ params }) => {
+    (MOCK_ACTIVITY[String(params.id)] ??= []).unshift({
+      id: `activity-deactivate-${Date.now()}`,
+      processInstanceId: null,
+      actorUserId: USERS[0]!.id,
+      actorName: USERS[0]!.name,
+      timestamp: new Date().toISOString(),
+      actionType: 'lead_deactivated',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: null,
+      newValue: null,
+    });
+    return HttpResponse.json({ ok: true });
+  }),
+  http.get(`${API_BASE}/leads/:id/attachments`, ({ params }) =>
+    HttpResponse.json({
+      items: MOCK_ATTACHMENTS.filter((row) => row.leadId === String(params.id)),
+    }),
+  ),
+  http.post(`${API_BASE}/leads/:id/attachments`, async ({ request, params }) => {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    }
+    // FormDataEntryValue is string | File; only a string is a usable name.
+    const nameEntry = form.get('name');
+    const name = (typeof nameEntry === 'string' ? nameEntry.trim() : '') || file.name;
+    const record: MockAttachment = {
+      id: `attachment-${Date.now()}`,
+      leadId: String(params.id),
+      fileName: name,
+      mimeType: file.type || null,
+      sizeBytes: file.size,
+      uploadedById: USERS[0]!.id,
+      uploadedByName: USERS[0]!.name,
+      uploadedAt: new Date().toISOString(),
+    };
+    MOCK_ATTACHMENTS.unshift(record);
+    return HttpResponse.json(record, { status: 201 });
+  }),
+  http.delete(`${API_BASE}/attachments/:attachmentId`, ({ params }) => {
+    const index = MOCK_ATTACHMENTS.findIndex((row) => row.id === params.attachmentId);
+    if (index >= 0) MOCK_ATTACHMENTS.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),

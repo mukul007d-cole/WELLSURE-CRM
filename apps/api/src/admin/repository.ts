@@ -10,7 +10,7 @@ export interface AdminRepository {
   listUsers(
     org: string,
     page: PageRequest,
-    filters: { roleId?: string; departmentId?: string; active?: boolean },
+    filters: { roleId?: string; departmentId?: string; active?: boolean; search?: string },
   ): Promise<Page<unknown>>;
   getUser(org: string, id: string): Promise<unknown>;
   createUser(

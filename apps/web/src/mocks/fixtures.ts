@@ -9,10 +9,15 @@ import type {
 
 export const ORGANIZATION_ID = 'org-wellsure';
 
+/*
+ * Synthetic throughout, per AGENTS.md: journeys, statuses, services and fields
+ * are admin configuration, so a fixture that names a real one invites code
+ * that only works because the name is what it is.
+ */
 export const JOURNEYS: Journey[] = [
-  { id: 'journey-overlapping', key: 'overlapping', name: 'Overlapping', isActive: true },
-  { id: 'journey-private-label', key: 'private_label', name: 'Private Label', isActive: true },
-  { id: 'journey-spn-bd', key: 'spn_bd', name: 'SPN & BD', isActive: true },
+  { id: 'journey-alpha', key: 'journey_alpha', name: 'Journey Alpha', isActive: true },
+  { id: 'journey-beta', key: 'journey_beta', name: 'Journey Beta', isActive: true },
+  { id: 'journey-gamma', key: 'journey_gamma', name: 'Journey Gamma', isActive: true },
 ];
 
 interface StatusSeed {
@@ -42,19 +47,16 @@ export const STATUSES: Status[] = JOURNEYS.flatMap((journey) =>
     behaviorType: template.behaviorType,
     isActive: true,
     sortOrder: index,
+    // Creating a Lead with no explicit status falls back to this one.
+    isDefaultOnCreate: index === 0,
   })),
 );
 
 export const SERVICES: Service[] = [
-  { id: 'service-ppc', key: 'ppc', name: 'PPC Management', isActive: true },
-  { id: 'service-fba-prep', key: 'fba_prep', name: 'FBA Prep', isActive: true },
-  { id: 'service-cataloging', key: 'cataloging', name: 'Cataloging', isActive: true },
-  {
-    id: 'service-account-health',
-    key: 'account_health',
-    name: 'Account Health Audit',
-    isActive: true,
-  },
+  { id: 'service-one', key: 'service_one', name: 'Service One', isActive: true },
+  { id: 'service-two', key: 'service_two', name: 'Service Two', isActive: true },
+  { id: 'service-three', key: 'service_three', name: 'Service Three', isActive: true },
+  { id: 'service-four', key: 'service_four', name: 'Service Four', isActive: true },
 ];
 
 export const FIELDS: FieldDefinition[] = [
@@ -254,3 +256,87 @@ LEADS.slice(0, 6).forEach((lead) => {
     assignment.userId = 'user-rep';
   }
 });
+
+/**
+ * Extra directory-only people, used by the org chart. All synthetic.
+ *
+ * Deliberately shaped to exercise the awkward cases: a three-level chain, a
+ * second root, someone reporting to a manager who isn't in the set at all, and
+ * a deactivated user. Reporting *loops* are injected per-test instead of living
+ * here — a cycle in the shared fixture would make every other test's tree odd.
+ */
+export const DIRECTORY_USERS = [
+  {
+    id: 'dir-1',
+    name: 'Alba Fenn',
+    email: 'alba.fenn@example.test',
+    roleId: 'role-admin',
+    departmentId: 'department-synthetic',
+    managerId: null as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-2',
+    name: 'Bo Ridley',
+    email: 'bo.ridley@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-synthetic',
+    managerId: 'dir-1' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-3',
+    name: 'Cass Oyelu',
+    email: 'cass.oyelu@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-1' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-4',
+    name: 'Dara Whitlow',
+    email: 'dara.whitlow@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-2' as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-5',
+    name: 'Emeka Sandoval',
+    email: 'emeka.sandoval@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-b',
+    managerId: 'dir-2' as string | null,
+    active: false,
+  },
+  {
+    id: 'dir-6',
+    name: 'Fern Adeyemi',
+    email: 'fern.adeyemi@example.test',
+    roleId: 'role-admin',
+    departmentId: 'department-c',
+    managerId: null as string | null,
+    active: true,
+  },
+  {
+    id: 'dir-7',
+    name: 'Gil Marchetti',
+    email: 'gil.marchetti@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-c',
+    managerId: 'dir-6' as string | null,
+    active: true,
+  },
+  // Manager sits outside the returned set — deactivated, or filtered by scope.
+  {
+    id: 'dir-8',
+    name: 'Hana Brightwater',
+    email: 'hana.brightwater@example.test',
+    roleId: 'role-sales-rep',
+    departmentId: 'department-c',
+    managerId: 'dir-absent' as string | null,
+    active: true,
+  },
+];

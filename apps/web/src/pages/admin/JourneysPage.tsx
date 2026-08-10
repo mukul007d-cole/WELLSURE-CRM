@@ -7,18 +7,16 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
+import { Pagination } from '../../components/ui/Pagination';
+import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
-import {
-  ActiveFilter,
-  AdminHeader,
-  AdminTable,
-  PageControls,
-  activeValue,
-  ADMIN_PAGE_SIZE,
-} from './shared';
+import { PageBody, PageHeader } from '../../components/layout/PageFrame';
+import { usePageChrome } from '../../app/page-chrome';
+import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
 export function JourneysPage() {
+  usePageChrome('Journeys', [['admin', 'journeys']]);
   const { can } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -44,11 +42,11 @@ export function JourneysPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
+    <PageBody>
+      <PageHeader
         title="Journeys"
         description="Create pipelines and manage their Status and Field configuration."
-        action={
+        actions={
           can('journeys_statuses', 'create') ? (
             <Button onClick={() => setDraft({ key: '', name: '' })}>Create Journey</Button>
           ) : undefined
@@ -74,52 +72,60 @@ export function JourneysPage() {
       />
       <AdminTable
         loading={query.isPending}
-        headers={['Name', 'Stable key', 'State', 'Actions']}
+        headers={['Name', 'Stable key', 'State', { label: 'Actions', align: 'right' as const }]}
         empty={!query.isPending && !query.data?.items.length}
       >
         {query.data?.items.map((journey) => (
-          <tr className="border-b last:border-0" key={journey.id}>
-            <td className="p-4 font-medium">{journey.name}</td>
-            <td className="p-4 text-sm text-ink-soft">{journey.key}</td>
-            <td className="p-4 text-sm">{journey.active ? 'Active' : 'Inactive'}</td>
-            <td className="p-4">
-              <div className="flex gap-2">
+          <DataRow key={journey.id}>
+            <DataCell primary>{journey.name}</DataCell>
+            <DataCell>{journey.key}</DataCell>
+            <DataCell>{journey.active ? 'Active' : 'Inactive'}</DataCell>
+            <DataCell align="right">
+              {/* Manage stays outside RowActions — it is the row's primary
+                  destination, not a hover-revealed extra. */}
+              <div className="flex items-center justify-end gap-2">
                 <Link
                   className="text-sm font-medium underline"
                   to={`/admin/journeys/${journey.id}`}
                 >
                   Manage
                 </Link>
-                {can('journeys_statuses', 'edit') ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      setDraft({ id: journey.id, key: journey.key, name: journey.name })
-                    }
-                  >
-                    Edit
-                  </Button>
-                ) : null}
-                {can('journeys_statuses', 'delete') && journey.active ? (
-                  <Button size="sm" variant="danger" onClick={() => deactivate.mutate(journey.id)}>
-                    Deactivate
-                  </Button>
-                ) : null}
+                <RowActions>
+                  {can('journeys_statuses', 'edit') ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setDraft({ id: journey.id, key: journey.key, name: journey.name })
+                      }
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                  {can('journeys_statuses', 'delete') && journey.active ? (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => deactivate.mutate(journey.id)}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : null}
+                </RowActions>
               </div>
-            </td>
-          </tr>
+            </DataCell>
+          </DataRow>
         ))}
       </AdminTable>
       {query.data ? (
-        <PageControls
+        <Pagination
           page={query.data.page}
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
-          onPage={setPage}
+          onPageChange={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }
 

@@ -85,6 +85,11 @@ export interface LeadRepository extends LeadActivityWriter {
     currentStatusId: string;
     isPrimary: boolean;
   }): Promise<LeadProcessRecord>;
+  updateProcessInstanceJourney(
+    organizationId: string,
+    processInstanceId: string,
+    patch: { journeyId: string; currentStatusId: string },
+  ): Promise<LeadProcessRecord | null>;
   updateProcessInstanceStatus(
     organizationId: string,
     processInstanceId: string,
@@ -184,6 +189,90 @@ export class LeadService {
         },
       });
       return { lead, process };
+    });
+  }
+
+  /**
+   * Move a process instance to a different journey.
+   *
+   * The instance keeps its identity — `journeyId` is updated in place rather
+   * than the old one being deactivated and a new one created — so assignments,
+   * attachments and the instance's own activity history stay attached to one
+   * row instead of splitting across two.
+   *
+   * The lead's name, phone, email and `fieldValues` all live on the lead, not
+   * the instance, so they survive a move untouched. What does have to be
+   * rechecked is whether they still satisfy the *target* journey's field rules:
+   * a lead complete for journey A can be missing something journey B requires.
+   */
+  async moveJourney(input: {
+    organizationId: string;
+    actorUserId: string;
+    processInstanceId: string;
+    targetJourneyId: string;
+    statusId?: string;
+  }) {
+    return this.repository.transaction(async (tx) => {
+      const process = await tx.findProcessInstance(input.organizationId, input.processInstanceId);
+      if (process === null || !process.active)
+        throw new LeadError('not_found', 'process instance not found');
+      if (process.journeyId === input.targetJourneyId)
+        throw new LeadError('validation_error', 'lead is already in that journey');
+
+      const lead = await tx.findLead(input.organizationId, process.leadId);
+      if (lead === null) throw new LeadError('not_found', 'lead not found');
+
+      const journey = await tx.findJourney(input.organizationId, input.targetJourneyId);
+      if (journey === null || !journey.active)
+        throw new LeadError('not_found', 'target journey not found');
+
+      // The partial unique index enforces this too, but a 409 explaining it
+      // beats a constraint violation surfacing as a 500.
+      const duplicate = await tx.findActiveProcessInstanceByLeadJourney(
+        input.organizationId,
+        lead.id,
+        input.targetJourneyId,
+      );
+      if (duplicate !== null)
+        throw new LeadError(
+          'dependency_conflict',
+          'lead already has an active process instance for this journey',
+        );
+
+      const status =
+        input.statusId === undefined
+          ? await tx.findDefaultStatus(input.organizationId, input.targetJourneyId)
+          : await tx.findStatus(input.organizationId, input.targetJourneyId, input.statusId);
+      if (status === null || !status.active)
+        throw new LeadError('validation_error', 'status is invalid for the target journey');
+
+      // Re-validate what the lead already holds against the target's rules.
+      // Passing no new values means this checks completeness, not a change.
+      const settings = await tx.listFieldSettings(input.organizationId, input.targetJourneyId);
+      validateFieldValues({
+        settings,
+        fieldValues: {},
+        existingFieldValues: lead.fieldValues,
+        statusId: status.id,
+      });
+
+      const moved = await requireFound(
+        tx.updateProcessInstanceJourney(input.organizationId, process.id, {
+          journeyId: input.targetJourneyId,
+          currentStatusId: status.id,
+        }),
+      );
+      await tx.writeActivity({
+        organizationId: input.organizationId,
+        leadId: lead.id,
+        processInstanceId: process.id,
+        actionType: 'journey_change',
+        actorUserId: input.actorUserId,
+        source: 'lead_api',
+        oldValue: { journeyId: process.journeyId, statusId: process.currentStatusId },
+        newValue: { journeyId: input.targetJourneyId, statusId: status.id },
+      });
+      return { lead, process: moved };
     });
   }
 

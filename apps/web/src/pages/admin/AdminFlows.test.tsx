@@ -82,7 +82,7 @@ describe('administration resource flows', () => {
     );
     renderPage(
       <JourneyDetailPage />,
-      '/admin/journeys/journey-overlapping',
+      '/admin/journeys/journey-alpha',
       '/admin/journeys/:journeyId',
     );
     await screen.findByRole('heading', { level: 2 });
@@ -156,11 +156,13 @@ describe('administration resource flows', () => {
       }),
     );
     renderPage(<UsersPage />);
-    await screen.findByRole('heading', { name: 'Users' });
+    // The page heading now belongs to the User management shell this view is
+    // nested in, so wait on a control the directory itself renders.
+    await screen.findByLabelText('Search users');
     expect(await screen.findByText(/Page 1 of/)).toBeInTheDocument();
     change('Search users', 'Aman');
     change('Filter by role', 'role-admin');
-    fireEvent.click(await screen.findByRole('button', { name: 'Create User' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Create user' }));
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
     change('Name', 'Synthetic User');
     change('Email', 'synthetic@example.test');

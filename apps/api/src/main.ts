@@ -1,4 +1,7 @@
 import { PrismaAdminRepository } from './admin/prisma-admin-repository.js';
+import { PrismaAttachmentRepository } from './attachments/prisma-attachment-repository.js';
+import { S3AttachmentStorage } from './attachments/s3-storage.js';
+import { AttachmentService } from './attachments/service.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
 import { buildServer } from './http/build-server.js';
@@ -11,6 +14,14 @@ import { createRuntime } from './runtime.js';
 const { env, prisma, emailSender, authConfig } = createRuntime(process.env);
 const authRepository = new PrismaAuthRepository(prisma);
 const notificationService = new NotificationService(prisma);
+// Only when a bucket is configured. Absent it the locker routes answer 503
+// rather than the API refusing to boot.
+const attachmentService = env.storage
+  ? new AttachmentService(
+      new PrismaAttachmentRepository(prisma),
+      new S3AttachmentStorage(env.storage),
+    )
+  : undefined;
 const server = buildServer({
   authRepository,
   audit: authRepository,
@@ -21,6 +32,7 @@ const server = buildServer({
   adminRepository: new PrismaAdminRepository(prisma),
   leadSharingService: new LeadSharingService(prisma, notificationService),
   notificationService,
+  ...(attachmentService ? { attachmentService } : {}),
   authConfig,
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,

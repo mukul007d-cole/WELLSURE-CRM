@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
+import { usePageChrome } from '../../app/page-chrome';
 
 const triggers = [
   ['field_edited', 'Field edited'],
@@ -23,6 +24,7 @@ const resolvers = [
 ] as const;
 
 export function NotificationRulesPage() {
+  usePageChrome('Notification rules', [['notification-rules']]);
   const client = useQueryClient(),
     rules = useQuery({ queryKey: ['notification-rules'], queryFn: notificationsApi.rules });
   const [key, setKey] = useState(''),

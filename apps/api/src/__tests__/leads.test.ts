@@ -1,8 +1,16 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, expect, it } from 'vitest';
 
-import { createLead, editLead, getSeller360, listSellers } from '../routes/leads.js';
+import {
+  createLead,
+  editLead,
+  getLeadActivity,
+  moveLeadJourney,
+  getSeller360,
+  listSellers,
+} from '../routes/leads.js';
 import type { LeadActivityInput } from '../leads/activity.js';
+import type { LeadActivityRow } from '../leads/activity-read.js';
 import type {
   LeadAssignmentRecord,
   LeadCoreRecord,
@@ -344,11 +352,307 @@ describe('Lead/Seller core route and service behavior', () => {
   });
 });
 
+describe('Moving a lead between journeys', () => {
+  const move = (
+    repo: MemoryLeadRepository,
+    permissions: PermissionRepository,
+    input: { leadId: string; processInstanceId: string; journeyId: string; statusId?: string },
+  ) =>
+    moveLeadJourney({
+      auth,
+      leadRepository: repo,
+      permissionRepository: permissions,
+      targetJourneyId: journeyB,
+      assignmentTypes: [assignmentType],
+      now,
+      ...input,
+    });
+
+  it('repoints the instance and keeps its assignments and field values', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: { [fieldVisible]: 'kept' } });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.assignments.push({
+      id: 'assignment-1',
+      organizationId: orgA,
+      processInstanceId: process.id,
+      assignmentType,
+      userId: actorId,
+      isCurrent: true,
+    });
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(200);
+    expect(repo.processes[0]?.journeyId).toBe(journeyB);
+    // One row, not a deactivate-and-recreate: the assignment is still on it.
+    expect(repo.processes).toHaveLength(1);
+    expect(repo.assignments[0]?.processInstanceId).toBe(process.id);
+    // The lead's values live on the lead, so a move cannot disturb them.
+    expect(repo.leads[0]?.fieldValues).toEqual({ [fieldVisible]: 'kept' });
+    expect(repo.activities.map((entry) => entry.actionType)).toEqual(['journey_change']);
+  });
+
+  it('refuses a move into a journey the lead is already active in', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedProcess(lead.id, journeyB, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(409);
+  });
+
+  it('reports the field the target journey requires and the lead lacks', async () => {
+    const repo = new MemoryLeadRepository();
+    // Required from the status the lead will land on in the target journey.
+    repo.fieldSettings = [requiredFromField(statusEarly)];
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+      statusId: statusEarly,
+    });
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+    });
+    // Nothing moved.
+    expect(repo.processes[0]?.journeyId).toBe(journeyA);
+  });
+
+  it('requires rights in the destination journey, not just the source', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+
+    const response = await move(repo, permissionRepository({ journeys: [journeyA] }), {
+      leadId: lead.id,
+      processInstanceId: process.id,
+      journeyId: journeyA,
+    });
+
+    expect(response.status).toBe(403);
+    expect(repo.processes[0]?.journeyId).toBe(journeyA);
+  });
+});
+
+describe('Lead activity timeline', () => {
+  /** The endpoint under test, with the boilerplate the cases don't vary. */
+  const activity = (
+    repo: MemoryLeadRepository,
+    permissionRepository: PermissionRepository,
+    leadId: string,
+    extra: { page?: number; pageSize?: number } = {},
+  ) =>
+    getLeadActivity({
+      auth,
+      sellerRepository: repo,
+      permissionRepository,
+      leadId,
+      requestedFieldIds: [fieldVisible, fieldHidden],
+      assignmentTypes: [assignmentType],
+      now,
+      ...extra,
+    });
+
+  it('strips denied field values out of the stored snapshots', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({
+      fieldValues: { [fieldVisible]: 'visible', [fieldHidden]: 'hidden' },
+    });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    // editLead stores the whole lead on both sides of a change, so the raw row
+    // carries a field this viewer is not entitled to.
+    repo.seedActivity({
+      id: 'activity-edit',
+      processInstanceId: process.id,
+      actionType: 'field_edit',
+      oldValue: { name: 'Before', fieldValues: { [fieldVisible]: 'old', [fieldHidden]: 'secret' } },
+      newValue: {
+        name: 'After',
+        fieldValues: { [fieldVisible]: 'new', [fieldHidden]: 'classified' },
+      },
+    });
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [fieldVisible], journeys: [journeyA] }),
+      lead.id,
+    );
+
+    expect(response.status).toBe(200);
+    const body = response.body as { items: Array<{ oldValue: unknown; newValue: unknown }> };
+    expect(body.items[0]).toMatchObject({
+      oldValue: { name: 'Before', fieldValues: { [fieldVisible]: 'old' } },
+      newValue: { name: 'After', fieldValues: { [fieldVisible]: 'new' } },
+    });
+    // The strongest form of the assertion: neither the hidden field's id nor
+    // either of its values may appear anywhere in the serialized response.
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain(fieldHidden);
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('classified');
+  });
+
+  it('keeps the field a viewer is entitled to', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedActivity({
+      id: 'activity-edit',
+      processInstanceId: process.id,
+      newValue: { fieldValues: { [fieldVisible]: 'kept', [fieldHidden]: 'dropped' } },
+    });
+
+    const response = await activity(
+      repo,
+      permissionRepository({
+        visibleFields: [fieldVisible, fieldHidden],
+        journeys: [journeyA],
+      }),
+      lead.id,
+    );
+
+    expect(JSON.stringify(response.body)).toContain('dropped');
+  });
+
+  it('passes through payloads that carry no field values', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedActivity({
+      id: 'activity-status',
+      processInstanceId: process.id,
+      actionType: 'status_change',
+      oldValue: { statusId: statusEarly },
+      newValue: { statusId: statusRequired },
+    });
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      lead.id,
+    );
+
+    const body = response.body as { items: Array<{ oldValue: unknown; newValue: unknown }> };
+    expect(body.items[0]).toMatchObject({
+      oldValue: { statusId: statusEarly },
+      newValue: { statusId: statusRequired },
+    });
+  });
+
+  it('hides rows belonging to a journey the viewer cannot see', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const allowed = repo.seedProcess(lead.id, journeyA, statusEarly);
+    const denied = repo.seedProcess(lead.id, journeyB, statusEarly);
+    repo.seedActivity({ id: 'allowed', processInstanceId: allowed.id });
+    repo.seedActivity({ id: 'denied', processInstanceId: denied.id });
+    // Lead-level rows carry no process instance and belong to anyone who can
+    // see the lead at all.
+    repo.seedActivity({ id: 'lead-level', processInstanceId: null });
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      lead.id,
+    );
+
+    const body = response.body as { total: number; items: Array<{ id: string }> };
+    expect(body.items.map((item) => item.id)).toEqual(['allowed', 'lead-level']);
+    // Filtered in the query, so the count matches what was returned.
+    expect(body.total).toBe(2);
+  });
+
+  it('forbids the timeline when no process instance is visible', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    repo.seedProcess(lead.id, journeyB, statusEarly);
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      lead.id,
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('reports a missing lead as not found', async () => {
+    const repo = new MemoryLeadRepository();
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      '00000000-0000-0000-0000-000000000000',
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a page size beyond the cap before doing any work', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    repo.seedProcess(lead.id, journeyA, statusEarly);
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      lead.id,
+      { pageSize: 101 },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'validation_error',
+      details: { field: 'pageSize' },
+    });
+  });
+
+  it('names the actor, and leaves it null for system-authored rows', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.seedActivity({ id: 'by-person', processInstanceId: process.id });
+    repo.seedActivity({
+      id: 'by-system',
+      processInstanceId: process.id,
+      actorUserId: null,
+      actor: null,
+    });
+
+    const response = await activity(
+      repo,
+      permissionRepository({ visibleFields: [], journeys: [journeyA] }),
+      lead.id,
+    );
+
+    const body = response.body as { items: Array<{ id: string; actorName: string | null }> };
+    expect(body.items).toMatchObject([
+      { id: 'by-person', actorName: 'Synthetic Actor' },
+      { id: 'by-system', actorName: null },
+    ]);
+  });
+});
+
 class MemoryLeadRepository implements LeadRepository {
   leads: LeadCoreRecord[] = [];
   processes: LeadProcessRecord[] = [];
   assignments: LeadAssignmentRecord[] = [];
   activities: LeadActivityInput[] = [];
+  activityRows: LeadActivityRow[] = [];
   lastRecordPredicate: unknown;
   fieldSettings: LeadFieldSetting[] = [optionalField(fieldVisible)];
 
@@ -417,6 +721,17 @@ class MemoryLeadRepository implements LeadRepository {
     this.processes.push(process);
     return process;
   }
+  async updateProcessInstanceJourney(
+    organizationId: string,
+    processInstanceId: string,
+    patch: { journeyId: string; currentStatusId: string },
+  ) {
+    const process = await this.findProcessInstance(organizationId, processInstanceId);
+    if (process === null) return null;
+    process.journeyId = patch.journeyId;
+    process.currentStatusId = patch.currentStatusId;
+    return process;
+  }
   async updateProcessInstanceStatus(
     organizationId: string,
     processInstanceId: string,
@@ -454,12 +769,43 @@ class MemoryLeadRepository implements LeadRepository {
             id: process.currentStatusId,
             key: 'synthetic_status',
             name: 'Synthetic Status',
+            outcomeType: 'open',
+            behaviorType: 'default',
           },
           assignments: this.assignments.filter(
             (assignment) => assignment.processInstanceId === process.id,
           ),
         })),
     };
+  }
+  seedActivity(row: Partial<LeadActivityRow> & { id: string }): LeadActivityRow {
+    const full: LeadActivityRow = {
+      processInstanceId: null,
+      actorUserId: actorId,
+      actor: { id: actorId, name: 'Synthetic Actor' },
+      timestamp: now,
+      actionType: 'field_edit',
+      source: 'lead_api',
+      commentText: null,
+      oldValue: null,
+      newValue: null,
+      ...row,
+    };
+    this.activityRows.push(full);
+    return full;
+  }
+  async findLeadActivity(
+    _organizationId: string,
+    _leadId: string,
+    input: { visibleProcessInstanceIds: readonly string[]; page: number; pageSize: number },
+  ): Promise<{ total: number; rows: LeadActivityRow[] }> {
+    const visible = this.activityRows.filter(
+      (row) =>
+        row.processInstanceId === null ||
+        input.visibleProcessInstanceIds.includes(row.processInstanceId),
+    );
+    const start = (input.page - 1) * input.pageSize;
+    return { total: visible.length, rows: visible.slice(start, start + input.pageSize) };
   }
   async listSellers(input: {
     organizationId: string;

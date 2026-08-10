@@ -1,25 +1,29 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
+import { usePageChromeValue } from '../../app/page-chrome';
+import { useSignOut } from '../../app/use-sign-out';
 import { RingAvatar } from '../ui/RingAvatar';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { RefreshButton } from './RefreshButton';
+import { GlobalSearch } from './GlobalSearch';
 
 interface TopbarProps {
+  /** Fallback only — the active route supplies the real title via page chrome. */
   title: string;
   onOpenMenu: () => void;
 }
 
 export function Topbar({ title, onOpenMenu }: TopbarProps) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const { title: routeTitle } = usePageChromeValue();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const navigate = useNavigate();
+  const signOut = useSignOut();
 
   async function handleLogout() {
     setLoggingOut(true);
     try {
-      await logout();
-      void navigate('/login', { replace: true });
+      await signOut();
     } finally {
       setLoggingOut(false);
     }
@@ -43,9 +47,16 @@ export function Topbar({ title, onOpenMenu }: TopbarProps) {
         </svg>
       </button>
 
-      <h1 className="font-display text-base font-semibold text-on-ink">{title}</h1>
+      <h1 className="shrink-0 font-display text-base font-semibold text-on-ink">
+        {routeTitle || title}
+      </h1>
+
+      <div className="ml-4 hidden min-w-0 flex-1 lg:flex">
+        <GlobalSearch />
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <RefreshButton />
         <NotificationBell />
         {user ? (
           <div className="relative">

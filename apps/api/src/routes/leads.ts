@@ -1,6 +1,11 @@
 import { resolveAuthorization, type PermissionRepository } from '@falcon/permission-engine';
 
 import type { AuthenticatedContext } from '../auth/middleware.js';
+import {
+  pickVisibleFieldValues,
+  serializeActivityEntry,
+  type LeadActivityRow,
+} from '../leads/activity-read.js';
 import { isLeadError, type LeadError } from '../leads/errors.js';
 import {
   LeadService,
@@ -30,7 +35,13 @@ export interface Seller360Record extends LeadCoreRecord {
     LeadProcessRecord & {
       assignments: LeadAssignmentRecord[];
       journey: { id: string; key: string; name: string };
-      currentStatus: { id: string; key: string; name: string };
+      currentStatus: {
+        id: string;
+        key: string;
+        name: string;
+        outcomeType: string;
+        behaviorType: string;
+      };
     }
   >;
 }
@@ -53,6 +64,18 @@ export interface SellerListRecord extends LeadCoreRecord {
 
 export interface LeadReadRepository {
   findLeadById(organizationId: string, leadId: string): Promise<LeadDetailRecord | null>;
+}
+
+export interface LeadActivityReadRepository {
+  findLeadActivity(
+    organizationId: string,
+    leadId: string,
+    input: {
+      visibleProcessInstanceIds: readonly string[];
+      page: number;
+      pageSize: number;
+    },
+  ): Promise<{ total: number; rows: LeadActivityRow[] }>;
 }
 
 export interface SellerReadRepository {
@@ -136,6 +159,60 @@ export async function createLead(input: {
   } catch (error) {
     if (!isLeadError(error)) throw error;
     return toResponse(error);
+  }
+}
+
+/**
+ * Move a lead's process instance into a different journey.
+ *
+ * Authorized against **both** journeys: `edit` on the one it is leaving and
+ * `create` on the one it is entering. Checking only the source would let
+ * someone push a record into a journey they have no rights to; checking only
+ * the target would let them pull one out of a journey they cannot touch.
+ */
+export async function moveLeadJourney(input: {
+  auth: AuthenticatedContext;
+  leadRepository: LeadRepository;
+  permissionRepository: PermissionRepository;
+  leadId: string;
+  processInstanceId: string;
+  journeyId: string;
+  targetJourneyId: string;
+  assignmentTypes: readonly string[];
+  statusId?: string;
+  now?: Date;
+}): Promise<LeadRouteResult> {
+  for (const [journeyId, action] of [
+    [input.journeyId, editAction],
+    [input.targetJourneyId, createAction],
+  ] as const) {
+    const decision = await resolveAuthorization({
+      repository: input.permissionRepository,
+      request: {
+        organizationId: input.auth.user.organizationId,
+        userId: input.auth.user.id,
+        module: leadsModule,
+        action,
+        journeyId,
+        leadId: input.leadId,
+        assignmentTypes: input.assignmentTypes,
+        ...(input.now === undefined ? {} : { now: input.now }),
+      },
+    });
+    if (!decision.allowed) return { status: 403, body: { error: 'forbidden' } };
+  }
+  try {
+    const result = await new LeadService(input.leadRepository).moveJourney({
+      organizationId: input.auth.user.organizationId,
+      actorUserId: input.auth.user.id,
+      processInstanceId: input.processInstanceId,
+      targetJourneyId: input.targetJourneyId,
+      ...(input.statusId === undefined ? {} : { statusId: input.statusId }),
+    });
+    return { status: 200, body: result };
+  } catch (error) {
+    if (isLeadError(error)) return toResponse(error);
+    throw error;
   }
 }
 
@@ -281,11 +358,98 @@ export async function getSeller360(input: {
   assignmentTypes: readonly string[];
   now?: Date;
 }): Promise<LeadRouteResult> {
+  const access = await resolveLeadAccess(input);
+  if (access.status !== 200) return access.result;
+  return {
+    status: 200,
+    body: {
+      ...serializeLead(access.lead, [...access.visibleFieldIds]),
+      processInstances: access.visibleProcesses,
+    },
+  };
+}
+
+/**
+ * The lead's append-only history.
+ *
+ * Authorization is the same loop `getSeller360` runs — resolve per active
+ * process instance, keep the ones that pass, union their visible field ids —
+ * so the timeline inherits journey access, record scope and field visibility
+ * without restating any of those rules.
+ */
+export async function getLeadActivity(input: {
+  auth: AuthenticatedContext;
+  leadId: string;
+  sellerRepository: SellerReadRepository & LeadActivityReadRepository;
+  permissionRepository: PermissionRepository;
+  requestedFieldIds: readonly string[];
+  assignmentTypes: readonly string[];
+  page?: number;
+  pageSize?: number;
+  now?: Date;
+}): Promise<LeadRouteResult> {
+  const page = input.page ?? 1;
+  const pageSize = input.pageSize ?? 25;
+  if (!Number.isInteger(page) || page < 1) {
+    return { status: 400, body: { error: 'validation_error', details: { field: 'page' } } };
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    return { status: 400, body: { error: 'validation_error', details: { field: 'pageSize' } } };
+  }
+
+  const access = await resolveLeadAccess(input);
+  if (access.status !== 200) return access.result;
+
+  const { total, rows } = await input.sellerRepository.findLeadActivity(
+    input.auth.user.organizationId,
+    input.leadId,
+    {
+      // Filtering in the query rather than after the fetch: post-filtering a
+      // page would return short pages and an inflated total.
+      visibleProcessInstanceIds: access.visibleProcesses.map((row) => row.id),
+      page,
+      pageSize,
+    },
+  );
+  return {
+    status: 200,
+    body: {
+      page,
+      pageSize,
+      total,
+      items: rows.map((row) => serializeActivityEntry(row, access.visibleFieldIds)),
+    },
+  };
+}
+
+/**
+ * Per-process authorization for one lead, shared by Seller 360 and the
+ * timeline. A lead can sit in several journeys and the viewer may be entitled
+ * to only some of them.
+ */
+async function resolveLeadAccess(input: {
+  auth: AuthenticatedContext;
+  leadId: string;
+  sellerRepository: SellerReadRepository;
+  permissionRepository: PermissionRepository;
+  requestedFieldIds: readonly string[];
+  assignmentTypes: readonly string[];
+  now?: Date;
+}): Promise<
+  | {
+      status: 200;
+      lead: Seller360Record;
+      visibleProcesses: Seller360Record['processInstances'];
+      visibleFieldIds: Set<string>;
+    }
+  | { status: 403 | 404; result: LeadRouteResult }
+> {
   const lead = await input.sellerRepository.findSeller360(
     input.auth.user.organizationId,
     input.leadId,
   );
-  if (lead === null) return { status: 404, body: { error: 'not_found' } };
+  if (lead === null) return { status: 404, result: { status: 404, body: { error: 'not_found' } } };
+
   const visibleProcesses: Seller360Record['processInstances'] = [];
   const visibleFieldIds = new Set<string>();
   for (const process of lead.processInstances.filter((row) => row.active)) {
@@ -308,37 +472,41 @@ export async function getSeller360(input: {
     );
     if (blockingReasons.length === 0) {
       visibleProcesses.push(process);
-      for (const fieldId of decision.fields.visibleFieldIds) {
-        visibleFieldIds.add(fieldId);
-      }
+      for (const fieldId of decision.fields.visibleFieldIds) visibleFieldIds.add(fieldId);
     }
   }
-  if (visibleProcesses.length === 0) return { status: 403, body: { error: 'forbidden' } };
-  return {
-    status: 200,
-    body: { ...serializeLead(lead, [...visibleFieldIds]), processInstances: visibleProcesses },
-  };
+  if (visibleProcesses.length === 0) {
+    return { status: 403, result: { status: 403, body: { error: 'forbidden' } } };
+  }
+  return { status: 200, lead, visibleProcesses, visibleFieldIds };
 }
 
 function serializeLead(
-  lead: Pick<LeadCoreRecord, 'id' | 'name' | 'phone' | 'email' | 'fieldValues'>,
+  lead: Pick<
+    LeadCoreRecord,
+    'id' | 'name' | 'phone' | 'email' | 'fieldValues' | 'createdAt' | 'updatedAt'
+  >,
   visibleFieldIds: readonly string[],
 ): {
   id: string;
   name: string;
   phone: string | null;
   email: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   fieldValues: Record<string, unknown>;
 } {
-  const visible = new Set(visibleFieldIds);
   return {
     id: lead.id,
     name: lead.name,
     phone: lead.phone,
     email: lead.email,
-    fieldValues: Object.fromEntries(
-      Object.entries(lead.fieldValues).filter(([fieldId]) => visible.has(fieldId)),
-    ),
+    // Columns that have always existed and the serializer simply dropped, so
+    // the record page had no "added on" to show. Optional because the list
+    // query doesn't always select them.
+    ...(lead.createdAt ? { createdAt: lead.createdAt.toISOString() } : {}),
+    ...(lead.updatedAt ? { updatedAt: lead.updatedAt.toISOString() } : {}),
+    fieldValues: pickVisibleFieldValues(lead.fieldValues, new Set(visibleFieldIds)),
   };
 }
 

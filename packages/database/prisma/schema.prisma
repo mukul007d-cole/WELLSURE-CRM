@@ -656,6 +656,9 @@ model Attachment {
   leadId         String   @map("lead_id") @db.Uuid
   fieldId        String?  @map("field_id") @db.Uuid
   s3Key          String   @map("s3_key")
+  fileName       String?  @map("file_name")
+  mimeType       String?  @map("mime_type")
+  sizeBytes      BigInt?  @map("size_bytes")
   uploadedById   String   @map("uploaded_by") @db.Uuid
   uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
   active         Boolean  @default(true)
@@ -667,6 +670,7 @@ model Attachment {
 
   @@id([organizationId, id])
   @@unique([organizationId, s3Key, version])
+  @@index([organizationId, leadId, uploadedAt(sort: Desc)])
   @@map("attachments")
 }
 

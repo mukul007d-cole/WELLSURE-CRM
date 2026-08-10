@@ -1,10 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
 
 import { registerCookies } from './plugins/cookies.js';
 import { registerCors } from './plugins/cors.js';
 import { loggingOptions } from './plugins/logging.js';
 import { registerOpenApi } from './plugins/openapi.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
+import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
@@ -24,6 +26,9 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     await registerCors(app, deps.corsOrigins);
     await registerOpenApi(app);
     await registerRateLimit(app, deps.authRateLimit ?? { max: 20, timeWindow: 60_000 });
+    // Attachment uploads are the only multipart route; per-request limits are
+    // set there rather than globally.
+    await app.register(multipart);
     registerHealthRoutes(app);
     registerAuthRoutes(app, deps);
     if (deps.adminRepository !== undefined)
@@ -31,6 +36,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     registerConfigurationRoutes(app, deps);
     registerLeadRoutes(app, deps);
     registerNotificationRoutes(app, deps);
+    registerAttachmentRoutes(app, deps);
   });
   return server;
 }

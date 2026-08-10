@@ -3,7 +3,9 @@ import type {
   CreateLeadInput,
   EditLeadInput,
   FieldDefinition,
+  FieldValidationRule,
   Journey,
+  LeadMutationResult,
   Seller360Record,
   SellerListInput,
   SellerListResponse,
@@ -18,6 +20,8 @@ import type {
   AdminRole,
   Department,
   PermissionCatalog,
+  ActivityEntry,
+  AttachmentRecord,
   LeadShare,
   ShareCapability,
   NotificationItem,
@@ -51,6 +55,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return body as T;
+}
+
+/**
+ * Upload a file.
+ *
+ * Separate from `request` because that one sets `content-type: application/json`
+ * on any body — and for a FormData body the browser must set the header itself,
+ * since only it knows the multipart boundary.
+ */
+async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  const body: unknown = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      body as { error: string; details?: Record<string, unknown> },
+    );
+  }
+  return body as T;
+}
+
+/**
+ * Fetch binary content. `request` always calls `response.json()`, which would
+ * throw on a document, and parses away the filename header we need.
+ */
+async function requestBlob(path: string): Promise<{ blob: Blob; fileName: string | null }> {
+  const response = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => ({}));
+    throw new ApiError(
+      response.status,
+      body as { error: string; details?: Record<string, unknown> },
+    );
+  }
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  return {
+    blob: await response.blob(),
+    fileName: encoded ? decodeURIComponent(encoded) : null,
+  };
 }
 
 function toQuery(params: Record<string, string | number | undefined>): string {
@@ -179,10 +227,16 @@ export const sellersApi = {
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
+  // These return { lead, process } — the raw rows — not a Seller360Record.
+  // Typing them as the latter meant `created.id` was silently undefined, which
+  // navigated to /sellers/undefined and 500ed on a non-UUID lookup.
   create: (input: CreateLeadInput) =>
-    request<Seller360Record>('/leads', { method: 'POST', body: JSON.stringify(input) }),
+    request<LeadMutationResult>('/leads', { method: 'POST', body: JSON.stringify(input) }),
   edit: (id: string, input: EditLeadInput) =>
-    request<Seller360Record>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    request<LeadMutationResult>(`/leads/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   shares: (id: string, context: { journeyId: string; assignmentTypes: string[] }) =>
     request<LeadShare[]>(
       `/leads/${id}/shares${toQuery({ journeyId: context.journeyId, assignmentTypes: context.assignmentTypes.join(',') })}`,
@@ -200,7 +254,81 @@ export const sellersApi = {
     request(`/leads/${id}/shares/${shareId}`, json('PUT', body)),
   revokeShare: (id: string, shareId: string, journeyId: string) =>
     request(`/leads/${id}/shares/${shareId}${toQuery({ journeyId })}`, json('DELETE')),
+
+  /*
+   * The four below reach endpoints that have existed since phase 9 with no
+   * client method at all, so nothing in the UI could call them.
+   */
+  activity: (
+    id: string,
+    context: { requestedFieldIds: string[]; assignmentTypes: string[]; page?: number },
+  ) =>
+    request<{ page: number; pageSize: number; total: number; items: ActivityEntry[] }>(
+      `/leads/${id}/activity${toQuery({
+        requestedFieldIds: context.requestedFieldIds.join(','),
+        assignmentTypes: context.assignmentTypes.join(','),
+        page: context.page,
+      })}`,
+    ),
+  comment: (id: string, body: { journeyId: string; assignmentTypes: string[]; text: string }) =>
+    request<ActivityEntry>(`/leads/${id}/comments`, json('POST', body)),
+  reassign: (
+    id: string,
+    body: {
+      journeyId: string;
+      assignmentTypes: string[];
+      processInstanceId: string;
+      assignmentType: string;
+      userId: string;
+    },
+  ) => request(`/leads/${id}/reassign`, json('PATCH', body)),
+  deactivate: (id: string, body: { journeyId: string; assignmentTypes: string[] }) =>
+    request(`/leads/${id}/deactivate`, json('POST', body)),
+  moveJourney: (
+    id: string,
+    body: {
+      journeyId: string;
+      assignmentTypes: string[];
+      processInstanceId: string;
+      targetJourneyId: string;
+      statusId?: string;
+    },
+  ) => request<{ processInstanceId: string }>(`/leads/${id}/journey`, json('PATCH', body)),
 };
+
+export const attachmentsApi = {
+  list: (leadId: string, context: LeadContext) =>
+    request<{ items: AttachmentRecord[] }>(
+      `/leads/${leadId}/attachments${leadContextQuery(context)}`,
+    ).then((page) => page.items),
+  upload: (leadId: string, context: LeadContext, input: { file: File; name: string }) => {
+    const form = new FormData();
+    // Name first: the server reads it from the fields already parsed when the
+    // file part arrives, and busboy exposes only what it has seen so far.
+    form.append('name', input.name);
+    form.append('file', input.file);
+    return requestMultipart<AttachmentRecord>(
+      `/leads/${leadId}/attachments${leadContextQuery(context)}`,
+      form,
+    );
+  },
+  download: (attachmentId: string, context: LeadContext) =>
+    requestBlob(`/attachments/${attachmentId}${leadContextQuery(context)}`),
+  remove: (attachmentId: string, context: LeadContext) =>
+    request(`/attachments/${attachmentId}${leadContextQuery(context)}`, json('DELETE')),
+};
+
+/** Every lead-scoped call is authorized against a journey plus claimed types. */
+export interface LeadContext {
+  journeyId: string;
+  assignmentTypes: string[];
+}
+
+const leadContextQuery = (context: LeadContext) =>
+  toQuery({
+    journeyId: context.journeyId,
+    assignmentTypes: context.assignmentTypes.join(','),
+  });
 
 export const notificationsApi = {
   list: (page = 1) =>
@@ -214,9 +342,86 @@ export const notificationsApi = {
     request<NotificationRule>(`/notification-rules/${id}`, json('PUT', body)),
 };
 
+/**
+ * The configuration endpoints return raw Prisma rows, whose column names don't
+ * match the client-facing domain types (`active` vs `isActive`, `name` vs
+ * `label`, `fieldType` vs `type`). Normalizing here keeps that drift in one
+ * place instead of leaking a second shape into every consumer.
+ *
+ * Each normalizer accepts either spelling so it works against the API and the
+ * older mock payloads alike.
+ */
+type RawStatus = Omit<Status, 'isActive' | 'isDefaultOnCreate'> & {
+  isActive?: boolean;
+  active?: boolean;
+  isDefaultOnCreate?: boolean;
+};
+type RawField = Partial<FieldDefinition> & {
+  id: string;
+  key: string;
+  name?: string;
+  fieldType?: string;
+  validationRule?: (FieldValidationRule & { options?: readonly string[] }) | null;
+};
+
+function normalizeStatus(row: RawStatus): Status {
+  const { active, ...rest } = row;
+  return {
+    ...rest,
+    isActive: row.isActive ?? active ?? true,
+    isDefaultOnCreate: row.isDefaultOnCreate ?? false,
+  };
+}
+
+function normalizeField(row: RawField): FieldDefinition {
+  const rule = row.validationRule ?? undefined;
+  const options = row.options ?? rule?.options;
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label ?? row.name ?? row.key,
+    type: (row.type ?? row.fieldType ?? 'text') as FieldDefinition['type'],
+    ...(options ? { options } : {}),
+    ...(rule ? { validationRule: rule } : {}),
+    // The API has always sent this; the normalizer just dropped it on the
+    // floor, so the record page had no way to group details by section.
+    ...(row.section === undefined ? {} : { section: row.section }),
+  };
+}
+
+/** Page envelope, tolerating older handlers that returned a bare array. */
+function items<T>(payload: Page<T> | T[]): T[] {
+  return Array.isArray(payload) ? payload : (payload.items ?? []);
+}
+
 export const configApi = {
-  journeys: () => request<Page<Journey>>('/journeys').then((page) => page.items),
-  statuses: (journeyId: string) => request<Status[]>(`/journeys/${journeyId}/statuses`),
-  fields: () => request<Page<FieldDefinition>>('/fields').then((page) => page.items),
-  services: () => request<Page<Service>>('/services').then((page) => page.items),
+  journeys: () => request<Page<Journey> | Journey[]>('/journeys').then(items),
+  /**
+   * `GET /journeys/:id/statuses` is documented but only registered for POST, so
+   * it 404s outside the mocks. `GET /journeys/:id` is registered and already
+   * returns its statuses filtered to active and ordered by sortOrder.
+   */
+  statuses: (journeyId: string) =>
+    request<Omit<AdminJourney, 'statuses'> & { statuses?: RawStatus[] }>(
+      `/journeys/${journeyId}`,
+    ).then((journey) =>
+      (journey.statuses ?? [])
+        .map(normalizeStatus)
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    ),
+  /**
+   * The assignment types actually in use on a Journey. `assignment_type` is a
+   * configurable free-text string with no enum and no other endpoint listing
+   * the permitted values, so this is the only way a client can assign someone
+   * without inventing a literal.
+   */
+  assignmentTypes: (journeyId: string) =>
+    request<{ assignmentTypes?: string[] }>(`/journeys/${journeyId}`).then(
+      (journey) => journey.assignmentTypes ?? [],
+    ),
+  fields: () =>
+    request<Page<RawField> | RawField[]>('/fields')
+      .then(items)
+      .then((rows) => rows.map(normalizeField)),
+  services: () => request<Page<Service> | Service[]>('/services').then(items),
 };

@@ -16,6 +16,11 @@ export class AdminService {
       ...(typeof query.roleId === 'string' ? { roleId: query.roleId } : {}),
       ...(typeof query.departmentId === 'string' ? { departmentId: query.departmentId } : {}),
       ...(active === undefined ? {} : { active }),
+      // The web client has always sent this and the service dropped it, so the
+      // Users page's search box refetched and filtered nothing.
+      ...(typeof query.search === 'string' && query.search.trim() !== ''
+        ? { search: query.search.trim() }
+        : {}),
     });
   }
   getUser(ctx: AdminContext, id: string) {

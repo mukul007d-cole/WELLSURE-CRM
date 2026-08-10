@@ -51,7 +51,7 @@ PATCH  /journeys/:id
 DELETE /journeys/:id
 PUT    /journeys/:id/status-order      -- body: complete ordered statusIds array; atomic
 
-GET    /journeys/:id/statuses
+GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses
 PATCH  /statuses/:id
 DELETE /statuses/:id                   -- requires lead-migration step
@@ -83,20 +83,21 @@ GET    /leads                          -- server-side search, filter, sort, pagi
 POST   /leads
 GET    /leads/:id
 PATCH  /leads/:id
-PATCH  /leads/:id/status               -- triggers behavior_type side effects
+PATCH  /leads/:id/status               -- NOT IMPLEMENTED: status changes ride on PATCH /leads/:id with statusId in the body
 PATCH  /leads/:id/reassign
-POST   /leads/:id/services
-GET    /leads/:id/activity
+PATCH  /leads/:id/journey                -- move a process instance to another journey; authorized on both (see ADR-0012)
+POST   /leads/:id/services             -- NOT IMPLEMENTED
+GET    /leads/:id/activity             -- paginated {page,pageSize,total,items}, newest first; gated on leads:view; old_value/new_value redacted against the caller's visible field set (see ADR-0011)
 POST   /leads/:id/comments
 GET    /leads/:id/shares
 POST   /leads/:id/shares
 PUT    /leads/:id/shares/:shareId
 DELETE /leads/:id/shares/:shareId
 POST   /leads/:id/deactivate
-POST   /leads/bulk/reassign
-POST   /leads/bulk/status
-GET    /leads/export
-POST   /leads/import
+POST   /leads/bulk/reassign            -- NOT IMPLEMENTED (leads:bulk_reassign is grantable but honoured by no route)
+POST   /leads/bulk/status              -- NOT IMPLEMENTED (leads:bulk_status_change is grantable but honoured by no route)
+GET    /leads/export                   -- NOT IMPLEMENTED (leads:export is grantable but honoured by no route)
+POST   /leads/import                   -- NOT IMPLEMENTED
 ```
 
 
@@ -111,18 +112,31 @@ PUT    /notification-rules/:id
 ```
 
 ### Tasks
+
+**Not implemented.** No route file exists. The `Task` model and the `call_later`/`follow_up` behavior types are in place, but `packages/workflow-engine` is still a placeholder, so nothing creates or reads a task. Paths below are the V1 target, not the current surface.
+
 ```
 GET    /tasks
 PATCH  /tasks/:id/complete
 ```
 
 ### Attachments
+
+Implemented, and registered **only when object storage is configured** — see
+ADR-0012. Without the `S3_*` environment variables the list and upload routes
+answer `503 storage_not_configured` and the rest are absent.
+
 ```
-POST   /leads/:id/attachments
-GET    /attachments/:id
+GET    /leads/:id/attachments          -- gated on attachments:download (no view action exists)
+POST   /leads/:id/attachments          -- multipart; fields: file, name. attachments:upload
+GET    /attachments/:id                -- streams the object; attachments:download
+DELETE /attachments/:id                -- soft delete (active=false); attachments:delete
 ```
 
 ### Finance
+
+**Not implemented.** No route file exists. Paths below are the V1 target, not the current surface.
+
 ```
 GET    /invoices
 POST   /invoices
@@ -131,6 +145,9 @@ POST   /invoices/:id/payments
 ```
 
 ### Reports
+
+**Not implemented.** No route file exists. The dashboard derives its counts from scoped `GET /leads` totals instead. Paths below are the V1 target, not the current surface.
+
 ```
 GET    /reports/dashboard
 GET    /reports/pipeline-value
@@ -140,6 +157,9 @@ POST   /reports/custom                 -- Phase 2
 ```
 
 ### Integrations
+
+**Not implemented.** No route file exists. Paths below are the V1 target, not the current surface.
+
 ```
 POST   /integrations/email/send
 POST   /webhooks/accounting            -- fires on outcome_type = closed_won
@@ -201,4 +221,4 @@ Lead/Seller endpoints use the same server-side permission-engine decision contra
 
 - `GET /leads/:id` returns core Lead/Seller fields, visible dynamic `fieldValues`, authorized active process instances/Journeys/statuses, and current assignments.
 - A Lead with multiple active Journey memberships returns only the process instances the requester is authorized to see.
-- Activity timeline, tasks/reminders, attachments, linked-lead expansion, services, and finance sections remain deferred until their underlying module contracts are implemented.
+- The activity timeline is served by `GET /leads/:id/activity` (see ADR-0011). Tasks/reminders, attachments, linked-lead expansion, services, and finance sections remain deferred until their underlying module contracts are implemented.

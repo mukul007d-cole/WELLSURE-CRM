@@ -23,9 +23,21 @@ export class PrismaAdminRepository implements AdminRepository {
   async listUsers(
     org: string,
     page: PageRequest,
-    filters: { roleId?: string; departmentId?: string; active?: boolean },
+    filters: { roleId?: string; departmentId?: string; active?: boolean; search?: string },
   ): Promise<Page<unknown>> {
-    const where = { organizationId: org, ...filters };
+    const { search, ...exact } = filters;
+    const where = {
+      organizationId: org,
+      ...exact,
+      ...(search === undefined
+        ? {}
+        : {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }),
+    };
     const [total, items] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({ where, ...pageArgs(page), orderBy, select: userSelect }),

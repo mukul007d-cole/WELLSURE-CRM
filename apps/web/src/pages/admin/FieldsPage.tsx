@@ -7,17 +7,14 @@ import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
+import { Pagination } from '../../components/ui/Pagination';
+import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminField } from '../../types/domain';
-import {
-  ActiveFilter,
-  AdminHeader,
-  AdminTable,
-  PageControls,
-  activeValue,
-  ADMIN_PAGE_SIZE,
-} from './shared';
+import { PageBody, PageHeader } from '../../components/layout/PageFrame';
+import { usePageChrome } from '../../app/page-chrome';
+import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
 type FieldDraft = {
   id?: string;
@@ -39,6 +36,7 @@ const emptyField = (): FieldDraft => ({
   source: 'manual',
 });
 export function FieldsPage() {
+  usePageChrome('Fields', [['admin', 'fields']]);
   const { can } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -64,11 +62,11 @@ export function FieldsPage() {
   });
   const error = query.error ?? save.error ?? deactivate.error;
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <AdminHeader
+    <PageBody>
+      <PageHeader
         title="Fields"
         description="Manage reusable Field definitions independently from Journeys."
-        action={
+        actions={
           can('fields', 'create') ? (
             <Button onClick={() => setDraft(emptyField())}>Create Field</Button>
           ) : undefined
@@ -94,22 +92,26 @@ export function FieldsPage() {
       />
       <AdminTable
         loading={query.isPending}
-        headers={['Name', 'Type', 'Options', 'State', 'Actions']}
+        headers={[
+          'Name',
+          'Type',
+          'Options',
+          'State',
+          { label: 'Actions', align: 'right' as const },
+        ]}
         empty={!query.isPending && !query.data?.items.length}
       >
         {query.data?.items.map((field) => (
-          <tr className="border-b last:border-0" key={field.id}>
-            <td className="p-4">
-              <span className="block font-medium">{field.name}</span>
+          <DataRow key={field.id}>
+            <DataCell primary>
+              <span className="block">{field.name}</span>
               <span className="text-xs text-ink-soft">{field.key}</span>
-            </td>
-            <td className="p-4 text-sm">{field.fieldType}</td>
-            <td className="p-4 text-sm text-ink-soft">
-              {field.validationRule?.options?.join(', ') ?? '—'}
-            </td>
-            <td className="p-4 text-sm">{field.active ? 'Active' : 'Inactive'}</td>
-            <td className="p-4">
-              <div className="flex gap-2">
+            </DataCell>
+            <DataCell>{field.fieldType}</DataCell>
+            <DataCell>{field.validationRule?.options?.join(', ') ?? '—'}</DataCell>
+            <DataCell>{field.active ? 'Active' : 'Inactive'}</DataCell>
+            <DataCell align="right">
+              <RowActions>
                 {can('fields', 'edit') ? (
                   <Button size="sm" variant="ghost" onClick={() => setDraft(fromField(field))}>
                     Edit
@@ -120,20 +122,20 @@ export function FieldsPage() {
                     Deactivate
                   </Button>
                 ) : null}
-              </div>
-            </td>
-          </tr>
+              </RowActions>
+            </DataCell>
+          </DataRow>
         ))}
       </AdminTable>
       {query.data ? (
-        <PageControls
+        <Pagination
           page={query.data.page}
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
-          onPage={setPage}
+          onPageChange={setPage}
         />
       ) : null}
-    </div>
+    </PageBody>
   );
 }
 function fieldBody(draft: FieldDraft) {

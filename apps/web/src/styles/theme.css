@@ -23,6 +23,23 @@
   --color-line: #e7e3da;
   --color-line-strong: #d8d3c6;
 
+  /*
+   * Working-surface ramp.
+   *
+   * Dense data screens need more steps than a page/card pair: a recessed tone
+   * for table headers and toolbars, a hover tone that isn't the page behind
+   * it, a hairline lighter than `line` for rows inside a bordered panel, and a
+   * secondary text tone between ink and ink-soft. Without these, every
+   * boundary is drawn at the same weight and the eye gets no hierarchy —
+   * which is most of what makes a table look flat and dated.
+   *
+   * Warm, to stay in the paper/ink family rather than importing a cool grey.
+   */
+  --color-surface-sunken: #f4f2ed;
+  --color-surface-hover: #faf9f6;
+  --color-line-soft: #f0ede6;
+  --color-ink-muted: #4a4744;
+
   /* Text/foreground on ink surfaces */
   --color-on-ink: #f5f3ee;
   --color-on-ink-soft: #a9a5a0;
@@ -42,17 +59,30 @@
   --color-status-archived: #766f87;
   --color-status-archived-bg: #efedf3;
 
+  /*
+   * Error text. Deliberately the same red as the lost status rather than a
+   * seventh hue — `Button`'s danger variant already reuses it, so a distinct
+   * error red would mean two reds side by side on the same dialog.
+   */
+  --color-danger: #c4453d;
+
   /* Type */
   --font-display: 'Archivo', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Radius */
-  --radius-card: 0.875rem;
-  --radius-control: 0.5rem;
+  /*
+   * Radius. Tightened from 14px: a large corner radius reads consumer-app,
+   * and on a screen full of adjacent panels it wastes edge alignment. Data
+   * tooling wants crisp corners, so panels sit at 10px and controls at 6px.
+   */
+  --radius-card: 0.625rem;
+  --radius-control: 0.375rem;
   --radius-pill: 999px;
 
-  /* Shadow: kept minimal — depth mostly comes from the paper/surface pair */
+  /* Shadow: depth mostly comes from the surface ramp; these stay restrained. */
   --shadow-card: 0 1px 2px rgba(11, 11, 12, 0.04), 0 1px 1px rgba(11, 11, 12, 0.03);
+  /* One step of lift for a row or card under the cursor. */
+  --shadow-raised: 0 2px 6px rgba(11, 11, 12, 0.07), 0 1px 2px rgba(11, 11, 12, 0.04);
   --shadow-popover: 0 12px 32px rgba(11, 11, 12, 0.16), 0 2px 6px rgba(11, 11, 12, 0.08);
 }
 

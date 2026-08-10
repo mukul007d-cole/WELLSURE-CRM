@@ -20,6 +20,9 @@ export interface Journey {
   isActive: boolean;
 }
 
+/** Assignment types in use on a Journey — configurable strings, never an enum. */
+export type JourneyAssignmentTypes = readonly string[];
+
 export interface Status {
   id: string;
   journeyId: string;
@@ -29,6 +32,22 @@ export interface Status {
   behaviorType: BehaviorType;
   isActive: boolean;
   sortOrder: number;
+  /**
+   * Creating a Lead without an explicit statusId falls back to the Journey's
+   * default-on-create Status. If no Status carries this flag that fallback
+   * fails, so the client has to know whether one exists.
+   */
+  isDefaultOnCreate: boolean;
+}
+
+/**
+ * What POST /leads and PATCH /leads/:id actually return: the raw lead and
+ * process-instance rows, not a serialized Seller360Record. Only the fields
+ * consumers rely on are declared.
+ */
+export interface LeadMutationResult {
+  lead: { id: string; name: string };
+  process: { id: string; journeyId: string; currentStatusId: string };
 }
 
 export interface Service {
@@ -51,6 +70,12 @@ export interface FieldDefinition {
   type: FieldType;
   options?: readonly string[];
   validationRule?: FieldValidationRule;
+  /**
+   * Administrator-configured grouping, e.g. the sections a record's details are
+   * split into. Already served by the configuration API; this type just never
+   * declared it, so the value was on the wire and unused.
+   */
+  section?: string | null;
 }
 
 export interface JourneyFieldSetting {
@@ -80,6 +105,9 @@ export interface LeadCoreRecord {
   name: string;
   phone: string | null;
   email: string | null;
+  /** Absent on list rows, which don't select the timestamps. */
+  createdAt?: string;
+  updatedAt?: string;
   fieldValues: Record<string, unknown>;
 }
 
@@ -123,6 +151,49 @@ export interface SellerListInput {
   page?: number | undefined;
   pageSize?: number | undefined;
   accessMode?: 'mine' | 'shared_with_me' | 'all';
+}
+
+/**
+ * The engine's closed set of activity kinds. The timeline keys its icon and
+ * phrasing off these, never off a status, journey or role name — same
+ * discipline `statusTone` follows for colour.
+ */
+export type ActivityActionType =
+  | 'comment'
+  | 'field_edit'
+  | 'status_change'
+  | 'reassignment'
+  | 'share_changed'
+  | 'lead_deactivated';
+
+export interface ActivityEntry {
+  id: string;
+  processInstanceId: string | null;
+  actorUserId: string | null;
+  /** Null for system-authored rows. */
+  actorName: string | null;
+  timestamp: string;
+  /**
+   * Normally an `ActivityActionType`, but `action_type` is a plain text column
+   * rather than a DB enum, so the renderer falls back instead of narrowing.
+   */
+  actionType: string;
+  source: string;
+  commentText: string | null;
+  /** Whole-lead snapshots, already redacted server-side to visible fields. */
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+export interface AttachmentRecord {
+  id: string;
+  leadId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uploadedById: string;
+  uploadedByName: string | null;
+  uploadedAt: string;
 }
 
 export type ShareCapability = 'view' | 'edit' | 'comment';
