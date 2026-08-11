@@ -50,12 +50,51 @@ ignored `.env` file if they conflict locally.
 ```bash
 pnpm --filter @falcon/database prisma:generate
 pnpm --filter @falcon/database prisma:validate
+pnpm --filter @falcon/database prisma:deploy
 pnpm --filter @falcon/database prisma:migrate
 ```
 
-`prisma:migrate` applies the checked-in baseline and creates a new development
-migration only when the schema changes. The initial rollback script is destructive
-and is intended solely for disposable Phase 1 databases.
+`prisma:deploy` applies every checked-in migration that the target database has
+not run yet and nothing else. It is the command to use after pulling someone
+else's schema change: it never prompts, never resets, and is a no-op when the
+database is already current.
+
+`prisma:migrate` is the authoring command — it applies the checked-in baseline
+and creates a _new_ development migration when `schema.prisma` has changed. Reach
+for it only when you are the one changing the schema, because it can offer to
+reset the database. The initial rollback script is destructive and is intended
+solely for disposable Phase 1 databases.
+
+### Pulling someone else's changes
+
+Dependencies, the generated Prisma client, and the database schema all drift
+independently. After `git pull`, run the steps whose inputs actually changed:
+
+```bash
+pnpm install --frozen-lockfile                      # only if pnpm-lock.yaml moved
+pnpm infra:up                                       # services must be running first
+pnpm --filter @falcon/database prisma:deploy        # only if prisma/migrations/ gained a directory
+pnpm build                                          # regenerates the Prisma client, then compiles
+```
+
+`pnpm build` runs `prisma generate` as part of `@falcon/database`, so a separate
+generate step is redundant after a build. Skipping it is what produces type
+errors about models that plainly exist in `schema.prisma`.
+
+Confirm the database matches the checked-in migrations with:
+
+```bash
+pnpm --filter @falcon/database exec prisma migrate status --config prisma.config.ts
+```
+
+> **A `DATABASE_URL` exported in your shell silently overrides `.env`.** The
+> Prisma CLI loads `.env` through `dotenv`, which never replaces a variable that
+> is already set, so an inherited `DATABASE_URL` — common in cloud dev
+> containers and CI images — points migration commands at _that_ database while
+> the app, which reads `FALCON_DATABASE_URL`, still talks to your local one. The
+> datasource banner Prisma prints names the host it is really about to write to;
+> read it before confirming a migration. Run `env | grep DATABASE_URL` when in
+> doubt, and pass the URL explicitly if one is set.
 
 ## Quality commands
 
