@@ -1,8 +1,25 @@
 # Phase 13a — Field-level role visibility at creation time
 
-Status: **proposed, awaiting approval.** Sub-phase 1 of 3 in Phase 13.
+Status: approved 2026-08-11. **Delivered.** Sub-phase 1 of 3 in Phase 13.
 13b (filter engine) and 13c (campaigns) get their own plan documents and their
 own approvals; nothing in them is implemented here.
+
+All four sign-off decisions were approved as proposed: the `roles_permissions`
+gate, the two-request create (the atomic alternative was explicitly declined),
+the checkbox divergence from `RoleDetailPage`, and the `replace_field_roles`
+audit action.
+
+Two things the implementation added beyond the plan, both in the frontend and
+both covered by tests:
+
+- The editor opens immediately and an existing Field's grants load into it
+  afterwards, rather than the plan's implied load-then-open. Save leaves grants
+  untouched until they have actually been read, so a fast Save cannot
+  full-replace stored grants with a set the client never saw.
+- Reopening the editor for the same Field re-reads its grants. The first cut
+  reused a per-field sync marker and would have shown an empty picker on the
+  second open — and then revoked every grant on save. `openDraft` clears the
+  marker; the regression test was confirmed to fail without that change.
 
 ## Goal
 

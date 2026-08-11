@@ -139,6 +139,17 @@ export function registerAdminRoutes(
     'edit',
     (s, c, b, p, q) => s.replaceFieldVisibility(c, String(p.roleId), b.fieldVisibility),
   );
+  // The Field-side projection of the same field_visibility rows the two routes
+  // above expose role-side. It lives in the administration routes, not the
+  // configuration ones, because granting a Field to a role is a permission
+  // change: gating it on `fields` would let anyone holding fields:edit grant
+  // their own role a Field their role is denied.
+  bind('GET', '/api/v1/fields/:fieldId/visibility', 'roles_permissions', 'view', (s, c, _b, p, q) =>
+    s.listRoleVisibilityForField(c, String(p.fieldId)),
+  );
+  bind('PUT', '/api/v1/fields/:fieldId/visibility', 'roles_permissions', 'edit', (s, c, b, p, q) =>
+    s.replaceRoleVisibilityForField(c, String(p.fieldId), b.visibility),
+  );
   bind('GET', '/api/v1/departments', 'users', 'view', (s, c, _b, _p, q) => s.listDepartments(c, q));
   bind('GET', '/api/v1/departments/:departmentId', 'users', 'view', (s, c, _b, p, q) =>
     s.getDepartment(c, String(p.departmentId)),

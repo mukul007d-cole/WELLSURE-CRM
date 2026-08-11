@@ -16,6 +16,7 @@ import type {
   Page,
   AdminJourney,
   AdminField,
+  FieldRoleVisibility,
   AdminUser,
   AdminRole,
   Department,
@@ -167,6 +168,13 @@ export const adminApi = {
   editField: (id: string, body: object) =>
     request<AdminField>(`/fields/${id}`, json('PATCH', body)),
   deactivateField: (id: string) => request<AdminField>(`/fields/${id}`, json('DELETE')),
+  // The Field side of field_visibility. One request carries the Field's whole
+  // role set — never a per-role loop, which is how the role-side axis is saved
+  // too.
+  fieldRoleVisibility: (fieldId: string) =>
+    request<FieldRoleVisibility[]>(`/fields/${fieldId}/visibility`),
+  saveFieldRoleVisibility: (fieldId: string, visibility: FieldRoleVisibility[]) =>
+    request<FieldRoleVisibility[]>(`/fields/${fieldId}/visibility`, json('PUT', { visibility })),
   users: (
     query: {
       page?: number;

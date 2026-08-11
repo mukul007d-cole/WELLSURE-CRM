@@ -296,6 +296,14 @@ export interface AdminField {
   source: string;
   active: boolean;
 }
+/**
+ * One `field_visibility` row seen from the Field side. Roles with no row are
+ * absent from the list entirely — that absence is what hides the Field.
+ */
+export interface FieldRoleVisibility {
+  roleId: string;
+  accessLevel: FieldAccessLevel;
+}
 export interface AdminUser {
   id: string;
   name: string;

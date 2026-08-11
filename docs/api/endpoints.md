@@ -75,7 +75,21 @@ GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
 DELETE /journeys/:id/fields/:fieldId   -- semantic unmap/deactivate
 PUT    /roles/:roleId/field-visibility/:fieldId -- body: { accessLevel }
+GET    /fields/:fieldId/visibility     -- all roles' access to one Field; roles_permissions:view
+PUT    /fields/:fieldId/visibility     -- body: { visibility: [{ roleId, accessLevel }] }; roles_permissions:edit
 ```
+
+`field_visibility` is reachable from either axis: `/roles/:roleId/field-visibility`
+replaces one role's whole set, `/fields/:fieldId/visibility` replaces one
+Field's whole set across roles, and both write the same rows. Both are gated on
+`roles_permissions`, not on `fields` — granting a Field to a role is a
+permission change, and gating the Field-side routes on `fields` would let a
+Fields administrator grant their own role a Field it is denied. An absent row
+still means hidden, so a newly created Field is visible to nobody until one of
+these routes grants it. A full replace across roles emits one
+`system_audit_logs` row with `entity_type = 'field_visibility'`,
+`entity_id = <fieldId>` and `action = 'replace_field_roles'`, distinct from the
+role-side `action = 'replace'` whose `entity_id` is a role.
 
 ### Leads
 ```

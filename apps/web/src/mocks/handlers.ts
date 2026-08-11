@@ -745,6 +745,28 @@ export const handlers = [
     if (row) row.fieldVisibility = body.fieldVisibility;
     return HttpResponse.json(body.fieldVisibility);
   }),
+  // The same rows read and written Field-side. Backed by MOCK_ROLES so the two
+  // projections can't drift apart in tests the way two separate stores would.
+  http.get(`${API_BASE}/fields/:fieldId/visibility`, ({ params }) =>
+    HttpResponse.json(
+      MOCK_ROLES.flatMap((role) => {
+        const match = role.fieldVisibility.find((x) => x.fieldId === params.fieldId);
+        return match ? [{ roleId: role.id, accessLevel: match.accessLevel }] : [];
+      }),
+    ),
+  ),
+  http.put(`${API_BASE}/fields/:fieldId/visibility`, async ({ params, request }) => {
+    const body = (await request.json()) as {
+      visibility: Array<{ roleId: string; accessLevel: string }>;
+    };
+    const fieldId = String(params.fieldId);
+    for (const role of MOCK_ROLES) {
+      const granted = body.visibility.find((x) => x.roleId === role.id);
+      role.fieldVisibility = role.fieldVisibility.filter((x) => x.fieldId !== fieldId);
+      if (granted) role.fieldVisibility.push({ fieldId, accessLevel: granted.accessLevel });
+    }
+    return HttpResponse.json(body.visibility);
+  }),
 
   http.get(`${API_BASE}/leads`, async ({ request }) => {
     await delay(550);

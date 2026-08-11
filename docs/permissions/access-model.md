@@ -49,6 +49,8 @@ Department permission module. See ADR-0009.
 
 **D. Field-level visibility** — layered on top of A–C via an allow-list in `field_visibility`. Each `(field, role)` row grants `VIEW` or `EDIT`; `EDIT` includes viewing. Absence of a row means the field is hidden entirely for that role. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes sensitive fields actually secure.
 
+The same rows are editable from either direction — one role's access to every field, or one field's access for every role — and both directions are gated on `roles_permissions`, never on `fields`. A Field administrator who cannot edit permissions cannot grant visibility, including to their own role. Both write a full replacement of the axis they address, with the previous and new sets recorded in `system_audit_logs`.
+
 ## Additional mechanism: direct record grants
 
 For exceptional one-off access that doesn't fit the role/hierarchy model (e.g. a specific person needs temporary visibility into one lead outside their normal scope), use `user_access_grants` rather than creating a new role or assigning a second role. A non-expired direct grant is additive to normal data scope; it never bypasses feature/action, Journey, field, workflow, or active-user checks. One active role per user, always.
