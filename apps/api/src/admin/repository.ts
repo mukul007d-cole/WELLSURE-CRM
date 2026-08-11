@@ -3,6 +3,7 @@ import type {
   Page,
   PageRequest,
   PermissionInput,
+  RoleVisibilityInput,
   UserWriteInput,
 } from './types.js';
 
@@ -48,6 +49,14 @@ export interface AdminRepository {
     actor: string,
     roleId: string,
     rows: FieldVisibilityInput[],
+  ): Promise<unknown>;
+  /** Null when the field is not in the organization, so the route 404s. */
+  listRoleVisibilityForField(org: string, fieldId: string): Promise<RoleVisibilityInput[] | null>;
+  replaceRoleVisibilityForField(
+    org: string,
+    actor: string,
+    fieldId: string,
+    rows: RoleVisibilityInput[],
   ): Promise<unknown>;
   listDepartments(org: string, page: PageRequest, active?: boolean): Promise<Page<unknown>>;
   getDepartment(org: string, id: string): Promise<unknown>;

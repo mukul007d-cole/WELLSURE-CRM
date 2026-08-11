@@ -151,6 +151,8 @@ export interface SellerListInput {
   page?: number | undefined;
   pageSize?: number | undefined;
   accessMode?: 'mine' | 'shared_with_me' | 'all';
+  /** JSON-encoded filter, per the Seller List filter model. */
+  filter?: string | undefined;
 }
 
 /**
@@ -230,6 +232,46 @@ export interface NotificationRule {
   recipients: NotificationRuleRecipient[];
 }
 
+export type CampaignType = 'manual' | 'triggered';
+export type CampaignMark = 'bold' | 'italic' | 'underline';
+export type CampaignBlockType = 'paragraph' | 'heading' | 'bullet_list' | 'numbered_list';
+
+export interface CampaignSpan {
+  text: string;
+  marks?: CampaignMark[];
+  href?: string;
+}
+export interface CampaignBlock {
+  type: CampaignBlockType;
+  spans?: CampaignSpan[];
+  items?: CampaignSpan[][];
+}
+/** Closed vocabulary; the server renders and escapes the HTML at send time. */
+export interface CampaignDocument {
+  blocks: CampaignBlock[];
+}
+
+export interface CampaignStats {
+  sent: number;
+  failed: number;
+  pending: number;
+  skippedNoEmail: number;
+}
+export interface Campaign {
+  id: string;
+  key: string;
+  name: string;
+  subject: string;
+  bodyDocument: CampaignDocument;
+  type: CampaignType;
+  filter: { conditions?: unknown[] } | null;
+  journeyId: string | null;
+  statusId: string | null;
+  active: boolean;
+  version: number;
+  stats: CampaignStats;
+}
+
 export interface SellerListResponse {
   total: number;
   rows: SellerListRow[];
@@ -295,6 +337,14 @@ export interface AdminField {
   editMode: string;
   source: string;
   active: boolean;
+}
+/**
+ * One `field_visibility` row seen from the Field side. Roles with no row are
+ * absent from the list entirely — that absence is what hides the Field.
+ */
+export interface FieldRoleVisibility {
+  roleId: string;
+  accessLevel: FieldAccessLevel;
 }
 export interface AdminUser {
   id: string;

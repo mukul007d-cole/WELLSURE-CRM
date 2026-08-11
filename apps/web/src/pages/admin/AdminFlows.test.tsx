@@ -147,6 +147,148 @@ describe('administration resource flows', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate' }).at(-1) as HTMLElement);
   });
 
+  it('grants a new Field to roles in one request, not one call per role', async () => {
+    const visibilityWrites: Array<{ url: string; body: unknown }> = [];
+    server.use(
+      http.put('/api/v1/fields/:fieldId/visibility', async ({ params, request }) => {
+        const body = await request.json();
+        visibilityWrites.push({ url: String(params.fieldId), body });
+        return HttpResponse.json(body);
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    change('Stable key', 'synthetic_granted');
+    change('Name', 'Synthetic Granted');
+
+    // Nothing is pre-ticked: a new Field is hidden from every role until an
+    // admin says otherwise.
+    const roleAView = await screen.findByLabelText('Synthetic role A view');
+    const roleAEdit = screen.getByLabelText('Synthetic role A edit');
+    const roleBView = screen.getByLabelText('Synthetic role B view');
+    expect(roleAView).not.toBeChecked();
+    expect(roleAEdit).not.toBeChecked();
+    expect(roleBView).not.toBeChecked();
+
+    fireEvent.click(roleAEdit);
+    fireEvent.click(roleBView);
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+
+    await waitFor(() => expect(visibilityWrites).toHaveLength(1));
+    // One request carrying the whole set. Two would mean a per-role loop crept
+    // back in.
+    expect(visibilityWrites[0]?.body).toEqual({
+      visibility: expect.arrayContaining([
+        { roleId: 'role-admin', accessLevel: 'EDIT' },
+        { roleId: 'role-sales-rep', accessLevel: 'VIEW' },
+      ]) as unknown,
+    });
+    expect((visibilityWrites[0]?.body as { visibility: unknown[] }).visibility).toHaveLength(2);
+  });
+
+  it('loads an existing Field’s grants into the picker before replacing them', async () => {
+    const visibilityWrites: unknown[] = [];
+    server.use(
+      http.put('/api/v1/fields/:fieldId/visibility', async ({ request }) => {
+        const body = await request.json();
+        visibilityWrites.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Edit' }))[0] as HTMLElement);
+
+    // The stored grant arrives after the editor opens and ticks itself.
+    const roleAEdit = await screen.findByLabelText('Synthetic role A edit');
+    await waitFor(() => expect(roleAEdit).toBeChecked());
+
+    const roleBEdit = await screen.findByLabelText('Synthetic role B edit');
+    expect(roleBEdit).toBeChecked();
+
+    fireEvent.click(screen.getByLabelText('Synthetic role A view'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+
+    // The request is a full replace, so the role nobody touched has to still be
+    // in it. Sending only the edited role would silently revoke the other one.
+    await waitFor(() => expect(visibilityWrites).toHaveLength(1));
+    expect(visibilityWrites[0]).toEqual({
+      visibility: [{ roleId: 'role-sales-rep', accessLevel: 'EDIT' }],
+    });
+  });
+
+  it('re-reads grants when the same Field is reopened, instead of revoking them', async () => {
+    const visibilityWrites: unknown[] = [];
+    server.use(
+      http.put('/api/v1/fields/:fieldId/visibility', async ({ request }) => {
+        const body = await request.json();
+        visibilityWrites.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+    renderPage(<FieldsPage />);
+    const openFirstField = async () => {
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Edit' }))[0] as HTMLElement);
+      const roleAEdit = await screen.findByLabelText('Synthetic role A edit');
+      await waitFor(() => expect(roleAEdit).toBeChecked());
+    };
+    await openFirstField();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // Second open of the same Field: the picker has to show the stored grants
+    // again, not the empty set the draft is built from.
+    await openFirstField();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+
+    await waitFor(() => expect(visibilityWrites).toHaveLength(1));
+    expect(visibilityWrites[0]).toEqual({
+      visibility: expect.arrayContaining([
+        { roleId: 'role-admin', accessLevel: 'EDIT' },
+      ]) as unknown,
+    });
+  });
+
+  it('binds the View and Edit boxes so edit-without-view is unreachable', async () => {
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    const view = await screen.findByLabelText('Synthetic role A view');
+    const edit = screen.getByLabelText('Synthetic role A edit');
+
+    fireEvent.click(edit);
+    expect(edit).toBeChecked();
+    expect(view).toBeChecked();
+
+    // Clearing View has to clear Edit with it — the stored row is one
+    // access_level, and EDIT already includes viewing.
+    fireEvent.click(view);
+    expect(view).not.toBeChecked();
+    expect(edit).not.toBeChecked();
+
+    fireEvent.click(view);
+    expect(view).toBeChecked();
+    expect(edit).not.toBeChecked();
+  });
+
+  it('omits the role picker for an admin who cannot edit permissions', async () => {
+    server.use(
+      http.get('/api/v1/auth/capabilities', () =>
+        HttpResponse.json({
+          permissions: ['view', 'create', 'edit'].map((action) => ({
+            module: 'fields',
+            action,
+            scope: 'ORGANIZATION',
+          })),
+          journeyIds: [],
+          fieldVisibility: [],
+        }),
+      ),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    await screen.findByLabelText(/^Stable key/i);
+    expect(screen.queryByText('Role visibility')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Synthetic role A view')).not.toBeInTheDocument();
+  });
+
   it('filters, creates, edits, paginates, and deactivates Users without a password', async () => {
     let createBody: Record<string, unknown> | undefined;
     server.use(

@@ -52,6 +52,8 @@ model Organization {
   payments            Payment[]
   notifications       Notification[]
   notificationRules   NotificationRule[]
+  campaigns           Campaign[]
+  campaignSends       CampaignSend[]
   settings            Setting[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -183,6 +185,8 @@ model User {
   settingsUpdated          Setting[]
   sessions                 Session[]
   passwordResetTokens      PasswordResetToken[]
+  campaignsCreated         Campaign[]           @relation("CampaignCreatedBy")
+  campaignsUpdated         Campaign[]           @relation("CampaignUpdatedBy")
 
   @@id([organizationId, id])
   @@unique([organizationId, email])
@@ -288,6 +292,7 @@ model Journey {
   roleAccess       RoleJourneyAccess[]
   fieldSettings    FieldJourneySetting[]
   journeyServices  JourneyService[]
+  campaigns        Campaign[]
 
   @@id([organizationId, id])
   @@unique([organizationId, key])
@@ -378,6 +383,7 @@ model Status {
   processInstances ProcessInstance[]
   requiredSettings FieldJourneySetting[]
   createdTasks     Task[]
+  campaigns        Campaign[]
 
   @@id([organizationId, id])
   @@unique([organizationId, journeyId, key])
@@ -479,6 +485,7 @@ model Lead {
   notifications    Notification[]
   linksFrom        LeadLink[]        @relation("LeadLinkFrom")
   linksTo          LeadLink[]        @relation("LeadLinkTo")
+  campaignSends    CampaignSend[]
 
   @@id([organizationId, id])
   @@index([organizationId, active, updatedAt])
@@ -817,4 +824,64 @@ model Setting {
   @@id([organizationId, id])
   @@unique([organizationId, key])
   @@map("settings")
+}
+
+/// A marketing email sent to Leads, not a notification sent to Users. The two
+/// share trigger detection and nothing else.
+model Campaign {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  key            String
+  name           String
+  subject        String
+  /// Closed-vocabulary document; the server renders and escapes the HTML at
+  /// send time so no client markup is ever stored or re-emitted.
+  bodyDocument   Json     @default("{\"blocks\":[]}") @map("body_document") @db.JsonB
+  /// manual | triggered
+  type           String
+  /// Manual campaigns only: a stored Phase 13b filter, evaluated at send time.
+  filter         Json?    @db.JsonB
+  /// Triggered campaigns only: exact-match Journey/Status pair (ADR-0001).
+  journeyId      String?  @map("journey_id") @db.Uuid
+  statusId       String?  @map("status_id") @db.Uuid
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String   @map("created_by") @db.Uuid
+  updatedById    String   @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User           @relation("CampaignCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User           @relation("CampaignUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  journey      Journey?       @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  status       Status?        @relation(fields: [organizationId, statusId], references: [organizationId, id], onDelete: Restrict)
+  sends        CampaignSend[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, key])
+  @@index([organizationId, type, active, journeyId, statusId])
+  @@map("campaigns")
+}
+
+/// One row per (campaign, lead): the sent-count stat and the idempotency record.
+model CampaignSend {
+  id             String    @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  campaignId     String    @map("campaign_id") @db.Uuid
+  leadId         String    @map("lead_id") @db.Uuid
+  /// pending | sent | failed | skipped_no_email
+  status         String    @default("pending")
+  error          String?
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  campaign     Campaign     @relation(fields: [organizationId, campaignId], references: [organizationId, id], onDelete: Restrict)
+  lead         Lead         @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, campaignId, leadId])
+  @@index([organizationId, status, createdAt])
+  @@map("campaign_sends")
 }

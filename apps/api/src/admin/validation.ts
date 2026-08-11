@@ -1,7 +1,12 @@
 import { isDataScope, isPermissionPair } from '@falcon/permission-engine';
 
 import { AdminError } from './errors.js';
-import type { FieldVisibilityInput, PageRequest, PermissionInput } from './types.js';
+import type {
+  FieldVisibilityInput,
+  PageRequest,
+  PermissionInput,
+  RoleVisibilityInput,
+} from './types.js';
 
 export function pagination(page: unknown, pageSize: unknown): PageRequest {
   const parsedPage = Number(page ?? 1);
@@ -77,6 +82,29 @@ export function visibility(value: unknown): FieldVisibilityInput[] {
     'duplicate fieldId',
   );
   return result.sort((a, b) => a.fieldId.localeCompare(b.fieldId));
+}
+
+/**
+ * The Field-side transpose of `visibility`: one field's access for a set of
+ * roles. Same row shape, same access levels, opposite key.
+ */
+export function roleVisibility(value: unknown): RoleVisibilityInput[] {
+  if (!Array.isArray(value))
+    throw new AdminError('validation_error', 'visibility must be an array');
+  const result = value.map((item) => {
+    const row = item as Record<string, unknown>;
+    const roleId = text(row.roleId, 'roleId');
+    const access = text(row.accessLevel, 'accessLevel');
+    if (access !== 'VIEW' && access !== 'EDIT')
+      throw new AdminError('validation_error', 'accessLevel must be VIEW or EDIT');
+    const accessLevel: 'VIEW' | 'EDIT' = access;
+    return { roleId, accessLevel };
+  });
+  unique(
+    result.map((row) => row.roleId),
+    'duplicate roleId',
+  );
+  return result.sort((a, b) => a.roleId.localeCompare(b.roleId));
 }
 
 function unique(values: string[], message: string): void {

@@ -2,7 +2,15 @@ import type { AuthConfig } from '../auth/config.js';
 import { preparePasswordReset, type EmailSender } from '../auth/password-reset.js';
 import type { AdminRepository } from './repository.js';
 import type { AdminContext, UserWriteInput } from './types.js';
-import { configKey, ids, pagination, permissions, text, visibility } from './validation.js';
+import {
+  configKey,
+  ids,
+  pagination,
+  permissions,
+  roleVisibility,
+  text,
+  visibility,
+} from './validation.js';
 
 export class AdminService {
   constructor(
@@ -95,6 +103,17 @@ export class AdminService {
       ctx.actorUserId,
       id,
       visibility(value),
+    );
+  }
+  listRoleVisibilityForField(ctx: AdminContext, fieldId: string) {
+    return this.repository.listRoleVisibilityForField(ctx.organizationId, fieldId);
+  }
+  replaceRoleVisibilityForField(ctx: AdminContext, fieldId: string, value: unknown) {
+    return this.repository.replaceRoleVisibilityForField(
+      ctx.organizationId,
+      ctx.actorUserId,
+      fieldId,
+      roleVisibility(value),
     );
   }
   listDepartments(ctx: AdminContext, q: Record<string, unknown>) {

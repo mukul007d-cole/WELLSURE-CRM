@@ -8,7 +8,11 @@ import type {
   LeadRepository,
 } from './service.js';
 import type { LeadFieldSetting } from './validation.js';
+import { buildSellerListQuery } from './filter-sql.js';
+import type { ResolvedCondition } from './filter-validation.js';
 import { NotificationService } from '../notifications/service.js';
+import { CampaignTriggerService } from '../campaigns/trigger-service.js';
+import { triggerTypeFor } from './trigger-dispatch.js';
 import type {
   LeadDetailRecord,
   Seller360Record,
@@ -25,6 +29,8 @@ type PrismaTransactionClient = PrismaLeadClient;
 
 export interface PrismaLeadClient {
   $transaction?<T>(work: (tx: PrismaTransactionClient) => Promise<T>): Promise<T>;
+  /** Positional ($1, $2, …) parameters, per the Seller List filter compiler. */
+  $queryRawUnsafe?<T>(text: string, ...values: unknown[]): Promise<T>;
   journey: {
     findUnique(args: unknown): Promise<{ id: string; active: boolean } | null>;
   };
@@ -34,6 +40,9 @@ export interface PrismaLeadClient {
   };
   fieldJourneySetting: {
     findMany(args: unknown): Promise<FieldSettingRow[]>;
+  };
+  field: {
+    findMany(args: unknown): Promise<Array<{ id: string; fieldType: string }>>;
   };
   lead: {
     findUnique(args: unknown): Promise<LeadRow | null>;
@@ -143,6 +152,7 @@ export class PrismaLeadRepository
   constructor(
     private readonly prisma: PrismaLeadClient,
     private readonly notifications?: NotificationService,
+    private readonly campaignTriggers?: CampaignTriggerService,
   ) {}
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
@@ -152,6 +162,7 @@ export class PrismaLeadRepository
         new PrismaLeadRepository(
           tx,
           this.notifications ? new NotificationService(tx as never) : undefined,
+          this.campaignTriggers ? new CampaignTriggerService(tx as never) : undefined,
         ),
       ),
     );
@@ -344,19 +355,10 @@ export class PrismaLeadRepository
         newValue: input.newValue,
       },
     });
-    if (this.notifications && activity && typeof activity === 'object' && 'id' in activity) {
-      const triggerType =
-        input.actionType === 'field_edit'
-          ? 'field_edited'
-          : input.actionType === 'status_change'
-            ? 'status_changed'
-            : input.actionType === 'reassignment'
-              ? 'lead_reassigned'
-              : input.actionType === 'lead_deactivated'
-                ? 'lead_deactivated'
-                : undefined;
-      if (triggerType)
-        await this.notifications.evaluate({
+    if (activity && typeof activity === 'object' && 'id' in activity) {
+      const triggerType = triggerTypeFor(input.actionType);
+      if (triggerType) {
+        const event = {
           organizationId: input.organizationId,
           activityLogId: String(activity.id),
           leadId: input.leadId,
@@ -366,8 +368,17 @@ export class PrismaLeadRepository
           actorUserId: input.actorUserId,
           triggerType,
           oldValue: input.oldValue,
-        });
+          // Phase 9 never needed the new value; a campaign keyed on entering a
+          // status does.
+          newValue: input.newValue,
+        };
+        // Both consumers read the same detected event. Neither knows about the
+        // other, and the classification exists once.
+        await this.notifications?.evaluate(event);
+        await this.campaignTriggers?.evaluate(event);
+      }
       if (
+        this.notifications &&
         input.actionType === 'field_edit' &&
         (await this.notifications.isActiveShareActor(
           input.organizationId,
@@ -468,57 +479,134 @@ export class PrismaLeadRepository
     return { total, rows };
   }
 
+  async listFilterableFieldTypes(organizationId: string): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.prisma.field.findMany({
+      where: { organizationId, active: true },
+      select: { id: true, fieldType: true },
+    });
+    return new Map(rows.map((row) => [row.id, row.fieldType]));
+  }
+
+  /**
+   * Every lead id matching a predicate, bounded by `limit`. Manual campaign
+   * sends need the whole recipient set rather than a page, and they run through
+   * the same compiler — and therefore the same data scope — as the list.
+   */
+  async listMatchingLeadIds(input: {
+    organizationId: string;
+    recordPredicate: RecordPredicate;
+    conditions?: readonly ResolvedCondition[];
+    limit: number;
+  }): Promise<string[]> {
+    const query = buildSellerListQuery({
+      organizationId: input.organizationId,
+      predicate: input.recordPredicate,
+      conditions: input.conditions ?? [],
+      page: 1,
+      pageSize: input.limit,
+    });
+    const run = this.prisma.$queryRawUnsafe?.bind(this.prisma);
+    if (run === undefined) throw new Error('lead repository requires $queryRawUnsafe');
+    const rows = await run<{ id: string }[]>(query.ids.text, ...query.ids.values);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Two steps on purpose.
+   *
+   * The predicate — data scope plus filter conditions — is compiled to raw SQL
+   * so custom-Field conditions can use containment and reach
+   * `leads_field_values_gin_idx`; Prisma's builder cannot emit that form (see
+   * `filter-sql.ts`). It returns only this page's ids and the total. Prisma
+   * then hydrates those ≤100 ids with the existing include tree, so
+   * serialization, redaction and the `shared` flag are untouched.
+   */
   async listSellers(
-    input: SellerListInput & { organizationId: string; recordPredicate: RecordPredicate },
+    input: SellerListInput & {
+      organizationId: string;
+      recordPredicate: RecordPredicate;
+      conditions?: readonly ResolvedCondition[];
+    },
   ): Promise<{ rows: SellerListRecord[]; total: number }> {
     const page = Math.max(1, input.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 25));
-    const where = sellerWhere(input);
-    const sortOrder = orderBy(input);
-    const [rows, total] = await Promise.all([
-      this.prisma.lead.findMany({
-        where,
-        orderBy: sortOrder,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          grants: {
-            where: {
-              userId: input.recordPredicate.includeDirectGrantsForUserId,
-              revokedAt: null,
-              actions: { has: 'view' },
-            },
-            select: { userId: true },
+    const query = buildSellerListQuery({
+      organizationId: input.organizationId,
+      predicate: input.recordPredicate,
+      conditions: input.conditions ?? [],
+      search: input.search,
+      journeyId: input.journeyId,
+      statusId: input.statusId,
+      ownerUserId: input.ownerUserId,
+      accessMode: input.accessMode,
+      sortBy: input.sortBy,
+      sortDirection: input.sortDirection,
+      page,
+      pageSize,
+    });
+    const run = this.prisma.$queryRawUnsafe?.bind(this.prisma);
+    if (run === undefined) throw new Error('lead repository requires $queryRawUnsafe');
+    const [idRows, countRows] = await Promise.all([
+      run<{ id: string }[]>(query.ids.text, ...query.ids.values),
+      run<{ total: number }[]>(query.count.text, ...query.count.values),
+    ]);
+    const total = Number(countRows[0]?.total ?? 0);
+    const ids = idRows.map((row) => row.id);
+    if (ids.length === 0) return { rows: [], total };
+    const rows = await this.prisma.lead.findMany({
+      where: { organizationId: input.organizationId, id: { in: ids } },
+      include: {
+        grants: {
+          where: {
+            userId: input.recordPredicate.includeDirectGrantsForUserId,
+            revokedAt: null,
+            actions: { has: 'view' },
           },
-          processInstances: {
-            where: processWhere(input),
-            include: {
-              journey: { select: { id: true, key: true, name: true } },
-              currentStatus: {
-                select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
-              },
-              assignments: {
-                where: { isCurrent: true },
-                include: { user: { select: { id: true, name: true } } },
-              },
+          select: { userId: true },
+        },
+        processInstances: {
+          where: processWhere(input),
+          include: {
+            journey: { select: { id: true, key: true, name: true } },
+            currentStatus: {
+              select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
+            },
+            assignments: {
+              where: { isCurrent: true },
+              include: { user: { select: { id: true, name: true } } },
             },
           },
         },
-      }),
-      this.prisma.lead.count({ where }),
-    ]);
+      },
+    });
+    // findMany returns its own order; the sort lives in the id query.
+    const byId = new Map(rows.map((row) => [row.id, row]));
     return {
-      rows: rows.map((row) => ({
-        ...lead(row),
-        processInstances: (row.processInstances ?? []).map(sellerListProcess),
-        shared: Boolean(row.grants?.length),
-      })),
+      rows: ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row === undefined
+          ? []
+          : [
+              {
+                ...lead(row),
+                processInstances: (row.processInstances ?? []).map(sellerListProcess),
+                shared: Boolean(row.grants?.length),
+              },
+            ];
+      }),
       total,
     };
   }
 }
 
-function sellerWhere(
+/**
+ * The Prisma expression of data scope, superseded in production by
+ * `buildSellerListQuery`'s SQL. Retained deliberately: leaving the query
+ * builder means scope is now written twice, and this is the oracle the
+ * scope-parity test compares the SQL against. Delete it only together with
+ * that test.
+ */
+export function sellerWhere(
   input: SellerListInput & { organizationId: string; recordPredicate: RecordPredicate },
 ) {
   const currentProcessWhere = processWhere(input);
@@ -605,18 +693,6 @@ export function processWhere(
       },
     },
   };
-}
-
-function orderBy(input: SellerListInput): Record<string, string> {
-  const direction = input.sortDirection ?? 'desc';
-  switch (input.sortBy ?? 'updatedAt') {
-    case 'createdAt':
-      return { createdAt: direction };
-    case 'name':
-      return { name: direction };
-    case 'updatedAt':
-      return { updatedAt: direction };
-  }
 }
 
 function lead(row: LeadRow): LeadCoreRecord {

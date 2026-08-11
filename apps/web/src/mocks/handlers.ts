@@ -153,6 +153,22 @@ const MOCK_NOTIFICATIONS: NotificationItem[] = [
   },
 ];
 const MOCK_NOTIFICATION_RULES: unknown[] = [];
+const MOCK_CAMPAIGNS = [
+  {
+    id: 'campaign-synthetic',
+    key: 'synthetic_welcome',
+    name: 'Synthetic welcome',
+    subject: 'Welcome',
+    bodyDocument: { blocks: [{ type: 'paragraph', spans: [{ text: 'Hello {{name}}' }] }] },
+    type: 'manual' as string,
+    filter: null as unknown,
+    journeyId: null as string | null,
+    statusId: null as string | null,
+    active: true,
+    version: 1,
+    stats: { sent: 3, failed: 0, pending: 0, skippedNoEmail: 1 },
+  },
+];
 const MOCK_ROLES = USERS.map((user) => ({
   id: user.roleId,
   key: user.roleId.replaceAll('-', '_'),
@@ -744,6 +760,67 @@ export const handlers = [
     const row = MOCK_ROLES.find((role) => role.id === params.id);
     if (row) row.fieldVisibility = body.fieldVisibility;
     return HttpResponse.json(body.fieldVisibility);
+  }),
+  // The same rows read and written Field-side. Backed by MOCK_ROLES so the two
+  // projections can't drift apart in tests the way two separate stores would.
+  http.get(`${API_BASE}/fields/:fieldId/visibility`, ({ params }) =>
+    HttpResponse.json(
+      MOCK_ROLES.flatMap((role) => {
+        const match = role.fieldVisibility.find((x) => x.fieldId === params.fieldId);
+        return match ? [{ roleId: role.id, accessLevel: match.accessLevel }] : [];
+      }),
+    ),
+  ),
+  http.put(`${API_BASE}/fields/:fieldId/visibility`, async ({ params, request }) => {
+    const body = (await request.json()) as {
+      visibility: Array<{ roleId: string; accessLevel: string }>;
+    };
+    const fieldId = String(params.fieldId);
+    for (const role of MOCK_ROLES) {
+      const granted = body.visibility.find((x) => x.roleId === role.id);
+      role.fieldVisibility = role.fieldVisibility.filter((x) => x.fieldId !== fieldId);
+      if (granted) role.fieldVisibility.push({ fieldId, accessLevel: granted.accessLevel });
+    }
+    return HttpResponse.json(body.visibility);
+  }),
+
+  http.get(`${API_BASE}/campaigns`, () =>
+    HttpResponse.json({ total: MOCK_CAMPAIGNS.length, items: MOCK_CAMPAIGNS }),
+  ),
+  http.post(`${API_BASE}/campaigns`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const row = {
+      id: `campaign-${Date.now()}`,
+      active: true,
+      version: 1,
+      filter: null,
+      journeyId: null,
+      statusId: null,
+      ...body,
+      stats: { sent: 0, failed: 0, pending: 0, skippedNoEmail: 0 },
+    };
+    MOCK_CAMPAIGNS.push(row as (typeof MOCK_CAMPAIGNS)[number]);
+    return HttpResponse.json(row, { status: 201 });
+  }),
+  http.put(`${API_BASE}/campaigns/:id`, async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const row = MOCK_CAMPAIGNS.find((campaign) => campaign.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    Object.assign(row, body);
+    return HttpResponse.json(row);
+  }),
+  http.post(`${API_BASE}/campaigns/:id/activation`, async ({ params, request }) => {
+    const body = (await request.json()) as { active: boolean };
+    const row = MOCK_CAMPAIGNS.find((campaign) => campaign.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    row.active = body.active;
+    return HttpResponse.json(row);
+  }),
+  http.post(`${API_BASE}/campaigns/:id/send`, ({ params }) => {
+    const row = MOCK_CAMPAIGNS.find((campaign) => campaign.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    row.stats = { ...row.stats, sent: row.stats.sent + 2 };
+    return HttpResponse.json({ queued: 2, sent: 2, failed: 0 });
   }),
 
   http.get(`${API_BASE}/leads`, async ({ request }) => {

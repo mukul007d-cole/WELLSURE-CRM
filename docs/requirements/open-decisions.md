@@ -89,6 +89,24 @@ mapping is approved; do not guess destinations.
 - **Until resolved:** Retain only in access-controlled staging. Do not map it to
   notifications, activities, tasks, or communications based on its name alone.
 
+### OD-020 — `fields.field_type` accepted on create but unusable at write time
+
+- **Status:** Open; a real defect, found during Phase 13b planning. Not blocking
+  the filter engine, which simply reports such a Field as not filterable.
+- **Need:** `ConfigurationService.createField` stores `field_type` as any
+  non-blank string, while `validateValue` in `apps/api/src/leads/validation.ts`
+  accepts only `text`, `textarea`, `email`, `phone`, `date`, `select`, `number`,
+  `boolean` and `json`. A Field created with any other type — `currency` is the
+  obvious one an admin would reach for — can never hold a value: every write to
+  it fails validation. Nothing warns the admin at creation time.
+- **Proposed fix:** validate `field_type` against the supported list in
+  `configuration/validation.ts`, as its own change with its own audit-visible
+  behaviour change. Deliberately kept out of Phase 13b so the filter engine's
+  diff stays about filtering.
+- **Open question for Wellsure:** whether `currency` should become a real
+  supported type (formatting, precision, and a filter kind of its own) or
+  whether currency amounts stay `number`. Phase 13b treats them as `number`.
+
 ## Decision process
 
 1. Record Wellsure's answer and evidence for the relevant ID.

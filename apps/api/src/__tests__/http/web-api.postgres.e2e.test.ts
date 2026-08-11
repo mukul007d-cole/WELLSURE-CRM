@@ -82,6 +82,11 @@ describe.runIf(shouldRunPostgresIntegration)(
         },
       };
       const leadRepository = {
+        // The filter engine asks for the Field catalogue before querying; this
+        // stub has no Fields, so no custom-Field filter is resolvable.
+        async listFilterableFieldTypes() {
+          return new Map<string, string>();
+        },
         async listSellers() {
           const rows = await database.sql<
             { id: string; name: string }[]

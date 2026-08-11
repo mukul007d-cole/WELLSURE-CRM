@@ -75,11 +75,65 @@ GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
 DELETE /journeys/:id/fields/:fieldId   -- semantic unmap/deactivate
 PUT    /roles/:roleId/field-visibility/:fieldId -- body: { accessLevel }
+GET    /fields/:fieldId/visibility     -- all roles' access to one Field; roles_permissions:view
+PUT    /fields/:fieldId/visibility     -- body: { visibility: [{ roleId, accessLevel }] }; roles_permissions:edit
 ```
+
+`field_visibility` is reachable from either axis: `/roles/:roleId/field-visibility`
+replaces one role's whole set, `/fields/:fieldId/visibility` replaces one
+Field's whole set across roles, and both write the same rows. Both are gated on
+`roles_permissions`, not on `fields` — granting a Field to a role is a
+permission change, and gating the Field-side routes on `fields` would let a
+Fields administrator grant their own role a Field it is denied. An absent row
+still means hidden, so a newly created Field is visible to nobody until one of
+these routes grants it. A full replace across roles emits one
+`system_audit_logs` row with `entity_type = 'field_visibility'`,
+`entity_id = <fieldId>` and `action = 'replace_field_roles'`, distinct from the
+role-side `action = 'replace'` whose `entity_id` is a role.
+
+### Campaigns
+```
+GET    /campaigns                      -- campaigns:view; each row carries sent/failed/pending/skipped counts
+GET    /campaigns/:id                  -- campaigns:view
+POST   /campaigns                      -- campaigns:create
+PUT    /campaigns/:id                  -- campaigns:edit
+POST   /campaigns/:id/activation       -- campaigns:edit; body { active }
+POST   /campaigns/:id/send             -- campaigns:send; manual campaigns only
+```
+
+- **Campaigns email Leads. Notification Rules notify Users.** They share trigger
+  detection and nothing else — see ADR-0013.
+- `type` is `manual` or `triggered`. A manual campaign stores a Phase 13b
+  filter and is sent on request; a triggered one stores a Journey/Status pair
+  and fires when a lead's process instance enters that status, matched exactly
+  per ADR-0001. A database constraint refuses a campaign carrying the other
+  kind's targeting.
+- `bodyDocument` is a closed-vocabulary JSON document — blocks `paragraph`,
+  `heading`, `bullet_list`, `numbered_list`; marks `bold`, `italic`,
+  `underline`; links restricted to `http(s)` and `mailto`. **The server renders
+  the HTML and escapes every text node at send time**, so no client-supplied
+  markup is stored or emailed, and an interpolated recipient value cannot inject
+  anything.
+- Variables are `{{name}}`, `{{email}}`, `{{phone}}` and `{{field:<fieldId>}}`.
+  Availability is checked against the **campaign author's** field visibility at
+  create/edit time — one template serves a whole batch, so there is no single
+  recipient whose visibility could govern interpolation. A field token the
+  author cannot view is refused with `403`.
+- A manual send re-evaluates the stored filter through the same compiler the
+  Seller List uses, under the **sender's** own data scope and field visibility,
+  and is capped at 5,000 recipients per request.
+- `campaigns:send` is never implied by `campaigns:edit`. Sending a deactivated
+  campaign is a `409`.
+- Sends are recorded in `campaign_sends` before delivery and delivered after the
+  transaction commits. A lead receives a given campaign at most once, ever.
+  Leads without an email address are recorded `skipped_no_email` rather than
+  dropped, so the reported counts add up.
+- **Not implemented, deliberately: unsubscribe, consent, and suppression.** See
+  the Phase 13c plan; this is not safe to point at a real transport.
 
 ### Leads
 ```
-GET    /leads                          -- server-side search, filter, sort, pagination
+GET    /leads                          -- server-side search, filter, sort, pagination; `filter` is a JSON-encoded condition list (see below)
 POST   /leads
 GET    /leads/:id
 PATCH  /leads/:id
@@ -216,6 +270,15 @@ Lead/Seller endpoints use the same server-side permission-engine decision contra
 - `GET /leads` supports server-side search over name, phone, and email; optional filters for Journey, Status, and owner assignment; safe allow-listed sorting; and pagination. When `journeyId` is omitted, Seller List returns the approved all-Journeys aggregate view across Journeys the requester is allowed to access.
 - List rows and total counts must use the same permission-scoped predicate produced from `resolveAuthorization`. Counts must not reveal records outside the requester's role scope, Journey access, or direct grants. The same parity rule applies to both Journey-filtered and all-Journeys aggregate requests.
 - Field-level visibility applies to every row in the paginated response. Unauthorized dynamic Fields are stripped server-side.
+
+#### Filter engine (Phase 13b)
+
+- `filter` is a JSON-encoded object: `{ "conditions": [{ "target", "operator", "values" }] }`, capped at 20 conditions. `target` is either `{ "kind": "field", "fieldId" }` or `{ "kind": "core", "column" }`, where `column` is one of a fixed allow-list: `name`, `phone`, `email`, `createdAt`, `status`, `journey`.
+- **Conditions are combined with AND only.** OR and grouping are deliberately not implemented; adding them is a model change, not a parameter.
+- Operators are derived from each Field's configured `field_type`, never from the value: text-like types take `equals`/`contains`/`starts_with`/`is_empty`/`is_not_empty`; `number` takes `equals`/`greater_than`/`less_than`/`between`/`is_empty`; `date` takes `before`/`after`/`between`/`is_empty`; `select` takes `in`/`not_in`; `boolean` takes `is_true`/`is_false`; `json` takes presence only. A Field whose type is outside the nine the engine supports is not filterable, and says so rather than guessing. Core columns use the same catalog through their equivalent kind.
+- **A condition naming a Field the caller cannot view is rejected with `403`**, not dropped and not treated as false — either of those silently changes the result set. The response body names no field id, so the endpoint cannot be used to probe which Fields exist; an unknown field id is answered identically to a denied one.
+- Filters are ANDed into the same scoped predicate as the rest of the query, so no filter can widen data scope, and the count uses that same predicate.
+- `date` Field values are stored as strings and compared lexicographically. Filter inputs must be `YYYY-MM-DD`; correctness for non-ISO stored values is a known limitation recorded in the Phase 13b plan.
 
 ### Seller 360
 

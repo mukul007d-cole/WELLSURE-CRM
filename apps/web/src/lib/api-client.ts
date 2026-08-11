@@ -16,6 +16,7 @@ import type {
   Page,
   AdminJourney,
   AdminField,
+  FieldRoleVisibility,
   AdminUser,
   AdminRole,
   Department,
@@ -26,6 +27,7 @@ import type {
   ShareCapability,
   NotificationItem,
   NotificationRule,
+  Campaign,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -167,6 +169,13 @@ export const adminApi = {
   editField: (id: string, body: object) =>
     request<AdminField>(`/fields/${id}`, json('PATCH', body)),
   deactivateField: (id: string) => request<AdminField>(`/fields/${id}`, json('DELETE')),
+  // The Field side of field_visibility. One request carries the Field's whole
+  // role set — never a per-role loop, which is how the role-side axis is saved
+  // too.
+  fieldRoleVisibility: (fieldId: string) =>
+    request<FieldRoleVisibility[]>(`/fields/${fieldId}/visibility`),
+  saveFieldRoleVisibility: (fieldId: string, visibility: FieldRoleVisibility[]) =>
+    request<FieldRoleVisibility[]>(`/fields/${fieldId}/visibility`, json('PUT', { visibility })),
   users: (
     query: {
       page?: number;
@@ -211,6 +220,20 @@ export const adminApi = {
     request<Department>(`/departments/${id}`, json('PUT', body)),
 };
 
+export const campaignsApi = {
+  list: () => request<{ total: number; items: Campaign[] }>('/campaigns'),
+  get: (id: string) => request<Campaign>(`/campaigns/${id}`),
+  create: (body: object) => request<Campaign>('/campaigns', json('POST', body)),
+  update: (id: string, body: object) => request<Campaign>(`/campaigns/${id}`, json('PUT', body)),
+  setActive: (id: string, active: boolean) =>
+    request<Campaign>(`/campaigns/${id}/activation`, json('POST', { active })),
+  send: (id: string) =>
+    request<{ queued: number; sent: number; failed: number }>(
+      `/campaigns/${id}/send`,
+      json('POST'),
+    ),
+};
+
 export const sellersApi = {
   list: (input: SellerListInput) =>
     request<SellerListResponse>(
@@ -224,6 +247,7 @@ export const sellersApi = {
         page: input.page,
         pageSize: input.pageSize,
         accessMode: input.accessMode,
+        filter: input.filter,
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),

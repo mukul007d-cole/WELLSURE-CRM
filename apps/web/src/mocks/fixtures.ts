@@ -120,6 +120,10 @@ export const USERS: MockUser[] = [
       'roles_permissions:view',
       'roles_permissions:create',
       'roles_permissions:edit',
+      'campaigns:view',
+      'campaigns:create',
+      'campaigns:edit',
+      'campaigns:send',
     ].map((value) => {
       const [module, action] = value.split(':') as [string, string];
       return { module, action, scope: 'ORGANIZATION' as const };

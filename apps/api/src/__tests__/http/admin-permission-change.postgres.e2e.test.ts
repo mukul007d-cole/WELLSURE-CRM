@@ -133,7 +133,10 @@ describe.runIf(shouldRunAdminPostgres)(
       const server = buildServer({
         authRepository,
         audit: authRepository,
-        emailSender: { sendPasswordReset: () => Promise.resolve() },
+        emailSender: {
+          sendPasswordReset: () => Promise.resolve(),
+          sendEmail: () => Promise.resolve(),
+        },
         permissionRepository,
         leadRepository: new PrismaLeadRepository(db.prisma as never),
         configurationRepository: new PrismaConfigurationRepository(db.prisma),

@@ -7,6 +7,8 @@ import {
   type LeadActivityRow,
 } from '../leads/activity-read.js';
 import { isLeadError, type LeadError } from '../leads/errors.js';
+import { filterFieldIds } from '../leads/filter-model.js';
+import { parseFilter, resolveFilter, type ResolvedCondition } from '../leads/filter-validation.js';
 import {
   LeadService,
   type LeadAssignmentRecord,
@@ -80,12 +82,28 @@ export interface LeadActivityReadRepository {
 
 export interface SellerReadRepository {
   findSeller360(organizationId: string, leadId: string): Promise<Seller360Record | null>;
+  /**
+   * `fieldId -> field_type` for active Fields. The operator catalog is derived
+   * from this rather than from the request, so a Field's operators follow its
+   * configuration.
+   */
+  listFilterableFieldTypes(organizationId: string): Promise<ReadonlyMap<string, string>>;
+  /** The full matching id set, bounded — used by manual campaign sends. */
+  listMatchingLeadIds(input: {
+    organizationId: string;
+    recordPredicate: NonNullable<
+      Awaited<ReturnType<typeof resolveAuthorization>>['recordPredicate']
+    >;
+    conditions?: readonly ResolvedCondition[];
+    limit: number;
+  }): Promise<string[]>;
   listSellers(
     input: SellerListInput & {
       organizationId: string;
       recordPredicate: NonNullable<
         Awaited<ReturnType<typeof resolveAuthorization>>['recordPredicate']
       >;
+      conditions?: readonly ResolvedCondition[];
     },
   ): Promise<{
     rows: SellerListRecord[];
@@ -105,6 +123,8 @@ export interface SellerListInput {
   requestedFieldIds: readonly string[];
   assignmentTypes: readonly string[];
   accessMode?: 'mine' | 'shared_with_me' | 'all';
+  /** Raw filter payload from the client; parsed and re-validated server-side. */
+  filter?: unknown;
 }
 
 export type LeadRouteResult =
@@ -317,6 +337,14 @@ export async function listSellers(input: {
   list: SellerListInput;
   now?: Date;
 }): Promise<LeadRouteResult> {
+  let filter;
+  try {
+    filter = parseFilter(input.list.filter);
+  } catch (error) {
+    if (!isLeadError(error)) throw error;
+    return { status: 400, body: { error: error.code, details: error.details } };
+  }
+  const filteredFieldIds = filterFieldIds(filter);
   const decision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -325,17 +353,45 @@ export async function listSellers(input: {
       module: leadsModule,
       action: viewAction,
       ...(input.list.journeyId === undefined ? {} : { journeyId: input.list.journeyId }),
-      requestedFieldIds: input.list.requestedFieldIds,
+      // The filter's Fields are requested too, so the engine decides on them
+      // rather than the client deciding by omission.
+      requestedFieldIds: [...new Set([...input.list.requestedFieldIds, ...filteredFieldIds])],
       assignmentTypes: input.list.assignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
     },
   });
   const blockingReasons = decision.deniedReasons.filter((reason) => reason !== 'FIELD_VIEW_DENIED');
   if (blockingReasons.length > 0) return { status: 403, body: { error: 'forbidden' } };
+  /*
+   * FIELD_VIEW_DENIED is deliberately non-blocking above: a *requested* column
+   * the caller can't see is stripped from the response. A *filter* on such a
+   * Field is a different question and must not inherit that leniency —
+   * dropping the condition would silently return a wider set than asked for,
+   * and treating it as false would silently return none. Both are worse than
+   * an error. The body names no field id, so this cannot be used to probe which
+   * Fields exist.
+   */
+  const visible = new Set(decision.fields.visibleFieldIds);
+  if (filteredFieldIds.some((fieldId) => !visible.has(fieldId)))
+    return { status: 403, body: { error: 'forbidden' } };
+
+  let conditions;
+  try {
+    conditions = resolveFilter({
+      filter,
+      fieldTypes: await input.sellerRepository.listFilterableFieldTypes(
+        input.auth.user.organizationId,
+      ),
+    });
+  } catch (error) {
+    if (!isLeadError(error)) throw error;
+    return { status: 400, body: { error: error.code, details: error.details } };
+  }
   const result = await input.sellerRepository.listSellers({
     ...input.list,
     organizationId: input.auth.user.organizationId,
     recordPredicate: decision.recordPredicate!,
+    conditions,
   });
   return {
     status: 200,

@@ -29,12 +29,15 @@ ALLOW =
 | Roles & Permissions | view, create, edit |
 | Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
+| Campaigns | view, create, edit, send |
 | Integrations | configure |
 
 The immutable runtime source for these identifiers is
 `packages/permission-engine/src/catalog.ts`. Department administration is part
 of the User scope and uses `users:view/create/edit`; V1 has no separate
 Department permission module. See ADR-0009.
+
+`campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 
 **B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`
 
@@ -48,6 +51,8 @@ Department permission module. See ADR-0009.
 **C. Journey access** — explicit allow-list per role. A role with no access to a Journey doesn't see it in the UI at all, not greyed out.
 
 **D. Field-level visibility** — layered on top of A–C via an allow-list in `field_visibility`. Each `(field, role)` row grants `VIEW` or `EDIT`; `EDIT` includes viewing. Absence of a row means the field is hidden entirely for that role. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes sensitive fields actually secure.
+
+The same rows are editable from either direction — one role's access to every field, or one field's access for every role — and both directions are gated on `roles_permissions`, never on `fields`. A Field administrator who cannot edit permissions cannot grant visibility, including to their own role. Both write a full replacement of the axis they address, with the previous and new sets recorded in `system_audit_logs`.
 
 ## Additional mechanism: direct record grants
 

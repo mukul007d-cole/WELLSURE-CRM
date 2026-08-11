@@ -2,13 +2,13 @@ import { createPrismaClient, type FalconPrismaClient } from '@falcon/database';
 
 import { defaultAuthConfig, type AuthConfig } from './auth/config.js';
 import { createEmailSender } from './auth/email-sender.js';
-import type { EmailSender } from './auth/password-reset.js';
+import type { CampaignEmailSender, EmailSender } from './auth/password-reset.js';
 import { parseEnv, type ApiEnv } from './env.js';
 
 export interface ApiRuntime {
   env: ApiEnv;
   prisma: FalconPrismaClient;
-  emailSender: EmailSender;
+  emailSender: EmailSender & CampaignEmailSender;
   authConfig: AuthConfig;
 }
 

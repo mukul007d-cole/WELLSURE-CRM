@@ -17,6 +17,15 @@ export interface FieldVisibilityInput {
   fieldId: string;
   accessLevel: FieldAccessLevel;
 }
+/**
+ * The same `field_visibility` row seen from the Field side: one field's access
+ * for one role. `FieldVisibilityInput` is the role-side projection of the same
+ * table.
+ */
+export interface RoleVisibilityInput {
+  roleId: string;
+  accessLevel: FieldAccessLevel;
+}
 export interface UserWriteInput {
   name: string;
   email: string;

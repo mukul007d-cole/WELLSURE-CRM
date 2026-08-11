@@ -7,6 +7,7 @@ import type {
   Page,
   PageRequest,
   PermissionInput,
+  RoleVisibilityInput,
   UserWriteInput,
 } from './types.js';
 
@@ -325,6 +326,76 @@ export class PrismaAdminRepository implements AdminRepository {
       return rows;
     });
   }
+  async listRoleVisibilityForField(
+    org: string,
+    fieldId: string,
+  ): Promise<RoleVisibilityInput[] | null> {
+    const field = await this.prisma.field.findFirst({
+      where: { organizationId: org, id: fieldId },
+    });
+    if (!field) return null;
+    // Allow-list semantics: roles with no row are absent, not returned as a
+    // third state. The caller joins against GET /roles.
+    return this.prisma.fieldVisibility.findMany({
+      where: { organizationId: org, fieldId },
+      select: { roleId: true, accessLevel: true },
+      orderBy: { roleId: 'asc' },
+    });
+  }
+  /**
+   * The Field-side transpose of `replaceFieldVisibility`: replaces one field's
+   * complete row set across every role in the organization.
+   *
+   * Two things differ from the role-side method, both load-bearing:
+   * every affected role's version is bumped — roles *losing* access included,
+   * or their cached decisions would look unchanged — and the roles are locked
+   * in sorted id order, so two concurrent field-side replaces touching an
+   * overlapping role set queue instead of deadlocking.
+   */
+  replaceRoleVisibilityForField(
+    org: string,
+    actor: string,
+    fieldId: string,
+    rows: RoleVisibilityInput[],
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockField(tx as Tx, org, fieldId);
+      const count = await tx.role.count({
+        where: { organizationId: org, id: { in: rows.map((x) => x.roleId) } },
+      });
+      if (count !== rows.length)
+        throw new AdminError('validation_error', 'one or more roles are outside the organization');
+      const old = await tx.fieldVisibility.findMany({
+        where: { organizationId: org, fieldId },
+        select: { roleId: true, accessLevel: true },
+        orderBy: { roleId: 'asc' },
+      });
+      const affectedRoleIds = [
+        ...new Set([...rows.map((x) => x.roleId), ...old.map((x) => x.roleId)]),
+      ].sort();
+      for (const roleId of affectedRoleIds) await lockRole(tx as Tx, org, roleId);
+      await tx.fieldVisibility.deleteMany({ where: { organizationId: org, fieldId } });
+      if (rows.length)
+        await tx.fieldVisibility.createMany({
+          data: rows.map((x) => ({ organizationId: org, fieldId, ...x })),
+        });
+      for (const roleId of affectedRoleIds) await bump(tx as Tx, org, roleId, actor);
+      // A distinct action from the role-side 'replace': both carry
+      // entity_type 'field_visibility', but entity_id means a role there and a
+      // field here, and an auditor has to be able to tell them apart.
+      await audit(
+        tx as Tx,
+        org,
+        actor,
+        'field_visibility',
+        fieldId,
+        'replace_field_roles',
+        old,
+        rows,
+      );
+      return rows;
+    });
+  }
 
   async listDepartments(org: string, page: PageRequest, active?: boolean): Promise<Page<unknown>> {
     const where = { organizationId: org, ...(active === undefined ? {} : { active }) };
@@ -398,6 +469,16 @@ async function audit(
 async function role(tx: Tx, org: string, id: string) {
   const row = await tx.role.findFirst({ where: { organizationId: org, id } });
   if (!row) throw new AdminError('not_found', 'role not found');
+  return row;
+}
+async function lockField(tx: Tx, org: string, id: string) {
+  await tx.$queryRawUnsafe(
+    'SELECT id FROM fields WHERE organization_id = $1::uuid AND id = $2::uuid FOR UPDATE',
+    org,
+    id,
+  );
+  const row = await tx.field.findFirst({ where: { organizationId: org, id } });
+  if (!row) throw new AdminError('not_found', 'field not found');
   return row;
 }
 async function lockRole(tx: Tx, org: string, id: string) {
