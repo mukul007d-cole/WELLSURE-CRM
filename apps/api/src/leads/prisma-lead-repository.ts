@@ -8,6 +8,8 @@ import type {
   LeadRepository,
 } from './service.js';
 import type { LeadFieldSetting } from './validation.js';
+import { buildSellerListQuery } from './filter-sql.js';
+import type { ResolvedCondition } from './filter-validation.js';
 import { NotificationService } from '../notifications/service.js';
 import type {
   LeadDetailRecord,
@@ -25,6 +27,8 @@ type PrismaTransactionClient = PrismaLeadClient;
 
 export interface PrismaLeadClient {
   $transaction?<T>(work: (tx: PrismaTransactionClient) => Promise<T>): Promise<T>;
+  /** Positional ($1, $2, …) parameters, per the Seller List filter compiler. */
+  $queryRawUnsafe?<T>(text: string, ...values: unknown[]): Promise<T>;
   journey: {
     findUnique(args: unknown): Promise<{ id: string; active: boolean } | null>;
   };
@@ -34,6 +38,9 @@ export interface PrismaLeadClient {
   };
   fieldJourneySetting: {
     findMany(args: unknown): Promise<FieldSettingRow[]>;
+  };
+  field: {
+    findMany(args: unknown): Promise<Array<{ id: string; fieldType: string }>>;
   };
   lead: {
     findUnique(args: unknown): Promise<LeadRow | null>;
@@ -468,57 +475,110 @@ export class PrismaLeadRepository
     return { total, rows };
   }
 
+  async listFilterableFieldTypes(organizationId: string): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.prisma.field.findMany({
+      where: { organizationId, active: true },
+      select: { id: true, fieldType: true },
+    });
+    return new Map(rows.map((row) => [row.id, row.fieldType]));
+  }
+
+  /**
+   * Two steps on purpose.
+   *
+   * The predicate — data scope plus filter conditions — is compiled to raw SQL
+   * so custom-Field conditions can use containment and reach
+   * `leads_field_values_gin_idx`; Prisma's builder cannot emit that form (see
+   * `filter-sql.ts`). It returns only this page's ids and the total. Prisma
+   * then hydrates those ≤100 ids with the existing include tree, so
+   * serialization, redaction and the `shared` flag are untouched.
+   */
   async listSellers(
-    input: SellerListInput & { organizationId: string; recordPredicate: RecordPredicate },
+    input: SellerListInput & {
+      organizationId: string;
+      recordPredicate: RecordPredicate;
+      conditions?: readonly ResolvedCondition[];
+    },
   ): Promise<{ rows: SellerListRecord[]; total: number }> {
     const page = Math.max(1, input.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 25));
-    const where = sellerWhere(input);
-    const sortOrder = orderBy(input);
-    const [rows, total] = await Promise.all([
-      this.prisma.lead.findMany({
-        where,
-        orderBy: sortOrder,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          grants: {
-            where: {
-              userId: input.recordPredicate.includeDirectGrantsForUserId,
-              revokedAt: null,
-              actions: { has: 'view' },
-            },
-            select: { userId: true },
+    const query = buildSellerListQuery({
+      organizationId: input.organizationId,
+      predicate: input.recordPredicate,
+      conditions: input.conditions ?? [],
+      search: input.search,
+      journeyId: input.journeyId,
+      statusId: input.statusId,
+      ownerUserId: input.ownerUserId,
+      accessMode: input.accessMode,
+      sortBy: input.sortBy,
+      sortDirection: input.sortDirection,
+      page,
+      pageSize,
+    });
+    const run = this.prisma.$queryRawUnsafe?.bind(this.prisma);
+    if (run === undefined) throw new Error('lead repository requires $queryRawUnsafe');
+    const [idRows, countRows] = await Promise.all([
+      run<{ id: string }[]>(query.ids.text, ...query.ids.values),
+      run<{ total: number }[]>(query.count.text, ...query.count.values),
+    ]);
+    const total = Number(countRows[0]?.total ?? 0);
+    const ids = idRows.map((row) => row.id);
+    if (ids.length === 0) return { rows: [], total };
+    const rows = await this.prisma.lead.findMany({
+      where: { organizationId: input.organizationId, id: { in: ids } },
+      include: {
+        grants: {
+          where: {
+            userId: input.recordPredicate.includeDirectGrantsForUserId,
+            revokedAt: null,
+            actions: { has: 'view' },
           },
-          processInstances: {
-            where: processWhere(input),
-            include: {
-              journey: { select: { id: true, key: true, name: true } },
-              currentStatus: {
-                select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
-              },
-              assignments: {
-                where: { isCurrent: true },
-                include: { user: { select: { id: true, name: true } } },
-              },
+          select: { userId: true },
+        },
+        processInstances: {
+          where: processWhere(input),
+          include: {
+            journey: { select: { id: true, key: true, name: true } },
+            currentStatus: {
+              select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
+            },
+            assignments: {
+              where: { isCurrent: true },
+              include: { user: { select: { id: true, name: true } } },
             },
           },
         },
-      }),
-      this.prisma.lead.count({ where }),
-    ]);
+      },
+    });
+    // findMany returns its own order; the sort lives in the id query.
+    const byId = new Map(rows.map((row) => [row.id, row]));
     return {
-      rows: rows.map((row) => ({
-        ...lead(row),
-        processInstances: (row.processInstances ?? []).map(sellerListProcess),
-        shared: Boolean(row.grants?.length),
-      })),
+      rows: ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row === undefined
+          ? []
+          : [
+              {
+                ...lead(row),
+                processInstances: (row.processInstances ?? []).map(sellerListProcess),
+                shared: Boolean(row.grants?.length),
+              },
+            ];
+      }),
       total,
     };
   }
 }
 
-function sellerWhere(
+/**
+ * The Prisma expression of data scope, superseded in production by
+ * `buildSellerListQuery`'s SQL. Retained deliberately: leaving the query
+ * builder means scope is now written twice, and this is the oracle the
+ * scope-parity test compares the SQL against. Delete it only together with
+ * that test.
+ */
+export function sellerWhere(
   input: SellerListInput & { organizationId: string; recordPredicate: RecordPredicate },
 ) {
   const currentProcessWhere = processWhere(input);
@@ -605,18 +665,6 @@ export function processWhere(
       },
     },
   };
-}
-
-function orderBy(input: SellerListInput): Record<string, string> {
-  const direction = input.sortDirection ?? 'desc';
-  switch (input.sortBy ?? 'updatedAt') {
-    case 'createdAt':
-      return { createdAt: direction };
-    case 'name':
-      return { name: direction };
-    case 'updatedAt':
-      return { updatedAt: direction };
-  }
 }
 
 function lead(row: LeadRow): LeadCoreRecord {

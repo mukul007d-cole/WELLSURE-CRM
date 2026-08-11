@@ -1,8 +1,36 @@
 # Phase 13b — Advanced filtering engine for Seller List
 
-Status: **proposed, awaiting approval.** Sub-phase 2 of 3 in Phase 13.
+Status: approved 2026-08-11. **Delivered.** Sub-phase 2 of 3 in Phase 13.
 13a is delivered; 13c (campaigns) gets its own plan and approval and depends on
 the filter model defined here.
+
+All approved as written, including the raw-SQL id+count query with Prisma
+hydration, the scope-parity test, and the 403-not-silent-drop rule. Two things
+the implementation settled that the plan left implicit:
+
+- An **unknown** Field id is answered with 403, exactly like a denied one.
+  Distinguishing them would turn the filter into a probe for which Field ids
+  exist.
+- The filter builder keeps its own working copy of the conditions rather than
+  deriving them from the URL. Only answerable conditions are encoded, so a row
+  that had been added but not yet given a value disappeared as soon as it was
+  added when the rows were derived straight from the URL.
+
+The scope-parity test earned its place immediately: it caught the SQL builder
+binding parameters for an access-mode branch it then discarded, which left
+orphan placeholders and made `shared_with_me` fail outright.
+
+One operational constraint surfaced during implementation and is worth
+recording: **raw SQL resolves unqualified table names through the connection's
+`search_path`, not through Prisma's schema mapping.** Production connects with
+`?schema=public` and the default search_path already resolves there, so nothing
+changes for the deployed system — but a deployment that placed the tables in a
+non-public schema would need that schema on the connection's `search_path`, not
+only in the Prisma client options. Two test fixtures that relied on Prisma's
+mapping alone were updated to set it on the connection.
+
+The unfillable-Field defect is filed as **OD-020** in
+`docs/requirements/open-decisions.md`, per the approval.
 
 ## Goal
 

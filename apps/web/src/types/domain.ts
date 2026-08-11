@@ -151,6 +151,8 @@ export interface SellerListInput {
   page?: number | undefined;
   pageSize?: number | undefined;
   accessMode?: 'mine' | 'shared_with_me' | 'all';
+  /** JSON-encoded filter, per the Seller List filter model. */
+  filter?: string | undefined;
 }
 
 /**

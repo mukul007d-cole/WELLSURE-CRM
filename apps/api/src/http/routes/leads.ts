@@ -56,6 +56,9 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
             ...(query.pageSize ? { pageSize: Number(query.pageSize) } : {}),
             requestedFieldIds: strings(query.requestedFieldIds),
             assignmentTypes: strings(query.assignmentTypes),
+            // JSON in a query parameter so a filtered list stays a GET —
+            // bookmarkable and shareable. Parsed and validated server-side.
+            ...(query.filter === undefined ? {} : { filter: query.filter }),
             ...(['mine', 'shared_with_me', 'all'].includes(String(query.accessMode))
               ? { accessMode: query.accessMode as 'mine' | 'shared_with_me' | 'all' }
               : {}),

@@ -45,7 +45,17 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
     ])
       await scoped.unsafe(await readFile(new URL(`../../../../${file}`, import.meta.url), 'utf8'));
     await scoped.end();
-    prisma = createPrismaClient(url!, { schema });
+    /*
+     * The connection itself must point at the test schema, not just Prisma's
+     * schema mapping: the Seller List's predicate is raw SQL, and raw queries
+     * resolve unqualified table names through `search_path` rather than
+     * through Prisma. Production connects to `?schema=public`, where the
+     * default search_path already resolves correctly.
+     */
+    prisma = createPrismaClient(
+      `${url}${url!.includes('?') ? '&' : '?'}options=${encodeURIComponent(`-c search_path=${schema}`)}`,
+      { schema },
+    );
     await prisma.organization.createMany({
       data: [
         { id: org, name: 'Synthetic organization' },

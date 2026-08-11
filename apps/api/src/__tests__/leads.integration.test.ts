@@ -178,12 +178,12 @@ async function setupLeadSchema(sql: postgres.Sql): Promise<void> {
   await sql`CREATE TEMP TABLE fields (id uuid NOT NULL, organization_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, field_type text NOT NULL, validation_rule jsonb, active boolean NOT NULL, PRIMARY KEY (organization_id, id))`;
   await sql`CREATE TEMP TABLE field_journey_settings (organization_id uuid NOT NULL, field_id uuid NOT NULL, journey_id uuid NOT NULL, requirement text NOT NULL, required_from_status_id uuid, active boolean NOT NULL)`;
   await sql`CREATE TEMP TABLE field_visibility (organization_id uuid NOT NULL, field_id uuid NOT NULL, role_id uuid NOT NULL, access_level "FieldAccessLevel" NOT NULL)`;
-  await sql`CREATE TEMP TABLE leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, name text NOT NULL, phone text, email text, field_values jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TEMP TABLE leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, name text NOT NULL, phone text, email text, field_values jsonb NOT NULL DEFAULT '{}'::jsonb, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TEMP TABLE process_instances (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, lead_id uuid NOT NULL, journey_id uuid NOT NULL, current_status_id uuid NOT NULL, is_primary boolean NOT NULL DEFAULT false, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE UNIQUE INDEX process_instances_active_membership_uq_test ON process_instances (organization_id, lead_id, journey_id) WHERE active`;
   await sql`CREATE TEMP TABLE assignments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, process_instance_id uuid NOT NULL, assignment_type text NOT NULL, user_id uuid NOT NULL, assigned_at timestamptz NOT NULL DEFAULT now(), is_current boolean NOT NULL DEFAULT true)`;
   await sql`CREATE TEMP TABLE activity_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, lead_id uuid NOT NULL, process_instance_id uuid, actor_user_id uuid, timestamp timestamptz NOT NULL DEFAULT now(), action_type text NOT NULL, source text NOT NULL, old_value jsonb, new_value jsonb)`;
-  await sql`CREATE TEMP TABLE user_access_grants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, user_id uuid NOT NULL, lead_id uuid NOT NULL, expires_at timestamptz, revoked_at timestamptz, created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TEMP TABLE user_access_grants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, user_id uuid NOT NULL, lead_id uuid NOT NULL, actions text[] NOT NULL DEFAULT ARRAY['view']::text[], expires_at timestamptz, revoked_at timestamptz, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`INSERT INTO organizations (id, name) VALUES (${orgId}, 'Synthetic Org')`;
   await sql`INSERT INTO roles (id, organization_id, key, name, active, version) VALUES (${roleId}, ${orgId}, 'synthetic_role', 'Synthetic Role', true, 1)`;
   await sql`INSERT INTO users (id, organization_id, name, email, role_id, active) VALUES (${actorId}, ${orgId}, 'Synthetic Actor', 'actor@example.test', ${roleId}, true), (${otherUserId}, ${orgId}, 'Synthetic Other', 'other@example.test', ${roleId}, true)`;
@@ -301,6 +301,17 @@ function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
         work(createPrismaLikeClient(transaction as unknown as postgres.Sql)),
       ) as Promise<T>;
     },
+    async $queryRawUnsafe<T>(text: string, ...values: unknown[]): Promise<T> {
+      return sql.unsafe(text, values as any) as unknown as Promise<T>;
+    },
+    field: {
+      async findMany(args) {
+        const where = (args as any).where;
+        return sql<
+          any[]
+        >`SELECT id, field_type AS "fieldType" FROM fields WHERE organization_id=${where.organizationId} AND active=true`;
+      },
+    },
     journey: {
       async findUnique(args) {
         const id = (args as any).where.organizationId_id.id;
@@ -345,19 +356,21 @@ function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
           lead.processInstances = await loadProcesses(sql, where.organizationId, where.id);
         return lead;
       },
+      /*
+       * Hydration only. The Seller List's scope and filter predicate is now
+       * real SQL executed through $queryRawUnsafe below, so this fake no longer
+       * reimplements scoping — the production query is what these tests
+       * exercise.
+       */
       async findMany(args) {
         const where = (args as any).where;
-        const ids = await permittedLeadIds(
-          sql,
-          where,
-          (args as any).skip ?? 0,
-          (args as any).take ?? 25,
-        );
+        const ids: string[] = where.id?.in ?? [];
         const rows = [];
         for (const id of ids) {
           const [lead] = await sql<
             any[]
-          >`SELECT id, organization_id AS "organizationId", name, phone, email, field_values AS "fieldValues", created_at AS "createdAt", updated_at AS "updatedAt" FROM leads WHERE id=${id}`;
+          >`SELECT id, organization_id AS "organizationId", name, phone, email, field_values AS "fieldValues", created_at AS "createdAt", updated_at AS "updatedAt" FROM leads WHERE organization_id=${where.organizationId} AND id=${id}`;
+          if (!lead) continue;
           lead.processInstances = await loadProcesses(sql, where.organizationId, id);
           rows.push(lead);
         }
@@ -365,7 +378,7 @@ function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
       },
       async count(args) {
         const where = (args as any).where;
-        const ids = await permittedLeadIds(sql, where, 0, 1000);
+        const ids: string[] = where.id?.in ?? [];
         return ids.length;
       },
       async create(args) {
@@ -465,20 +478,4 @@ async function loadProcesses(
       any[]
     >`SELECT id, organization_id AS "organizationId", process_instance_id AS "processInstanceId", assignment_type AS "assignmentType", user_id AS "userId", is_current AS "isCurrent" FROM assignments WHERE organization_id=${organizationId} AND process_instance_id=${row.id} AND is_current=true`;
   return rows;
-}
-
-async function permittedLeadIds(
-  sql: postgres.Sql,
-  where: any,
-  skip: number,
-  take: number,
-): Promise<string[]> {
-  const process = where.processInstances?.some ?? where.OR?.[0]?.processInstances?.some;
-  const journeyIds: string[] = process.journeyId.in;
-  // Optional now: no types supplied means no assignment-type filter.
-  const assignmentTypes: string[] | undefined = process.assignments.some.assignmentType?.in;
-  const rows = await sql<
-    { id: string }[]
-  >`SELECT DISTINCT l.id FROM leads l JOIN process_instances p ON p.lead_id=l.id JOIN assignments a ON a.process_instance_id=p.id WHERE l.organization_id=${where.organizationId} AND p.active=true AND p.journey_id IN ${sql(journeyIds)} AND a.is_current=true ${assignmentTypes ? sql`AND a.assignment_type IN ${sql(assignmentTypes)}` : sql``} ORDER BY l.id OFFSET ${skip} LIMIT ${take}`;
-  return rows.map((row) => row.id);
 }

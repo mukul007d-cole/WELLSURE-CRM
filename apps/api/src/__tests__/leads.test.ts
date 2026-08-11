@@ -654,6 +654,7 @@ class MemoryLeadRepository implements LeadRepository {
   activities: LeadActivityInput[] = [];
   activityRows: LeadActivityRow[] = [];
   lastRecordPredicate: unknown;
+  lastConditions: readonly unknown[] = [];
   fieldSettings: LeadFieldSetting[] = [optionalField(fieldVisible)];
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
@@ -807,11 +808,18 @@ class MemoryLeadRepository implements LeadRepository {
     const start = (input.page - 1) * input.pageSize;
     return { total: visible.length, rows: visible.slice(start, start + input.pageSize) };
   }
+  /** Field types the filter engine derives its operator catalog from. */
+  fieldTypes = new Map<string, string>([[fieldVisible, 'text']]);
+  async listFilterableFieldTypes(): Promise<ReadonlyMap<string, string>> {
+    return this.fieldTypes;
+  }
   async listSellers(input: {
     organizationId: string;
     recordPredicate: unknown;
+    conditions?: readonly unknown[];
   }): Promise<{ rows: SellerListRecord[]; total: number }> {
     this.lastRecordPredicate = input.recordPredicate;
+    this.lastConditions = input.conditions ?? [];
     const rows = this.leads
       .filter((lead) => lead.organizationId === input.organizationId)
       .map((lead) => ({

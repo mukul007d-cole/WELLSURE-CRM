@@ -14,6 +14,8 @@ import { Select } from '../../components/ui/Select';
 import { SellerRowSkeleton } from '../../components/ui/Skeleton';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { JourneyTabs } from '../../components/journeys/JourneyTabs';
+import { FilterBuilder } from './FilterBuilder';
+import { decodeFilter, encodeFilter, type FilterCondition } from './filter-state';
 import { PageHeader, ResultSummary, Toolbar } from '../../components/layout/PageFrame';
 import { ViewSwitcher } from '../../components/layout/ViewSwitcher';
 import { DataCell, DataRow, DataTable, RowActions } from '../../components/ui/DataTable';
@@ -33,6 +35,18 @@ export function SellerListPage() {
   const page = Number(params.get('page') ?? '1');
   const accessMode =
     (params.get('accessMode') as 'mine' | 'shared_with_me' | 'all' | null) ?? 'all';
+  // Filter state lives in the URL beside the other parameters, so a filtered
+  // list is shareable and survives back/forward. The builder keeps its own
+  // working copy because a half-built condition — a row added but not yet given
+  // a value — is deliberately not encoded, and deriving the rows straight from
+  // the URL would make such a row vanish as soon as it was added.
+  const filter = params.get('filter') ?? '';
+  const [syncedFilter, setSyncedFilter] = useState(filter);
+  const [conditions, setConditions] = useState<FilterCondition[]>(() => decodeFilter(filter));
+  if (filter !== syncedFilter) {
+    setSyncedFilter(filter);
+    setConditions(decodeFilter(filter));
+  }
 
   // Derived during render (not an effect) so external changes to `search`
   // (browser back/forward, "Clear filters") sync the draft without an
@@ -59,6 +73,7 @@ export function SellerListPage() {
   }, [searchDraft, search, setParams]);
 
   const journeysQuery = useQuery({ queryKey: ['journeys'], queryFn: configApi.journeys });
+  const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
   const statusesQuery = useQuery({
     queryKey: ['statuses', journeyId],
     queryFn: () => configApi.statuses(journeyId as string),
@@ -66,7 +81,7 @@ export function SellerListPage() {
   });
 
   const sellersQuery = useQuery({
-    queryKey: ['sellers', { journeyId, statusId, search, page, accessMode }],
+    queryKey: ['sellers', { journeyId, statusId, search, page, accessMode, filter }],
     queryFn: () =>
       sellersApi.list({
         journeyId,
@@ -77,6 +92,7 @@ export function SellerListPage() {
         sortBy: 'updatedAt',
         sortDirection: 'desc',
         accessMode,
+        ...(filter ? { filter } : {}),
       }),
     placeholderData: (previous) => previous,
   });
@@ -91,7 +107,7 @@ export function SellerListPage() {
     });
   }
 
-  const hasFilters = Boolean(search || statusId);
+  const hasFilters = Boolean(search || statusId || filter);
   const rows = sellersQuery.data?.rows ?? [];
   const total = sellersQuery.data?.total ?? 0;
 
@@ -185,6 +201,19 @@ export function SellerListPage() {
             </Button>
           ) : null}
         </Toolbar>
+        <FilterBuilder
+          conditions={conditions}
+          fields={fieldsQuery.data ?? []}
+          statuses={statusesQuery.data ?? []}
+          journeys={journeysQuery.data ?? []}
+          onChange={(next: FilterCondition[]) => {
+            setConditions(next);
+            const encoded = encodeFilter(next);
+            // Only a change to the *answerable* conditions is worth a new URL
+            // and a refetch.
+            if (encoded !== filter) updateParam('filter', encoded);
+          }}
+        />
       </div>
 
       <div className="border-b border-line bg-surface">

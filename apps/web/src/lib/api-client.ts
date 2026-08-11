@@ -232,6 +232,7 @@ export const sellersApi = {
         page: input.page,
         pageSize: input.pageSize,
         accessMode: input.accessMode,
+        filter: input.filter,
       })}`,
     ),
   detail: (id: string) => request<Seller360Record>(`/leads/${id}`),

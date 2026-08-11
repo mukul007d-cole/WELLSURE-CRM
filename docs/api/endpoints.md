@@ -93,7 +93,7 @@ role-side `action = 'replace'` whose `entity_id` is a role.
 
 ### Leads
 ```
-GET    /leads                          -- server-side search, filter, sort, pagination
+GET    /leads                          -- server-side search, filter, sort, pagination; `filter` is a JSON-encoded condition list (see below)
 POST   /leads
 GET    /leads/:id
 PATCH  /leads/:id
@@ -230,6 +230,15 @@ Lead/Seller endpoints use the same server-side permission-engine decision contra
 - `GET /leads` supports server-side search over name, phone, and email; optional filters for Journey, Status, and owner assignment; safe allow-listed sorting; and pagination. When `journeyId` is omitted, Seller List returns the approved all-Journeys aggregate view across Journeys the requester is allowed to access.
 - List rows and total counts must use the same permission-scoped predicate produced from `resolveAuthorization`. Counts must not reveal records outside the requester's role scope, Journey access, or direct grants. The same parity rule applies to both Journey-filtered and all-Journeys aggregate requests.
 - Field-level visibility applies to every row in the paginated response. Unauthorized dynamic Fields are stripped server-side.
+
+#### Filter engine (Phase 13b)
+
+- `filter` is a JSON-encoded object: `{ "conditions": [{ "target", "operator", "values" }] }`, capped at 20 conditions. `target` is either `{ "kind": "field", "fieldId" }` or `{ "kind": "core", "column" }`, where `column` is one of a fixed allow-list: `name`, `phone`, `email`, `createdAt`, `status`, `journey`.
+- **Conditions are combined with AND only.** OR and grouping are deliberately not implemented; adding them is a model change, not a parameter.
+- Operators are derived from each Field's configured `field_type`, never from the value: text-like types take `equals`/`contains`/`starts_with`/`is_empty`/`is_not_empty`; `number` takes `equals`/`greater_than`/`less_than`/`between`/`is_empty`; `date` takes `before`/`after`/`between`/`is_empty`; `select` takes `in`/`not_in`; `boolean` takes `is_true`/`is_false`; `json` takes presence only. A Field whose type is outside the nine the engine supports is not filterable, and says so rather than guessing. Core columns use the same catalog through their equivalent kind.
+- **A condition naming a Field the caller cannot view is rejected with `403`**, not dropped and not treated as false — either of those silently changes the result set. The response body names no field id, so the endpoint cannot be used to probe which Fields exist; an unknown field id is answered identically to a denied one.
+- Filters are ANDed into the same scoped predicate as the rest of the query, so no filter can widen data scope, and the count uses that same predicate.
+- `date` Field values are stored as strings and compared lexicographically. Filter inputs must be `YYYY-MM-DD`; correctness for non-ISO stored values is a known limitation recorded in the Phase 13b plan.
 
 ### Seller 360
 
