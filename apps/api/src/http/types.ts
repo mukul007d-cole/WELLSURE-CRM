@@ -4,7 +4,12 @@ import type { FastifyRequest } from 'fastify';
 import type { SecurityAuditWriter } from '../auth/audit.js';
 import type { AuthConfig } from '../auth/config.js';
 import type { AuthenticatedContext } from '../auth/middleware.js';
-import type { EmailSender, PasswordResetRepository } from '../auth/password-reset.js';
+import type { FalconPrismaClient } from '@falcon/database';
+import type {
+  CampaignEmailSender,
+  EmailSender,
+  PasswordResetRepository,
+} from '../auth/password-reset.js';
 import type { LoginRepository } from '../auth/login.js';
 import type { SessionRepository } from '../auth/session.js';
 import type { ConfigurationRepository } from '../configuration/service.js';
@@ -18,7 +23,12 @@ import type { AttachmentService } from '../attachments/service.js';
 export interface ServerDependencies {
   authRepository: LoginRepository & SessionRepository & PasswordResetRepository;
   audit: SecurityAuditWriter;
-  emailSender: EmailSender;
+  emailSender: EmailSender & CampaignEmailSender;
+  /**
+   * Present when the deployment has a real database client. Campaign routes are
+   * registered only then; everything else works through its repository.
+   */
+  prisma?: FalconPrismaClient;
   permissionRepository: PermissionRepository;
   leadRepository: LeadRepository & SellerReadRepository & LeadActivityReadRepository;
   configurationRepository: ConfigurationRepository;

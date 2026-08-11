@@ -18,3 +18,6 @@ export function createPrismaClient(
 }
 
 export type FalconPrismaClient = PrismaClient;
+
+/** Re-exported for callers that need JSON null vs column null (`Prisma.DbNull`). */
+export { Prisma } from './generated/client.js';

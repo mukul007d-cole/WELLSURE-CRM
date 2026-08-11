@@ -88,6 +88,15 @@ export interface SellerReadRepository {
    * configuration.
    */
   listFilterableFieldTypes(organizationId: string): Promise<ReadonlyMap<string, string>>;
+  /** The full matching id set, bounded — used by manual campaign sends. */
+  listMatchingLeadIds(input: {
+    organizationId: string;
+    recordPredicate: NonNullable<
+      Awaited<ReturnType<typeof resolveAuthorization>>['recordPredicate']
+    >;
+    conditions?: readonly ResolvedCondition[];
+    limit: number;
+  }): Promise<string[]>;
   listSellers(
     input: SellerListInput & {
       organizationId: string;

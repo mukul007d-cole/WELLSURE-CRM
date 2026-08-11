@@ -29,12 +29,15 @@ ALLOW =
 | Roles & Permissions | view, create, edit |
 | Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
+| Campaigns | view, create, edit, send |
 | Integrations | configure |
 
 The immutable runtime source for these identifiers is
 `packages/permission-engine/src/catalog.ts`. Department administration is part
 of the User scope and uses `users:view/create/edit`; V1 has no separate
 Department permission module. See ADR-0009.
+
+`campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 
 **B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`
 

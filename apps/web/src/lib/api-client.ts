@@ -27,6 +27,7 @@ import type {
   ShareCapability,
   NotificationItem,
   NotificationRule,
+  Campaign,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -217,6 +218,20 @@ export const adminApi = {
   createDepartment: (body: object) => request<Department>('/departments', json('POST', body)),
   editDepartment: (id: string, body: object) =>
     request<Department>(`/departments/${id}`, json('PUT', body)),
+};
+
+export const campaignsApi = {
+  list: () => request<{ total: number; items: Campaign[] }>('/campaigns'),
+  get: (id: string) => request<Campaign>(`/campaigns/${id}`),
+  create: (body: object) => request<Campaign>('/campaigns', json('POST', body)),
+  update: (id: string, body: object) => request<Campaign>(`/campaigns/${id}`, json('PUT', body)),
+  setActive: (id: string, active: boolean) =>
+    request<Campaign>(`/campaigns/${id}/activation`, json('POST', { active })),
+  send: (id: string) =>
+    request<{ queued: number; sent: number; failed: number }>(
+      `/campaigns/${id}/send`,
+      json('POST'),
+    ),
 };
 
 export const sellersApi = {

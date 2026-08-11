@@ -131,6 +131,18 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
       : []),
   ];
 
+  const engagementItems: NavItem[] = [
+    ...(can('campaigns', 'view')
+      ? [
+          {
+            label: 'Campaigns',
+            to: '/admin/campaigns',
+            icon: <Icon d="M4 6h16v12H4zM4 7l8 6 8-6" />,
+          },
+        ]
+      : []),
+  ];
+
   const peopleItems: NavItem[] = [
     ...(can('users', 'view')
       ? [
@@ -206,6 +218,13 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
           <>
             <SectionHeading label="Configuration" collapsed={collapsed} />
             <ul className="mt-2 flex flex-col gap-1">{configurationItems.map(renderLink)}</ul>
+          </>
+        ) : null}
+
+        {engagementItems.length ? (
+          <>
+            <SectionHeading label="Engagement" collapsed={collapsed} />
+            <ul className="mt-2 flex flex-col gap-1">{engagementItems.map(renderLink)}</ul>
           </>
         ) : null}
 

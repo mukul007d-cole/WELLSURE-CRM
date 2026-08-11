@@ -45,6 +45,13 @@ export const permissionCatalog = [
     actions: ['view_standard', 'view_financial', 'build_custom'],
   },
   { module: 'attachments', label: 'Attachments', actions: ['upload', 'download', 'delete'] },
+  {
+    module: 'campaigns',
+    label: 'Campaigns',
+    // `send` is deliberately separate from `edit`: composing an email and
+    // actually mailing customers are different levels of trust.
+    actions: ['view', 'create', 'edit', 'send'],
+  },
   { module: 'integrations', label: 'Integrations', actions: ['configure'] },
 ] as const;
 

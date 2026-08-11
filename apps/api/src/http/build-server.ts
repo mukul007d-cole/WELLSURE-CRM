@@ -7,6 +7,7 @@ import { loggingOptions } from './plugins/logging.js';
 import { registerOpenApi } from './plugins/openapi.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
+import { registerCampaignRoutes } from './routes/campaigns.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
@@ -37,6 +38,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     registerLeadRoutes(app, deps);
     registerNotificationRoutes(app, deps);
     registerAttachmentRoutes(app, deps);
+    registerCampaignRoutes(app, deps);
   });
   return server;
 }

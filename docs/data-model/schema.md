@@ -173,6 +173,23 @@ payments
   id, organization_id, invoice_id, lead_id, amount_paid, payment_date,
   payment_method, reference_number, created_at
 
+campaigns
+  id, organization_id, key, name, subject, body_document (JSONB),
+  type (manual | triggered), filter (JSONB, nullable — manual only),
+  journey_id (nullable), status_id (nullable — both required for triggered),
+  active, version, created_by, updated_by, created_at, updated_at
+  -- Emails Leads, unlike notification_rules which notify Users (ADR-0013).
+  -- A CHECK enforces that each type carries only its own targeting.
+
+campaign_sends
+  id, organization_id, campaign_id, lead_id,
+  status (pending | sent | failed | skipped_no_email), error (nullable),
+  sent_at (nullable), created_at
+  -- Unique on (organization_id, campaign_id, lead_id): the idempotency
+  -- guarantee itself, so a lead re-entering a triggered status is not
+  -- emailed twice. Written inside the mutation transaction as `pending`;
+  -- delivery happens after it commits.
+
 settings
   id, organization_id, key, value (JSONB), version, updated_by, updated_at
 ```

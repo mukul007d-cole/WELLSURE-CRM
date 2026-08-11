@@ -18,6 +18,7 @@ import { JourneyDetailPage } from './pages/admin/JourneyDetailPage';
 import { RoleDetailPage } from './pages/admin/RoleDetailPage';
 import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 import { OrgChartPage } from './pages/admin/OrgChartPage';
+import { CampaignsPage } from './pages/admin/campaigns/CampaignsPage';
 import { UserManagementPage } from './pages/admin/UserManagementPage';
 import { BoardPage } from './pages/board/BoardPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
@@ -55,6 +56,9 @@ export function App() {
                       <Route path="org-chart" element={<OrgChartPage />} />
                     </Route>
                     <Route path="/admin/departments" element={<DepartmentsPage />} />
+                  </Route>
+                  <Route element={<PermissionRoute module="campaigns" />}>
+                    <Route path="/admin/campaigns" element={<CampaignsPage />} />
                   </Route>
                   <Route element={<PermissionRoute module="roles_permissions" />}>
                     <Route path="/admin/roles" element={<RolesPage />} />

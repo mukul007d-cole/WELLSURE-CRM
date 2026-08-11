@@ -40,6 +40,27 @@ export interface EmailSender {
   sendPasswordReset(input: { to: string; token: string; expiresAt: Date }): Promise<void>;
 }
 
+export interface EmailMessage {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+/**
+ * Generic delivery, kept as its own role interface rather than a second method
+ * on `EmailSender`.
+ *
+ * One implementation provides both — `createEmailSender` returns
+ * `EmailSender & CampaignEmailSender`, so there is still exactly one transport
+ * selection and no second email pipeline. Splitting the interfaces means the
+ * existing password-reset test doubles keep satisfying the contract they were
+ * written for, and a caller that only sends campaigns can depend on only what
+ * it uses.
+ */
+export interface CampaignEmailSender {
+  sendEmail(message: EmailMessage): Promise<void>;
+}
+
 export function preparePasswordReset(config: AuthConfig, now = new Date()) {
   const token = createOpaqueToken();
   const expiresAt = new Date(now.getTime() + config.resetTokenTtlMs);

@@ -91,6 +91,46 @@ these routes grants it. A full replace across roles emits one
 `entity_id = <fieldId>` and `action = 'replace_field_roles'`, distinct from the
 role-side `action = 'replace'` whose `entity_id` is a role.
 
+### Campaigns
+```
+GET    /campaigns                      -- campaigns:view; each row carries sent/failed/pending/skipped counts
+GET    /campaigns/:id                  -- campaigns:view
+POST   /campaigns                      -- campaigns:create
+PUT    /campaigns/:id                  -- campaigns:edit
+POST   /campaigns/:id/activation       -- campaigns:edit; body { active }
+POST   /campaigns/:id/send             -- campaigns:send; manual campaigns only
+```
+
+- **Campaigns email Leads. Notification Rules notify Users.** They share trigger
+  detection and nothing else — see ADR-0013.
+- `type` is `manual` or `triggered`. A manual campaign stores a Phase 13b
+  filter and is sent on request; a triggered one stores a Journey/Status pair
+  and fires when a lead's process instance enters that status, matched exactly
+  per ADR-0001. A database constraint refuses a campaign carrying the other
+  kind's targeting.
+- `bodyDocument` is a closed-vocabulary JSON document — blocks `paragraph`,
+  `heading`, `bullet_list`, `numbered_list`; marks `bold`, `italic`,
+  `underline`; links restricted to `http(s)` and `mailto`. **The server renders
+  the HTML and escapes every text node at send time**, so no client-supplied
+  markup is stored or emailed, and an interpolated recipient value cannot inject
+  anything.
+- Variables are `{{name}}`, `{{email}}`, `{{phone}}` and `{{field:<fieldId>}}`.
+  Availability is checked against the **campaign author's** field visibility at
+  create/edit time — one template serves a whole batch, so there is no single
+  recipient whose visibility could govern interpolation. A field token the
+  author cannot view is refused with `403`.
+- A manual send re-evaluates the stored filter through the same compiler the
+  Seller List uses, under the **sender's** own data scope and field visibility,
+  and is capped at 5,000 recipients per request.
+- `campaigns:send` is never implied by `campaigns:edit`. Sending a deactivated
+  campaign is a `409`.
+- Sends are recorded in `campaign_sends` before delivery and delivered after the
+  transaction commits. A lead receives a given campaign at most once, ever.
+  Leads without an email address are recorded `skipped_no_email` rather than
+  dropped, so the reported counts add up.
+- **Not implemented, deliberately: unsubscribe, consent, and suppression.** See
+  the Phase 13c plan; this is not safe to point at a real transport.
+
 ### Leads
 ```
 GET    /leads                          -- server-side search, filter, sort, pagination; `filter` is a JSON-encoded condition list (see below)

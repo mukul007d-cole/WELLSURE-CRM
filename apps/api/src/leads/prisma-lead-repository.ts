@@ -11,6 +11,8 @@ import type { LeadFieldSetting } from './validation.js';
 import { buildSellerListQuery } from './filter-sql.js';
 import type { ResolvedCondition } from './filter-validation.js';
 import { NotificationService } from '../notifications/service.js';
+import { CampaignTriggerService } from '../campaigns/trigger-service.js';
+import { triggerTypeFor } from './trigger-dispatch.js';
 import type {
   LeadDetailRecord,
   Seller360Record,
@@ -150,6 +152,7 @@ export class PrismaLeadRepository
   constructor(
     private readonly prisma: PrismaLeadClient,
     private readonly notifications?: NotificationService,
+    private readonly campaignTriggers?: CampaignTriggerService,
   ) {}
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
@@ -159,6 +162,7 @@ export class PrismaLeadRepository
         new PrismaLeadRepository(
           tx,
           this.notifications ? new NotificationService(tx as never) : undefined,
+          this.campaignTriggers ? new CampaignTriggerService(tx as never) : undefined,
         ),
       ),
     );
@@ -351,19 +355,10 @@ export class PrismaLeadRepository
         newValue: input.newValue,
       },
     });
-    if (this.notifications && activity && typeof activity === 'object' && 'id' in activity) {
-      const triggerType =
-        input.actionType === 'field_edit'
-          ? 'field_edited'
-          : input.actionType === 'status_change'
-            ? 'status_changed'
-            : input.actionType === 'reassignment'
-              ? 'lead_reassigned'
-              : input.actionType === 'lead_deactivated'
-                ? 'lead_deactivated'
-                : undefined;
-      if (triggerType)
-        await this.notifications.evaluate({
+    if (activity && typeof activity === 'object' && 'id' in activity) {
+      const triggerType = triggerTypeFor(input.actionType);
+      if (triggerType) {
+        const event = {
           organizationId: input.organizationId,
           activityLogId: String(activity.id),
           leadId: input.leadId,
@@ -373,8 +368,17 @@ export class PrismaLeadRepository
           actorUserId: input.actorUserId,
           triggerType,
           oldValue: input.oldValue,
-        });
+          // Phase 9 never needed the new value; a campaign keyed on entering a
+          // status does.
+          newValue: input.newValue,
+        };
+        // Both consumers read the same detected event. Neither knows about the
+        // other, and the classification exists once.
+        await this.notifications?.evaluate(event);
+        await this.campaignTriggers?.evaluate(event);
+      }
       if (
+        this.notifications &&
         input.actionType === 'field_edit' &&
         (await this.notifications.isActiveShareActor(
           input.organizationId,
@@ -481,6 +485,30 @@ export class PrismaLeadRepository
       select: { id: true, fieldType: true },
     });
     return new Map(rows.map((row) => [row.id, row.fieldType]));
+  }
+
+  /**
+   * Every lead id matching a predicate, bounded by `limit`. Manual campaign
+   * sends need the whole recipient set rather than a page, and they run through
+   * the same compiler — and therefore the same data scope — as the list.
+   */
+  async listMatchingLeadIds(input: {
+    organizationId: string;
+    recordPredicate: RecordPredicate;
+    conditions?: readonly ResolvedCondition[];
+    limit: number;
+  }): Promise<string[]> {
+    const query = buildSellerListQuery({
+      organizationId: input.organizationId,
+      predicate: input.recordPredicate,
+      conditions: input.conditions ?? [],
+      page: 1,
+      pageSize: input.limit,
+    });
+    const run = this.prisma.$queryRawUnsafe?.bind(this.prisma);
+    if (run === undefined) throw new Error('lead repository requires $queryRawUnsafe');
+    const rows = await run<{ id: string }[]>(query.ids.text, ...query.ids.values);
+    return rows.map((row) => row.id);
   }
 
   /**

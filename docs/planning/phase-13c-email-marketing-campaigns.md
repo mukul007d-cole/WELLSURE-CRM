@@ -1,6 +1,26 @@
 # Phase 13c — Email marketing campaigns
 
-Status: **proposed, awaiting approval.** Sub-phase 3 of 3 in Phase 13.
+Status: approved 2026-08-11. **Delivered.** Sub-phase 3 of 3 in Phase 13.
+
+Both decisions put up for approval were taken as recommended: the body is a
+**structured JSON document** rendered and escaped by the server, and a lead
+receives a given campaign **at most once, ever**. Campaigns are activatable and
+deactivatable — a triggered campaign only fires while active — and the
+`campaigns` permission module gates the whole area, with `send` never implied by
+`edit`.
+
+Three things the implementation found that the plan did not anticipate, all
+fixed and covered by tests:
+
+- `document.execCommand` is deprecated and absent in some environments; the
+  composer now degrades instead of throwing (formatting no-ops, token insertion
+  appends).
+- The DOM walker read `children` rather than `childNodes`, so text typed beside
+  a paragraph in the editable region was silently dropped. It now collects
+  top-level text and inline nodes into the running paragraph.
+- Handing the composer's "insert token" function up through component state set
+  state during render and looped forever. It is held in a ref.
+
 13a and 13b are delivered; this one consumes 13b's filter model for manual
 targeting and Phase 9's trigger detection for automated sends.
 

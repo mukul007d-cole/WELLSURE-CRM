@@ -813,6 +813,11 @@ class MemoryLeadRepository implements LeadRepository {
   async listFilterableFieldTypes(): Promise<ReadonlyMap<string, string>> {
     return this.fieldTypes;
   }
+  async listMatchingLeadIds(input: { organizationId: string }): Promise<string[]> {
+    return this.leads
+      .filter((lead) => lead.organizationId === input.organizationId)
+      .map((lead) => lead.id);
+  }
   async listSellers(input: {
     organizationId: string;
     recordPredicate: unknown;
