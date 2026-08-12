@@ -30,6 +30,9 @@ import type {
   Campaign,
   Team,
   TeamMember,
+  RoutingGrant,
+  RoutingRule,
+  RoutingState,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -231,6 +234,36 @@ export const adminApi = {
   deactivateTeam: (id: string) => request<Team>(`/teams/${id}/deactivate`, json('POST', {})),
   saveTeamMembers: (id: string, members: TeamMember[]) =>
     request<TeamMember[]>(`/teams/${id}/members`, json('PUT', { members })),
+};
+
+/**
+ * Per-Status assignment routing.
+ *
+ * Rule configuration and the per-Status role grants are separate endpoints on
+ * purpose: the first is gated on `lead_routing:configure`, the second on
+ * `roles_permissions:edit`, so configuring routing can never widen who may
+ * operate it.
+ */
+export const routingApi = {
+  rule: (statusId: string) =>
+    request<{ statusId: string; rule: RoutingRule | null }>(`/statuses/${statusId}/routing`),
+  state: (statusId: string) => request<RoutingState>(`/statuses/${statusId}/routing/state`),
+  saveRule: (statusId: string, body: object) =>
+    request<RoutingRule>(`/statuses/${statusId}/routing`, json('PUT', body)),
+  deactivateRule: (statusId: string) =>
+    request<RoutingRule>(`/statuses/${statusId}/routing/deactivate`, json('POST', {})),
+  grants: (statusId: string) =>
+    request<RoutingGrant[]>(`/statuses/${statusId}/routing/permissions`),
+  saveGrants: (statusId: string, permissions: RoutingGrant[]) =>
+    request<RoutingGrant[]>(
+      `/statuses/${statusId}/routing/permissions`,
+      json('PUT', { permissions }),
+    ),
+  assign: (leadId: string, body: object) =>
+    request<{ assignedUserId: string; previousUserId: string | null }>(
+      `/leads/${leadId}/routing-assign`,
+      json('POST', body),
+    ),
 };
 
 export const campaignsApi = {

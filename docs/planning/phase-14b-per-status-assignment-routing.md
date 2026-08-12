@@ -1,7 +1,43 @@
 # Phase 14b — Per-status assignment routing rules
 
-Status: **awaiting approval.** Sub-phase 2 of 2 in Phase 14. Depends on 14a
-(delivered, `40f3388`) for the Team pool option.
+Status: approved 2026-08-12. **Delivered.** Sub-phase 2 of 2 in Phase 14.
+Depends on 14a (delivered, `40f3388`) for the Team pool option.
+
+All four decisions were taken as recommended: Option A (per-Status role grants),
+`outcome_type = 'open'` org-wide and restricted to the rule's assignment type
+with `archived` not excluded, skip-don't-fail on an unresolvable pool, and
+dropping `auto_reassign_to_role_id`. Recorded as ADR-0015.
+
+Five things the implementation found that the plan did not anticipate:
+
+- **The "no duplicate assignment" requirement was already enforced by the
+  database.** `assignments (organization_id, process_instance_id,
+  assignment_type) WHERE is_current` is a partial unique index dating from Phase
+  5. Removing the supersession does not produce two live assignments — it
+  produces a constraint violation. Stronger than §3 claimed, and the vacuity
+  check below had to account for it.
+- **`activity_logs` and `system_audit_logs` are append-only by trigger**, so the
+  integration tests cannot be isolated by deleting what they wrote. They are
+  isolated by never sharing a Status instead — each test creates its own, so one
+  test's rule, audit trail and assignments are unreachable from another's.
+- **A shared-user concurrency test would have been wrong, not flaky.** With
+  candidates carrying unequal prior load, sending three concurrent leads to the
+  same candidate is the *correct* least-loaded answer, and the test would have
+  failed while the code was right. Both concurrency tests now create dedicated
+  zero-load candidates, which is what makes "one each" the only correct outcome.
+- **`validatePool` refuses an inactive Team**, so a rule cannot be created
+  against one. The skip test therefore deactivates the Team *after* the rule
+  exists — which is also the sequence 14a's leaderless cascade actually produces.
+- **The `useEffect`-plus-`setState` idiom for seeding editor state is banned by
+  lint.** The grant editor derives its rendered set from the query instead, which
+  independently removes the stale-copy defect 13a had to fix for field grants.
+
+The security-critical test was checked for vacuity twice, since the first
+mutation was caught by the Phase 5 index rather than by the visibility
+assertions: removing the supersession fails the status change outright, and
+granting the previous holder a direct share instead fails on the whole-response
+list assertion (`expected '{"total":1,...}' not to contain '<leadId>'`). Both
+restored.
 
 ## Goal
 

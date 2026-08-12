@@ -124,6 +124,9 @@ export const USERS: MockUser[] = [
       'campaigns:create',
       'campaigns:edit',
       'campaigns:send',
+      'lead_routing:view',
+      'lead_routing:configure',
+      'lead_routing:operate',
     ].map((value) => {
       const [module, action] = value.split(':') as [string, string];
       return { module, action, scope: 'ORGANIZATION' as const };
