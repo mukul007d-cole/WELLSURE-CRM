@@ -55,6 +55,8 @@ model Organization {
   campaigns           Campaign[]
   campaignSends       CampaignSend[]
   teams               Team[]
+  routingRules        StatusRoutingRule[]
+  routingPermissions  StatusRoutingPermission[]
   settings            Setting[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -123,14 +125,14 @@ model Role {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy       User?               @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
-  updatedBy       User?               @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy       User?                     @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy       User?                     @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
   users           User[]
   permissions     RolePermission[]
   journeyAccess   RoleJourneyAccess[]
   fieldVisibility FieldVisibility[]
-  autoStatuses    Status[]
+  routingGrants   StatusRoutingPermission[]
 
   @@id([organizationId, id])
   @@unique([organizationId, key])
@@ -152,33 +154,33 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization             Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  role                     Role                 @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
-  department               Department?          @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
-  designation              Designation?         @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
-  manager                  User?                @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
-  reports                  User[]               @relation("ReportingHierarchy")
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role                     Role                      @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+  department               Department?               @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  designation              Designation?              @relation(fields: [organizationId, designationId], references: [organizationId, id], onDelete: Restrict)
+  manager                  User?                     @relation("ReportingHierarchy", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict)
+  reports                  User[]                    @relation("ReportingHierarchy")
   assignments              Assignment[]
-  grants                   UserAccessGrant[]    @relation("GrantRecipient")
-  issuedGrants             UserAccessGrant[]    @relation("GrantIssuer")
+  grants                   UserAccessGrant[]         @relation("GrantRecipient")
+  issuedGrants             UserAccessGrant[]         @relation("GrantIssuer")
   notifications            Notification[]
-  deactivatedLeads         Lead[]               @relation("LeadDeactivatedBy")
-  notificationRulesCreated NotificationRule[]   @relation("NotificationRuleCreatedBy")
-  notificationRulesUpdated NotificationRule[]   @relation("NotificationRuleUpdatedBy")
-  departmentsCreated       Department[]         @relation("DepartmentCreatedBy")
-  departmentsUpdated       Department[]         @relation("DepartmentUpdatedBy")
-  designationsCreated      Designation[]        @relation("DesignationCreatedBy")
-  designationsUpdated      Designation[]        @relation("DesignationUpdatedBy")
-  rolesCreated             Role[]               @relation("RoleCreatedBy")
-  rolesUpdated             Role[]               @relation("RoleUpdatedBy")
-  journeysCreated          Journey[]            @relation("JourneyCreatedBy")
-  journeysUpdated          Journey[]            @relation("JourneyUpdatedBy")
-  servicesCreated          Service[]            @relation("ServiceCreatedBy")
-  servicesUpdated          Service[]            @relation("ServiceUpdatedBy")
-  statusesCreated          Status[]             @relation("StatusCreatedBy")
-  statusesUpdated          Status[]             @relation("StatusUpdatedBy")
-  fieldsCreated            Field[]              @relation("FieldCreatedBy")
-  fieldsUpdated            Field[]              @relation("FieldUpdatedBy")
+  deactivatedLeads         Lead[]                    @relation("LeadDeactivatedBy")
+  notificationRulesCreated NotificationRule[]        @relation("NotificationRuleCreatedBy")
+  notificationRulesUpdated NotificationRule[]        @relation("NotificationRuleUpdatedBy")
+  departmentsCreated       Department[]              @relation("DepartmentCreatedBy")
+  departmentsUpdated       Department[]              @relation("DepartmentUpdatedBy")
+  designationsCreated      Designation[]             @relation("DesignationCreatedBy")
+  designationsUpdated      Designation[]             @relation("DesignationUpdatedBy")
+  rolesCreated             Role[]                    @relation("RoleCreatedBy")
+  rolesUpdated             Role[]                    @relation("RoleUpdatedBy")
+  journeysCreated          Journey[]                 @relation("JourneyCreatedBy")
+  journeysUpdated          Journey[]                 @relation("JourneyUpdatedBy")
+  servicesCreated          Service[]                 @relation("ServiceCreatedBy")
+  servicesUpdated          Service[]                 @relation("ServiceUpdatedBy")
+  statusesCreated          Status[]                  @relation("StatusCreatedBy")
+  statusesUpdated          Status[]                  @relation("StatusUpdatedBy")
+  fieldsCreated            Field[]                   @relation("FieldCreatedBy")
+  fieldsUpdated            Field[]                   @relation("FieldUpdatedBy")
   activities               ActivityLog[]
   auditLogs                SystemAuditLog[]
   assignedTasks            Task[]
@@ -187,11 +189,15 @@ model User {
   settingsUpdated          Setting[]
   sessions                 Session[]
   passwordResetTokens      PasswordResetToken[]
-  campaignsCreated         Campaign[]           @relation("CampaignCreatedBy")
-  campaignsUpdated         Campaign[]           @relation("CampaignUpdatedBy")
-  teamsCreated             Team[]               @relation("TeamCreatedBy")
-  teamsUpdated             Team[]               @relation("TeamUpdatedBy")
+  campaignsCreated         Campaign[]                @relation("CampaignCreatedBy")
+  campaignsUpdated         Campaign[]                @relation("CampaignUpdatedBy")
+  teamsCreated             Team[]                    @relation("TeamCreatedBy")
+  teamsUpdated             Team[]                    @relation("TeamUpdatedBy")
   teamMemberships          TeamMember[]
+  routingRulesCreated      StatusRoutingRule[]       @relation("RoutingRuleCreatedBy")
+  routingRulesUpdated      StatusRoutingRule[]       @relation("RoutingRuleUpdatedBy")
+  routingCursorFor         StatusRoutingRule[]       @relation("RoutingCursor")
+  routingPoolMemberships   StatusRoutingRuleMember[]
 
   @@id([organizationId, id])
   @@unique([organizationId, email])
@@ -368,32 +374,34 @@ model JourneyService {
 }
 
 model Status {
-  id                   String       @default(uuid()) @db.Uuid
-  organizationId       String       @map("organization_id") @db.Uuid
-  journeyId            String       @map("journey_id") @db.Uuid
-  key                  String
-  name                 String
-  active               Boolean      @default(true)
-  version              Int          @default(1)
-  isDefaultOnCreate    Boolean      @default(false) @map("is_default_on_create")
-  outcomeType          OutcomeType  @map("outcome_type")
-  behaviorType         BehaviorType @map("behavior_type")
-  autoReassignToRoleId String?      @map("auto_reassign_to_role_id") @db.Uuid
-  sortOrder            Int          @map("sort_order")
-  createdById          String?      @map("created_by") @db.Uuid
-  updatedById          String?      @map("updated_by") @db.Uuid
-  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String       @default(uuid()) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  journeyId         String       @map("journey_id") @db.Uuid
+  key               String
+  name              String
+  active            Boolean      @default(true)
+  version           Int          @default(1)
+  isDefaultOnCreate Boolean      @default(false) @map("is_default_on_create")
+  outcomeType       OutcomeType  @map("outcome_type")
+  behaviorType      BehaviorType @map("behavior_type")
+  sortOrder         Int          @map("sort_order")
+  createdById       String?      @map("created_by") @db.Uuid
+  updatedById       String?      @map("updated_by") @db.Uuid
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy        User?                 @relation("StatusCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
-  updatedBy        User?                 @relation("StatusUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
-  journey          Journey               @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
-  autoReassignRole Role?                 @relation(fields: [organizationId, autoReassignToRoleId], references: [organizationId, id], onDelete: Restrict)
-  processInstances ProcessInstance[]
-  requiredSettings FieldJourneySetting[]
-  createdTasks     Task[]
-  campaigns        Campaign[]
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy          User?                     @relation("StatusCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy          User?                     @relation("StatusUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  journey            Journey                   @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  processInstances   ProcessInstance[]
+  requiredSettings   FieldJourneySetting[]
+  createdTasks       Task[]
+  campaigns          Campaign[]
+  /// At most one, guaranteed by the unique constraint on the rule rather than
+  /// by a one-to-one relation that would need a second redundant index.
+  routingRules       StatusRoutingRule[]
+  routingPermissions StatusRoutingPermission[]
 
   @@id([organizationId, id])
   @@unique([organizationId, journeyId, key])
@@ -913,11 +921,12 @@ model Team {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  department   Department   @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
-  createdBy    User?        @relation("TeamCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
-  updatedBy    User?        @relation("TeamUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department   Department          @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  createdBy    User?               @relation("TeamCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?               @relation("TeamUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
   members      TeamMember[]
+  routingRules StatusRoutingRule[]
 
   @@id([organizationId, id])
   @@unique([organizationId, departmentId, key])
@@ -949,4 +958,91 @@ model TeamMember {
   @@index([organizationId, userId])
   @@index([organizationId, teamId, isLeader])
   @@map("team_members")
+}
+
+/// How leads entering one Status are automatically assigned.
+///
+/// At most one rule per Status, enforced by a unique constraint rather than by
+/// application code. Fires on exact status entry only, per ADR-0001. See
+/// ADR-0015.
+model StatusRoutingRule {
+  id             String  @default(uuid()) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  journeyId      String  @map("journey_id") @db.Uuid
+  statusId       String  @map("status_id") @db.Uuid
+  /// Which assignment slot the rule writes. Free text, like every other
+  /// assignment_type in this system — never a closed enum.
+  assignmentType String  @map("assignment_type")
+  /// round_robin | least_loaded
+  algorithm      String
+  /// team | users
+  poolType       String  @map("pool_type")
+  teamId         String? @map("team_id") @db.Uuid
+
+  /// Durable round-robin state: the user last assigned by this rule, not an
+  /// index. An index breaks whenever the pool changes size; this survives it.
+  cursorUserId String? @map("cursor_user_id") @db.Uuid
+
+  active      Boolean  @default(true)
+  version     Int      @default(1)
+  createdById String?  @map("created_by") @db.Uuid
+  updatedById String?  @map("updated_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status       Status                    @relation(fields: [organizationId, journeyId, statusId], references: [organizationId, journeyId, id], onDelete: Restrict)
+  team         Team?                     @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Restrict)
+  cursorUser   User?                     @relation("RoutingCursor", fields: [organizationId, cursorUserId], references: [organizationId, id], onDelete: Restrict)
+  createdBy    User?                     @relation("RoutingRuleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?                     @relation("RoutingRuleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  members      StatusRoutingRuleMember[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, statusId])
+  @@index([organizationId, statusId, active])
+  @@map("status_routing_rules")
+}
+
+/// One candidate in a `pool_type = 'users'` rule. Team pools read `team_members`
+/// instead, so a Team's membership stays the single source of truth.
+model StatusRoutingRuleMember {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  ruleId         String   @map("rule_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rule StatusRoutingRule @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Restrict)
+  user User              @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, ruleId, userId])
+  @@map("status_routing_rule_members")
+}
+
+/// Per-(Status, Role) routing grant, allow-list semantics: no row means denied.
+///
+/// The same shape `field_visibility` has for Fields, and layered the same way —
+/// the effective decision is the `lead_routing` module action AND a row here.
+/// Editing these rows is gated on `roles_permissions:edit`, never on
+/// `lead_routing:configure`, so a routing administrator cannot grant themselves
+/// routing rights.
+model StatusRoutingPermission {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  statusId       String   @map("status_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  /// view | configure | operate
+  action         String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status       Status       @relation(fields: [organizationId, statusId], references: [organizationId, id], onDelete: Restrict)
+  role         Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, statusId, roleId, action])
+  @@index([organizationId, roleId, action])
+  @@map("status_routing_permissions")
 }

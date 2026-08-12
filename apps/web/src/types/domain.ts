@@ -326,6 +326,12 @@ export interface AdminJourney {
   active: boolean;
   statuses?: Status[];
   version?: number;
+  /**
+   * The distinct assignment types this Journey's current assignments actually
+   * use. Derived from data, so a Journey with no leads reports none — these are
+   * suggestions, never a closed set.
+   */
+  assignmentTypes?: readonly string[] | undefined;
 }
 export interface AdminField {
   id: string;
@@ -389,6 +395,36 @@ export interface Team {
   active: boolean;
   version: number;
   members: TeamMember[];
+}
+export type RoutingAction = 'view' | 'configure' | 'operate';
+export interface RoutingGrant {
+  roleId: string;
+  action: RoutingAction;
+}
+/** How leads entering one Status are automatically assigned. See ADR-0015. */
+export interface RoutingRule {
+  id: string;
+  statusId: string;
+  journeyId: string;
+  assignmentType: string;
+  algorithm: 'round_robin' | 'least_loaded';
+  poolType: 'team' | 'users';
+  teamId: string | null;
+  cursorUserId: string | null;
+  active: boolean;
+  version: number;
+  members: Array<{ userId: string }>;
+}
+export interface RoutingState {
+  statusId: string;
+  rule: RoutingRule | null;
+  candidates: Array<{
+    userId: string;
+    name: string;
+    email: string;
+    openCount: number;
+    isNext: boolean;
+  }>;
 }
 export interface PermissionCatalog {
   modules: Array<{ module: string; label: string; actions: string[] }>;

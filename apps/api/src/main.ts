@@ -9,6 +9,7 @@ import { PrismaLeadRepository } from './leads/prisma-lead-repository.js';
 import { LeadSharingService } from './leads/sharing.js';
 import { NotificationService } from './notifications/service.js';
 import { CampaignTriggerService } from './campaigns/trigger-service.js';
+import { StatusRoutingService } from './routing/service.js';
 import { PrismaPermissionRepository } from './permissions/prisma-permission-repository.js';
 import { createRuntime } from './runtime.js';
 
@@ -16,6 +17,10 @@ const { env, prisma, emailSender, authConfig } = createRuntime(process.env);
 const authRepository = new PrismaAuthRepository(prisma);
 const notificationService = new NotificationService(prisma);
 const campaignTriggerService = new CampaignTriggerService(prisma);
+// The third consumer of the shared trigger detection (ADR-0015). Each
+// transaction rebuilds it against its own client; this instance only tells the
+// repository that routing is wired at all.
+const statusRoutingService = new StatusRoutingService(prisma);
 // Only when a bucket is configured. Absent it the locker routes answer 503
 // rather than the API refusing to boot.
 const attachmentService = env.storage
@@ -33,6 +38,7 @@ const server = buildServer({
     prisma as never,
     notificationService,
     campaignTriggerService,
+    statusRoutingService,
   ),
   configurationRepository: new PrismaConfigurationRepository(prisma),
   adminRepository: new PrismaAdminRepository(prisma),

@@ -1,4 +1,5 @@
 import type { RecordPredicate } from '@falcon/permission-engine';
+import type { FalconPrismaClient } from '@falcon/database';
 
 import type { LeadActivityInput } from './activity.js';
 import type {
@@ -12,7 +13,8 @@ import { buildSellerListQuery } from './filter-sql.js';
 import type { ResolvedCondition } from './filter-validation.js';
 import { NotificationService } from '../notifications/service.js';
 import { CampaignTriggerService } from '../campaigns/trigger-service.js';
-import { triggerTypeFor } from './trigger-dispatch.js';
+import { StatusRoutingService } from '../routing/service.js';
+import { TriggerDispatcher, triggerTypeFor } from './trigger-dispatch.js';
 import type {
   LeadDetailRecord,
   Seller360Record,
@@ -153,6 +155,7 @@ export class PrismaLeadRepository
     private readonly prisma: PrismaLeadClient,
     private readonly notifications?: NotificationService,
     private readonly campaignTriggers?: CampaignTriggerService,
+    private readonly routing?: StatusRoutingService,
   ) {}
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
@@ -163,6 +166,7 @@ export class PrismaLeadRepository
           tx,
           this.notifications ? new NotificationService(tx as never) : undefined,
           this.campaignTriggers ? new CampaignTriggerService(tx as never) : undefined,
+          this.routing ? buildRoutingService(tx as never) : undefined,
         ),
       ),
     );
@@ -372,10 +376,13 @@ export class PrismaLeadRepository
           // status does.
           newValue: input.newValue,
         };
-        // Both consumers read the same detected event. Neither knows about the
-        // other, and the classification exists once.
-        await this.notifications?.evaluate(event);
-        await this.campaignTriggers?.evaluate(event);
+        // Every consumer reads the same detected event through one dispatcher.
+        // No consumer knows about any other, and the classification exists once.
+        await new TriggerDispatcher([
+          this.notifications,
+          this.campaignTriggers,
+          this.routing,
+        ]).dispatch(event);
       }
       if (
         this.notifications &&
@@ -749,4 +756,20 @@ function assignment(row: AssignmentRow): LeadAssignmentRecord {
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Routing, bound to one transaction, with the dispatcher it needs for the
+ * `reassignment` activity it writes itself.
+ *
+ * That inner dispatcher deliberately excludes routing. Routing already ignores
+ * `lead_reassigned`, so including it would terminate anyway — but leaving it out
+ * makes termination structural rather than a property of one `if` statement
+ * inside a consumer someone may later edit.
+ */
+function buildRoutingService(tx: FalconPrismaClient): StatusRoutingService {
+  return new StatusRoutingService(
+    tx,
+    new TriggerDispatcher([new NotificationService(tx), new CampaignTriggerService(tx)]),
+  );
 }

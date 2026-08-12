@@ -52,6 +52,16 @@ export const permissionCatalog = [
     // actually mailing customers are different levels of trust.
     actions: ['view', 'create', 'edit', 'send'],
   },
+  {
+    module: 'lead_routing',
+    label: 'Lead Routing',
+    // `configure` decides who *may* receive leads at a Status; `operate` moves
+    // one particular lead. Different levels of trust, so neither implies the
+    // other — the same split as `campaigns:send` against `campaigns:edit`.
+    // `operate` is an additional gate on top of the normal lead checks, never a
+    // replacement for them.
+    actions: ['view', 'configure', 'operate'],
+  },
   { module: 'integrations', label: 'Integrations', actions: ['configure'] },
 ] as const;
 

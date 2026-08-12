@@ -10,7 +10,7 @@ import {
   USERS,
   type MockLead,
 } from './fixtures';
-import type { Team, TeamMember } from '../types/domain';
+import type { RoutingGrant, RoutingRule, Team, TeamMember } from '../types/domain';
 import { isLeadInScope, stripFieldValues } from './permissions';
 import {
   clearCookieHeader,
@@ -252,6 +252,9 @@ const MOCK_TEAMS: Team[] = [
     members: [mockMember('dir-1', true), mockMember('dir-2', false)],
   },
 ];
+/** Per-Status routing rules and their per-Status role grants. */
+const MOCK_ROUTING_RULES: RoutingRule[] = [];
+const MOCK_ROUTING_GRANTS: Array<RoutingGrant & { statusId: string }> = [];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
@@ -265,6 +268,8 @@ const INITIAL_ADMIN_STATE = structuredClone({
   roles: MOCK_ROLES,
   departments: MOCK_DEPARTMENTS,
   teams: MOCK_TEAMS,
+  routingRules: MOCK_ROUTING_RULES,
+  routingGrants: MOCK_ROUTING_GRANTS,
   fields: MOCK_ADMIN_FIELDS,
   users: MOCK_ADMIN_USERS,
 });
@@ -293,6 +298,8 @@ export function resetAdminMockState() {
   MOCK_ROLES.splice(0, MOCK_ROLES.length, ...initial.roles);
   MOCK_DEPARTMENTS.splice(0, MOCK_DEPARTMENTS.length, ...initial.departments);
   MOCK_TEAMS.splice(0, MOCK_TEAMS.length, ...initial.teams);
+  MOCK_ROUTING_RULES.splice(0, MOCK_ROUTING_RULES.length, ...initial.routingRules);
+  MOCK_ROUTING_GRANTS.splice(0, MOCK_ROUTING_GRANTS.length, ...initial.routingGrants);
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_JOURNEY_FIELDS.splice(0);
@@ -657,6 +664,11 @@ export const handlers = [
           label: 'Journeys & Statuses',
           actions: ['view', 'create', 'edit', 'delete'],
         },
+        {
+          module: 'lead_routing',
+          label: 'Lead Routing',
+          actions: ['view', 'configure', 'operate'],
+        },
       ],
       supportedScopes: ['SELF', 'TEAM', 'DEPARTMENT', 'ORGANIZATION'],
     }),
@@ -814,6 +826,89 @@ export const handlers = [
     row.active = false;
     row.version += 1;
     return HttpResponse.json(row);
+  }),
+  http.get(`${API_BASE}/statuses/:statusId/routing`, ({ params }) => {
+    const rule = MOCK_ROUTING_RULES.find((row) => row.statusId === params.statusId) ?? null;
+    return HttpResponse.json({ statusId: params.statusId, rule });
+  }),
+  http.get(`${API_BASE}/statuses/:statusId/routing/state`, ({ params }) => {
+    const rule = MOCK_ROUTING_RULES.find((row) => row.statusId === params.statusId) ?? null;
+    const poolUserIds =
+      rule === null
+        ? []
+        : rule.poolType === 'team'
+          ? (MOCK_TEAMS.find((team) => team.id === rule.teamId)?.members ?? []).map(
+              (member) => member.userId,
+            )
+          : rule.members.map((member) => member.userId);
+    return HttpResponse.json({
+      statusId: params.statusId,
+      rule,
+      candidates: poolUserIds.flatMap((userId) => {
+        const user = MOCK_ADMIN_USERS.find((row) => row.id === userId);
+        return user
+          ? [
+              {
+                userId,
+                name: user.name,
+                email: user.email,
+                openCount: 0,
+                isNext: rule?.cursorUserId === userId,
+              },
+            ]
+          : [];
+      }),
+    });
+  }),
+  http.put(`${API_BASE}/statuses/:statusId/routing`, async ({ params, request }) => {
+    const body = (await request.json()) as {
+      assignmentType: string;
+      algorithm: RoutingRule['algorithm'];
+      poolType: RoutingRule['poolType'];
+      teamId?: string;
+      userIds?: string[];
+    };
+    const existing = MOCK_ROUTING_RULES.findIndex((row) => row.statusId === params.statusId);
+    const rule: RoutingRule = {
+      id: existing >= 0 ? MOCK_ROUTING_RULES[existing]!.id : `routing-${Date.now()}`,
+      statusId: String(params.statusId),
+      journeyId: 'journey-alpha',
+      assignmentType: body.assignmentType,
+      algorithm: body.algorithm,
+      poolType: body.poolType,
+      teamId: body.teamId ?? null,
+      cursorUserId: null,
+      active: true,
+      version: existing >= 0 ? MOCK_ROUTING_RULES[existing]!.version + 1 : 1,
+      members: (body.userIds ?? []).map((userId) => ({ userId })),
+    };
+    if (existing >= 0) MOCK_ROUTING_RULES.splice(existing, 1, rule);
+    else MOCK_ROUTING_RULES.push(rule);
+    return HttpResponse.json(rule);
+  }),
+  http.post(`${API_BASE}/statuses/:statusId/routing/deactivate`, ({ params }) => {
+    const rule = MOCK_ROUTING_RULES.find((row) => row.statusId === params.statusId);
+    if (!rule) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    rule.active = false;
+    return HttpResponse.json(rule);
+  }),
+  http.get(`${API_BASE}/statuses/:statusId/routing/permissions`, ({ params }) =>
+    HttpResponse.json(
+      MOCK_ROUTING_GRANTS.filter((grant) => grant.statusId === params.statusId).map(
+        ({ roleId, action }) => ({ roleId, action }),
+      ),
+    ),
+  ),
+  http.put(`${API_BASE}/statuses/:statusId/routing/permissions`, async ({ params, request }) => {
+    const body = (await request.json()) as { permissions: RoutingGrant[] };
+    const kept = MOCK_ROUTING_GRANTS.filter((grant) => grant.statusId !== params.statusId);
+    MOCK_ROUTING_GRANTS.splice(
+      0,
+      MOCK_ROUTING_GRANTS.length,
+      ...kept,
+      ...body.permissions.map((grant) => ({ ...grant, statusId: String(params.statusId) })),
+    );
+    return HttpResponse.json(body.permissions);
   }),
   http.put(`${API_BASE}/teams/:id/members`, async ({ params, request }) => {
     const body = (await request.json()) as {

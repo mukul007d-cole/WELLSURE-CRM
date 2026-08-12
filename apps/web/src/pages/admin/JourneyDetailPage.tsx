@@ -13,6 +13,7 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import type { Status } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
+import { StatusRoutingPanel } from './StatusRoutingPanel';
 
 type StatusDraft = {
   id?: string;
@@ -34,6 +35,8 @@ export function JourneyDetailPage() {
   const [replacementStatusId, setReplacementStatusId] = useState('');
   const [order, setOrder] = useState<string[] | null>(null);
   const [settingDraft, setSettingDraft] = useState<SettingDraft | null>(null);
+  /** Which Status's routing section is open. Routing lives here, not in a tab. */
+  const [routingStatusId, setRoutingStatusId] = useState<string | null>(null);
   const journey = useQuery({
     queryKey: ['admin', 'journey', journeyId],
     queryFn: () => adminApi.journey(journeyId),
@@ -213,51 +216,78 @@ export function JourneyDetailPage() {
         ) : null}
         <ol className="divide-y">
           {orderedStatuses.map((status, index) => (
-            <li className="flex flex-wrap items-center justify-between gap-3 py-3" key={status.id}>
-              <div>
-                <span className="font-medium">
-                  {index + 1}. {status.name}
-                </span>
-                <span className="ml-2 text-sm text-ink-soft">
-                  {status.outcomeType} · {status.behaviorType}
-                </span>
+            <li className="py-3" key={status.id}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="font-medium">
+                    {index + 1}. {status.name}
+                  </span>
+                  <span className="ml-2 text-sm text-ink-soft">
+                    {status.outcomeType} · {status.behaviorType}
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {can('journeys_statuses', 'edit') ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Move ${status.name} up`}
+                        disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Move ${status.name} down`}
+                        disabled={index === orderedStatuses.length - 1}
+                        onClick={() => move(index, 1)}
+                      >
+                        ↓
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setStatusDraft(fromStatus(status))}
+                      >
+                        Edit
+                      </Button>
+                    </>
+                  ) : null}
+                  {can('journeys_statuses', 'delete') ? (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => setDeactivatingStatus(status)}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : null}
+                  {can('lead_routing', 'view') ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={routingStatusId === status.id}
+                      onClick={() =>
+                        setRoutingStatusId(routingStatusId === status.id ? null : status.id)
+                      }
+                    >
+                      Routing
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex gap-1">
-                {can('journeys_statuses', 'edit') ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Move ${status.name} up`}
-                      disabled={index === 0}
-                      onClick={() => move(index, -1)}
-                    >
-                      ↑
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Move ${status.name} down`}
-                      disabled={index === orderedStatuses.length - 1}
-                      onClick={() => move(index, 1)}
-                    >
-                      ↓
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setStatusDraft(fromStatus(status))}
-                    >
-                      Edit
-                    </Button>
-                  </>
-                ) : null}
-                {can('journeys_statuses', 'delete') ? (
-                  <Button size="sm" variant="danger" onClick={() => setDeactivatingStatus(status)}>
-                    Deactivate
-                  </Button>
-                ) : null}
-              </div>
+              {routingStatusId === status.id ? (
+                <div className="mt-3">
+                  <StatusRoutingPanel
+                    statusId={status.id}
+                    journeyId={journeyId}
+                    assignmentTypeSuggestions={journey.data?.assignmentTypes ?? []}
+                  />
+                </div>
+              ) : null}
             </li>
           ))}
         </ol>

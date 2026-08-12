@@ -1,5 +1,7 @@
 import type { FalconPrismaClient } from '@falcon/database';
 import { NotificationService } from '../notifications/service.js';
+import { CampaignTriggerService } from '../campaigns/trigger-service.js';
+import { TriggerDispatcher } from './trigger-dispatch.js';
 
 export const shareCapabilities = ['view', 'edit', 'comment'] as const;
 export type ShareCapability = (typeof shareCapabilities)[number];
@@ -237,8 +239,21 @@ export class LeadSharingService {
           newValue: { assignmentType: input.assignmentType, userId: input.userId },
         },
       });
+      /*
+       * Through the shared dispatcher, not straight at one consumer.
+       *
+       * This path used to call `NotificationService` directly, which meant a
+       * manual reassignment reached Notification Rules and never reached
+       * campaign triggers — invisible only because campaigns ignore everything
+       * but `status_changed`. Phase 14b needed a third consumer, so the list
+       * moved to one place and this writer joined it. Routing is deliberately
+       * absent: it fires on status entry, not on a manual reassignment.
+       */
       if (this.notifications)
-        await new NotificationService(tx as never).evaluate({
+        await new TriggerDispatcher([
+          new NotificationService(tx as never),
+          new CampaignTriggerService(tx as never),
+        ]).dispatch({
           organizationId: input.organizationId,
           activityLogId: activity.id,
           leadId: input.leadId,
@@ -246,6 +261,7 @@ export class LeadSharingService {
           actorUserId: input.actorUserId,
           triggerType: 'lead_reassigned',
           oldValue: { assignmentType: input.assignmentType, userId: old.userId },
+          newValue: { assignmentType: input.assignmentType, userId: input.userId },
         });
       return assignment;
     });
