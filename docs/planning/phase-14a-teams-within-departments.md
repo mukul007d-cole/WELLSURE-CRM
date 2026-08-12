@@ -1,8 +1,31 @@
 # Phase 14a — Teams within Departments
 
-Status: **awaiting approval.** Sub-phase 1 of 2 in Phase 14. 14b (per-status
-assignment routing rules) depends on this one for its "assign to a Team" pool
-option and is not planned or built until this is approved and delivered.
+Status: approved 2026-08-12, including recommendation (b). **Delivered.**
+Sub-phase 1 of 2 in Phase 14. 14b (per-status assignment routing rules) depends
+on this one for its "assign to a Team" pool option and is not planned or built
+until this is delivered.
+
+Recorded as ADR-0014. Three things the implementation found that the plan did
+not anticipate, all resolved and covered by tests:
+
+- The department-enforcing foreign key does more than reject a bad member: it
+  also blocks *changing a user's Department* while memberships remain. The
+  cascade therefore has to run before the update, not merely alongside it —
+  which is a better failure mode than planned, since forgetting is loud.
+- The plan left the leaderless-cascade case explicitly open. Resolved: the
+  cascade removes the membership and **deactivates a Team it leaves without a
+  leader**, rather than refusing the personnel change. "An *active* Team has at
+  least one leader" holds at every commit and no HR operation is ever blocked.
+- The role editor's scope `<option>` elements had no explicit `value`, so they
+  submitted their own label text. Relabelling `TEAM` would silently have started
+  sending `"Team (reporting line)"` as the scope. They now carry `value={scope}`,
+  and the test asserts the label and the submitted token separately.
+
+The security-critical assertion was additionally checked for vacuity: with
+`expandScopeUserIds` temporarily mutated to resolve `TEAM` against a
+non-hierarchy set, both scope tests fail on the whole-response and
+scope-expansion assertions. `git diff` against `packages/permission-engine` is
+empty, which is the ADR-0014 claim stated as a fact about the diff.
 
 ## Goal
 

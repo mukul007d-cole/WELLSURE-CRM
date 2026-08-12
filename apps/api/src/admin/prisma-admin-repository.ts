@@ -8,6 +8,7 @@ import type {
   PageRequest,
   PermissionInput,
   RoleVisibilityInput,
+  TeamMemberInput,
   UserWriteInput,
 } from './types.js';
 
@@ -84,6 +85,16 @@ export class PrismaAdminRepository implements AdminRepository {
       });
       if (!old) throw new AdminError('not_found', 'user not found');
       await validateUserRefs(tx as Tx, org, id, input);
+      /*
+       * Team membership is confined to the Team's Department, so moving a user
+       * out of a Department must end their memberships in it. This runs *before*
+       * the update deliberately: the composite foreign key on `team_members`
+       * references `users(organization_id, department_id, id)`, so leaving a
+       * stale row behind does not corrupt anything — it makes the update fail.
+       * Doing it here is what turns that failure into correct behaviour.
+       */
+      if (input.departmentId !== old.departmentId)
+        await endTeamMemberships(tx as Tx, org, actor, id, 'department_changed');
       const row = await tx.user.update({
         where: { organizationId_id: { organizationId: org, id } },
         data: input,
@@ -121,6 +132,9 @@ export class PrismaAdminRepository implements AdminRepository {
         if (remaining === 0)
           throw new AdminError('conflict', 'cannot deactivate the last permission administrator');
       }
+      // A deactivated user must not stay in a routing pool: Phase 14b assigns
+      // leads to Team members, and an inactive one would keep receiving them.
+      await endTeamMemberships(tx as Tx, org, actor, id, 'user_deactivated');
       const row = await tx.user.update({
         where: { organizationId_id: { organizationId: org, id } },
         data: { active: false },
@@ -429,6 +443,137 @@ export class PrismaAdminRepository implements AdminRepository {
       return row;
     });
   }
+
+  /* ------------------------------------------------------------------ Teams */
+
+  async listTeams(
+    org: string,
+    departmentId: string,
+    page: PageRequest,
+    active?: boolean,
+  ): Promise<Page<unknown> | null> {
+    const department = await this.prisma.department.findFirst({
+      where: { organizationId: org, id: departmentId },
+      select: { id: true },
+    });
+    if (!department) return null;
+    const where = {
+      organizationId: org,
+      departmentId,
+      ...(active === undefined ? {} : { active }),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.team.count({ where }),
+      this.prisma.team.findMany({ where, ...pageArgs(page), orderBy, include: teamInclude }),
+    ]);
+    return { ...page, total, items };
+  }
+  async getTeam(org: string, id: string): Promise<unknown> {
+    return this.prisma.team.findFirst({ where: { organizationId: org, id }, include: teamInclude });
+  }
+  /**
+   * A Team is created with its member set, not empty and populated afterwards:
+   * the at-least-one-leader rule would otherwise be false for the window in
+   * between, which is exactly the state it exists to prevent.
+   */
+  createTeam(
+    org: string,
+    actor: string,
+    departmentId: string,
+    key: string,
+    name: string,
+    members: TeamMemberInput[],
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const department = await tx.department.findFirst({
+        where: { organizationId: org, id: departmentId },
+      });
+      if (!department) throw new AdminError('not_found', 'department not found');
+      if (!department.active)
+        throw new AdminError('conflict', 'cannot add a Team to an inactive Department');
+      await validateTeamMembers(tx as Tx, org, departmentId, members);
+      const row = await tx.team.create({
+        data: {
+          organizationId: org,
+          departmentId,
+          key,
+          name,
+          createdById: actor,
+          updatedById: actor,
+        },
+      });
+      await tx.teamMember.createMany({
+        data: members.map((member) => ({
+          organizationId: org,
+          teamId: row.id,
+          departmentId,
+          userId: member.userId,
+          isLeader: member.isLeader,
+        })),
+      });
+      await audit(tx as Tx, org, actor, 'team', row.id, 'create', null, { ...row, members });
+      return { ...row, members };
+    });
+  }
+  updateTeam(org: string, actor: string, id: string, name: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const old = await lockTeam(tx as Tx, org, id);
+      if (!old.active) throw new AdminError('conflict', 'cannot edit an inactive Team');
+      const row = await tx.team.update({
+        where: { organizationId_id: { organizationId: org, id } },
+        data: { name, updatedById: actor, version: { increment: 1 } },
+      });
+      await audit(tx as Tx, org, actor, 'team', id, 'edit', old, row);
+      return row;
+    });
+  }
+  /** Soft only — Teams are never hard deleted, per AGENTS.md. */
+  deactivateTeam(org: string, actor: string, id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const old = await lockTeam(tx as Tx, org, id);
+      if (!old.active) return old;
+      const row = await tx.team.update({
+        where: { organizationId_id: { organizationId: org, id } },
+        data: { active: false, updatedById: actor, version: { increment: 1 } },
+      });
+      await audit(tx as Tx, org, actor, 'team', id, 'deactivate', old, row);
+      return row;
+    });
+  }
+  /**
+   * Replaces a Team's complete member set, following the same whole-set
+   * semantics as `replaceFieldVisibility` and `replaceJourneyAccess`: idempotent,
+   * one audit row carrying both the before and after sets, and no incremental
+   * patch ordering to get wrong.
+   *
+   * The team row is locked first, so two concurrent replaces queue and the
+   * winner's set survives intact rather than interleaving.
+   */
+  replaceTeamMembers(org: string, actor: string, teamId: string, members: TeamMemberInput[]) {
+    return this.prisma.$transaction(async (tx) => {
+      const team = await lockTeam(tx as Tx, org, teamId);
+      if (!team.active) throw new AdminError('conflict', 'cannot edit an inactive Team');
+      await validateTeamMembers(tx as Tx, org, team.departmentId, members);
+      const old = await tx.teamMember.findMany({
+        where: { organizationId: org, teamId },
+        select: memberSelect,
+        orderBy: { userId: 'asc' },
+      });
+      await tx.teamMember.deleteMany({ where: { organizationId: org, teamId } });
+      await tx.teamMember.createMany({
+        data: members.map((member) => ({
+          organizationId: org,
+          teamId,
+          departmentId: team.departmentId,
+          userId: member.userId,
+          isLeader: member.isLeader,
+        })),
+      });
+      await bumpTeam(tx as Tx, org, teamId, actor);
+      await audit(tx as Tx, org, actor, 'team_member', teamId, 'replace', old, members);
+      return members;
+    });
+  }
 }
 
 const userSelect = {
@@ -444,6 +589,17 @@ const userSelect = {
   updatedAt: true,
 } as const;
 const permissionSelect = { module: true, action: true, scope: true } as const;
+const memberSelect = { userId: true, isLeader: true } as const;
+const teamInclude = {
+  members: {
+    select: {
+      ...memberSelect,
+      user: { select: { name: true, email: true, active: true } },
+    },
+    // Leaders first, then a stable order, so the UI never has to sort.
+    orderBy: [{ isLeader: 'desc' as const }, { userId: 'asc' as const }],
+  },
+};
 async function audit(
   tx: Tx,
   organizationId: string,
@@ -494,6 +650,118 @@ async function bump(tx: Tx, org: string, id: string, actor: string) {
     where: { organizationId_id: { organizationId: org, id } },
     data: { version: { increment: 1 }, updatedById: actor },
   });
+}
+async function lockTeam(tx: Tx, org: string, id: string) {
+  await tx.$queryRawUnsafe(
+    'SELECT id FROM teams WHERE organization_id = $1::uuid AND id = $2::uuid FOR UPDATE',
+    org,
+    id,
+  );
+  const row = await tx.team.findFirst({ where: { organizationId: org, id } });
+  if (!row) throw new AdminError('not_found', 'team not found');
+  return row;
+}
+async function bumpTeam(tx: Tx, org: string, id: string, actor: string) {
+  await tx.team.update({
+    where: { organizationId_id: { organizationId: org, id } },
+    data: { version: { increment: 1 }, updatedById: actor },
+  });
+}
+/**
+ * Every proposed member must be an active User of *this* Team's Department.
+ *
+ * The composite foreign key on `team_members` enforces the department half in
+ * the database too — this exists so an admin gets a 400 naming the offending
+ * user instead of a constraint violation surfacing as a 500, and so the
+ * active-user half (which no key can express) is checked at all.
+ */
+async function validateTeamMembers(
+  tx: Tx,
+  org: string,
+  departmentId: string,
+  members: readonly TeamMemberInput[],
+) {
+  if (members.length === 0) return;
+  const eligible = await tx.user.findMany({
+    where: {
+      organizationId: org,
+      departmentId,
+      active: true,
+      id: { in: members.map((member) => member.userId) },
+    },
+    select: { id: true },
+  });
+  const found = new Set(eligible.map((user) => user.id));
+  const invalid = members.filter((member) => !found.has(member.userId)).map((m) => m.userId);
+  if (invalid.length > 0)
+    throw new AdminError(
+      'validation_error',
+      'every member must be an active user of this Department',
+      { userIds: invalid.sort() },
+    );
+}
+/**
+ * Removes a user from every Team they belong to, for a reason that is not an
+ * admin editing a Team — a Department change or a deactivation.
+ *
+ * Where this differs from a member replace: the at-least-one-leader rule binds
+ * *configuration*, and this is not configuration. Refusing to deactivate a
+ * departing employee because they lead a Team would put a routing-config
+ * invariant ahead of a personnel action, which is the wrong trade. So the
+ * membership goes, and if that leaves an active Team with no leader the Team is
+ * deactivated in the same transaction instead. "An **active** Team has at least
+ * one leader" therefore stays true at every commit, without any HR operation
+ * ever being blocked. Reactivating it is an ordinary edit once a leader exists.
+ *
+ * Teams are locked in sorted id order so two of these running at once — two
+ * users leaving overlapping Teams — queue instead of deadlocking.
+ */
+async function endTeamMemberships(
+  tx: Tx,
+  org: string,
+  actor: string,
+  userId: string,
+  reason: 'department_changed' | 'user_deactivated',
+) {
+  const memberships = await tx.teamMember.findMany({
+    where: { organizationId: org, userId },
+    select: { teamId: true, isLeader: true },
+  });
+  if (memberships.length === 0) return;
+  const affected = [...memberships].sort((a, b) => a.teamId.localeCompare(b.teamId));
+  for (const membership of affected) await lockTeam(tx, org, membership.teamId);
+  await tx.teamMember.deleteMany({ where: { organizationId: org, userId } });
+  for (const membership of affected) {
+    await audit(
+      tx,
+      org,
+      actor,
+      'team_member',
+      membership.teamId,
+      'remove_user',
+      { userId, isLeader: membership.isLeader },
+      { reason },
+    );
+    const leaders = await tx.teamMember.count({
+      where: { organizationId: org, teamId: membership.teamId, isLeader: true },
+    });
+    const team = await tx.team.findFirst({
+      where: { organizationId: org, id: membership.teamId },
+    });
+    if (team === null) continue;
+    if (leaders === 0 && team.active) {
+      const row = await tx.team.update({
+        where: { organizationId_id: { organizationId: org, id: membership.teamId } },
+        data: { active: false, updatedById: actor, version: { increment: 1 } },
+      });
+      await audit(tx, org, actor, 'team', membership.teamId, 'deactivate', team, {
+        ...row,
+        reason: 'last_leader_removed',
+      });
+    } else {
+      await bumpTeam(tx, org, membership.teamId, actor);
+    }
+  }
 }
 async function validateUserRefs(tx: Tx, org: string, userId: string | null, input: UserWriteInput) {
   const roleRow = await tx.role.findFirst({

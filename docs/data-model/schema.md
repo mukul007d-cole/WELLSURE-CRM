@@ -23,6 +23,20 @@ departments
   id, organization_id, key, name, active, version,
   created_by, updated_by, created_at, updated_at
 
+teams
+  id, organization_id, department_id, key, name, active, version,
+  created_by, updated_by, created_at, updated_at
+  UNIQUE (organization_id, department_id, key)
+
+team_members
+  id, organization_id, team_id, department_id, user_id, is_leader, created_at
+  UNIQUE (organization_id, team_id, user_id)
+  FK (organization_id, department_id, team_id) -> teams
+  FK (organization_id, department_id, user_id) -> users
+  -- Those two keys together are what makes "a member belongs to the Team's
+  -- Department" a database invariant. A Team is NOT the TEAM data scope; see
+  -- ADR-0014.
+
 designations
   id, organization_id, key, name, active, version,
   created_by, updated_by, created_at, updated_at

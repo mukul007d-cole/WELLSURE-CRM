@@ -54,6 +54,7 @@ model Organization {
   notificationRules   NotificationRule[]
   campaigns           Campaign[]
   campaignSends       CampaignSend[]
+  teams               Team[]
   settings            Setting[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -78,6 +79,7 @@ model Department {
   createdBy    User?        @relation("DepartmentCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
   updatedBy    User?        @relation("DepartmentUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
   users        User[]
+  teams        Team[]
 
   @@id([organizationId, id])
   @@unique([organizationId, key])
@@ -187,9 +189,17 @@ model User {
   passwordResetTokens      PasswordResetToken[]
   campaignsCreated         Campaign[]           @relation("CampaignCreatedBy")
   campaignsUpdated         Campaign[]           @relation("CampaignUpdatedBy")
+  teamsCreated             Team[]               @relation("TeamCreatedBy")
+  teamsUpdated             Team[]               @relation("TeamUpdatedBy")
+  teamMemberships          TeamMember[]
 
   @@id([organizationId, id])
   @@unique([organizationId, email])
+  // Referenced by the `team_members` foreign key that makes "a member belongs
+  // to the team's Department" a database constraint rather than a check the
+  // application has to remember on every path. See ADR-0014 and the
+  // `00000000000005_teams` migration.
+  @@unique([organizationId, departmentId, id])
   @@index([organizationId, managerId])
   @@index([organizationId, departmentId])
   @@map("users")
@@ -884,4 +894,59 @@ model CampaignSend {
   @@unique([organizationId, campaignId, leadId])
   @@index([organizationId, status, createdAt])
   @@map("campaign_sends")
+}
+
+/// A named group of Users inside one Department, with one or more leaders.
+///
+/// Deliberately NOT the same thing as the `TEAM` data scope, which resolves
+/// through `users.manager_id` and is untouched by this model. See ADR-0014.
+model Team {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  departmentId   String   @map("department_id") @db.Uuid
+  key            String
+  name           String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by") @db.Uuid
+  updatedById    String?  @map("updated_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department   Department   @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  createdBy    User?        @relation("TeamCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?        @relation("TeamUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  members      TeamMember[]
+
+  @@id([organizationId, id])
+  @@unique([organizationId, departmentId, key])
+  /// Referenced by `team_members`' department-enforcing foreign key.
+  @@unique([organizationId, departmentId, id])
+  @@index([organizationId, departmentId, active])
+  @@map("teams")
+}
+
+/// Membership of one User in one Team. `isLeader` marks a Team Leader, so a
+/// leader is structurally also a member and there is no second source of truth.
+///
+/// `departmentId` is denormalized so the database — not just the service layer
+/// — enforces that a member belongs to the Team's Department.
+model TeamMember {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  departmentId   String   @map("department_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  isLeader       Boolean  @default(false) @map("is_leader")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  team Team @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Restrict)
+  user User @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, teamId, userId])
+  @@index([organizationId, userId])
+  @@index([organizationId, teamId, isLeader])
+  @@map("team_members")
 }

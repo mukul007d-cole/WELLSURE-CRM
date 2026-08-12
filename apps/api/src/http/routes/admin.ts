@@ -165,6 +165,37 @@ export function registerAdminRoutes(
   bind('PUT', '/api/v1/departments/:departmentId', 'users', 'edit', (s, c, b, p, q) =>
     s.updateDepartment(c, String(p.departmentId), b.name),
   );
+  /*
+   * Teams. Nested collection, flat item — the same shape as
+   * `POST /journeys/:journeyId/statuses` + `PATCH /statuses/:statusId`.
+   *
+   * Gated on `users:*` rather than a Team permission module, per ADR-0009:
+   * Department administration rides on the User scope, and a Team is
+   * administered from inside a Department.
+   */
+  bind('GET', '/api/v1/departments/:departmentId/teams', 'users', 'view', (s, c, _b, p, q) =>
+    s.listTeams(c, String(p.departmentId), q),
+  );
+  bind(
+    'POST',
+    '/api/v1/departments/:departmentId/teams',
+    'users',
+    'create',
+    (s, c, b, p, q) => s.createTeam(c, String(p.departmentId), b),
+    true,
+  );
+  bind('GET', '/api/v1/teams/:teamId', 'users', 'view', (s, c, _b, p, q) =>
+    s.getTeam(c, String(p.teamId)),
+  );
+  bind('PUT', '/api/v1/teams/:teamId', 'users', 'edit', (s, c, b, p, q) =>
+    s.updateTeam(c, String(p.teamId), b.name),
+  );
+  bind('POST', '/api/v1/teams/:teamId/deactivate', 'users', 'edit', (s, c, _b, p, q) =>
+    s.deactivateTeam(c, String(p.teamId)),
+  );
+  bind('PUT', '/api/v1/teams/:teamId/members', 'users', 'edit', (s, c, b, p, q) =>
+    s.replaceTeamMembers(c, String(p.teamId), b.members),
+  );
 }
 function userInput(b: Json) {
   return {

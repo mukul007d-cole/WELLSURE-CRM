@@ -28,6 +28,8 @@ import type {
   NotificationItem,
   NotificationRule,
   Campaign,
+  Team,
+  TeamMember,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -218,6 +220,17 @@ export const adminApi = {
   createDepartment: (body: object) => request<Department>('/departments', json('POST', body)),
   editDepartment: (id: string, body: object) =>
     request<Department>(`/departments/${id}`, json('PUT', body)),
+  department: (id: string) => request<Department>(`/departments/${id}`),
+  teams: (departmentId: string, page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<Team>>(
+      `/departments/${departmentId}/teams${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
+  createTeam: (departmentId: string, body: object) =>
+    request<Team>(`/departments/${departmentId}/teams`, json('POST', body)),
+  editTeam: (id: string, body: object) => request<Team>(`/teams/${id}`, json('PUT', body)),
+  deactivateTeam: (id: string) => request<Team>(`/teams/${id}/deactivate`, json('POST', {})),
+  saveTeamMembers: (id: string, members: TeamMember[]) =>
+    request<TeamMember[]>(`/teams/${id}/members`, json('PUT', { members })),
 };
 
 export const campaignsApi = {

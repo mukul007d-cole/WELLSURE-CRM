@@ -13,6 +13,7 @@ import { JourneysPage } from './pages/admin/JourneysPage';
 import { FieldsPage } from './pages/admin/FieldsPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { DepartmentsPage } from './pages/admin/DepartmentsPage';
+import { DepartmentDetailPage } from './pages/admin/DepartmentDetailPage';
 import { RolesPage } from './pages/admin/RolesPage';
 import { JourneyDetailPage } from './pages/admin/JourneyDetailPage';
 import { RoleDetailPage } from './pages/admin/RoleDetailPage';
@@ -56,6 +57,11 @@ export function App() {
                       <Route path="org-chart" element={<OrgChartPage />} />
                     </Route>
                     <Route path="/admin/departments" element={<DepartmentsPage />} />
+                    {/* Teams live inside a Department, not in a tab of their own. */}
+                    <Route
+                      path="/admin/departments/:departmentId"
+                      element={<DepartmentDetailPage />}
+                    />
                   </Route>
                   <Route element={<PermissionRoute module="campaigns" />}>
                     <Route path="/admin/campaigns" element={<CampaignsPage />} />

@@ -372,6 +372,24 @@ export interface Department {
   active: boolean;
   version: number;
 }
+export interface TeamMember {
+  userId: string;
+  isLeader: boolean;
+  user?: { name: string; email: string; active: boolean };
+}
+/**
+ * A group of Users inside one Department. Unrelated to the `TEAM` data scope,
+ * which resolves through the reporting hierarchy — see ADR-0014.
+ */
+export interface Team {
+  id: string;
+  departmentId: string;
+  key: string;
+  name: string;
+  active: boolean;
+  version: number;
+  members: TeamMember[];
+}
 export interface PermissionCatalog {
   modules: Array<{ module: string; label: string; actions: string[] }>;
   supportedScopes: DataScope[];

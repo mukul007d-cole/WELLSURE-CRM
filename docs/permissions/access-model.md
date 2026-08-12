@@ -35,7 +35,9 @@ ALLOW =
 The immutable runtime source for these identifiers is
 `packages/permission-engine/src/catalog.ts`. Department administration is part
 of the User scope and uses `users:view/create/edit`; V1 has no separate
-Department permission module. See ADR-0009.
+Department permission module. See ADR-0009. **Team administration rides on the
+same actions**, so `users:edit` now also confers restructuring the Teams inside
+any Department (ADR-0014).
 
 `campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 
@@ -43,7 +45,10 @@ Department permission module. See ADR-0009.
 
 - `SELF`: records assigned to the requester under the applicable assignment rule.
 - `TEAM`: the requester plus all recursive downstream reports through
-  `users.manager_id` (ADR-0006).
+  `users.manager_id` (ADR-0006). **This is not the Team entity** configured
+  under a Department — the two are deliberately independent, and the permission
+  engine never reads `teams` or `team_members`. See ADR-0014. The UI names this
+  scope "Team (reporting line)" for exactly that reason.
 - `DEPARTMENT`: all active users sharing the requester's `department_id`,
   regardless of reporting branch or depth.
 - `ORGANIZATION`: all records in the requester's organization.

@@ -8,6 +8,7 @@ import {
   pagination,
   permissions,
   roleVisibility,
+  teamMembers,
   text,
   visibility,
 } from './validation.js';
@@ -140,6 +141,41 @@ export class AdminService {
       ctx.actorUserId,
       id,
       text(name, 'name'),
+    );
+  }
+  listTeams(ctx: AdminContext, departmentId: string, q: Record<string, unknown>) {
+    return this.repository.listTeams(
+      ctx.organizationId,
+      departmentId,
+      pagination(q.page, q.pageSize),
+      parseBoolean(q.active),
+    );
+  }
+  getTeam(ctx: AdminContext, id: string) {
+    return this.repository.getTeam(ctx.organizationId, id);
+  }
+  createTeam(ctx: AdminContext, departmentId: string, body: Record<string, unknown>) {
+    return this.repository.createTeam(
+      ctx.organizationId,
+      ctx.actorUserId,
+      departmentId,
+      configKey(body.key),
+      text(body.name, 'name'),
+      teamMembers(body.members),
+    );
+  }
+  updateTeam(ctx: AdminContext, id: string, name: unknown) {
+    return this.repository.updateTeam(ctx.organizationId, ctx.actorUserId, id, text(name, 'name'));
+  }
+  deactivateTeam(ctx: AdminContext, id: string) {
+    return this.repository.deactivateTeam(ctx.organizationId, ctx.actorUserId, id);
+  }
+  replaceTeamMembers(ctx: AdminContext, id: string, value: unknown) {
+    return this.repository.replaceTeamMembers(
+      ctx.organizationId,
+      ctx.actorUserId,
+      id,
+      teamMembers(value),
     );
   }
 }

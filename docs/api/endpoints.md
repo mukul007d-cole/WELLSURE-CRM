@@ -41,7 +41,19 @@ GET    /departments
 POST   /departments
 GET    /departments/:id
 PUT    /departments/:id
+
+GET    /departments/:id/teams
+POST   /departments/:id/teams           -- body: key, name, members[] (>=1 isLeader)
+GET    /teams/:id                       -- includes members
+PUT    /teams/:id                       -- name only
+POST   /teams/:id/deactivate
+PUT    /teams/:id/members               -- body: complete members array; whole-set replace
 ```
+
+Team routes are gated on `users:view/create/edit` like the rest of Department
+administration (ADR-0009). Members must be active Users of the Team's own
+Department, and an active Team must have at least one leader — see ADR-0014 for
+both, and for why a Team is not the `TEAM` data scope.
 
 ### Journeys, Statuses, Services
 ```

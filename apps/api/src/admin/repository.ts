@@ -4,6 +4,7 @@ import type {
   PageRequest,
   PermissionInput,
   RoleVisibilityInput,
+  TeamMemberInput,
   UserWriteInput,
 } from './types.js';
 
@@ -62,4 +63,28 @@ export interface AdminRepository {
   getDepartment(org: string, id: string): Promise<unknown>;
   createDepartment(org: string, actor: string, key: string, name: string): Promise<unknown>;
   updateDepartment(org: string, actor: string, id: string, name: string): Promise<unknown>;
+  /** Null when the department is not in the organization, so the route 404s. */
+  listTeams(
+    org: string,
+    departmentId: string,
+    page: PageRequest,
+    active?: boolean,
+  ): Promise<Page<unknown> | null>;
+  getTeam(org: string, id: string): Promise<unknown>;
+  createTeam(
+    org: string,
+    actor: string,
+    departmentId: string,
+    key: string,
+    name: string,
+    members: TeamMemberInput[],
+  ): Promise<unknown>;
+  updateTeam(org: string, actor: string, id: string, name: string): Promise<unknown>;
+  deactivateTeam(org: string, actor: string, id: string): Promise<unknown>;
+  replaceTeamMembers(
+    org: string,
+    actor: string,
+    teamId: string,
+    members: TeamMemberInput[],
+  ): Promise<unknown>;
 }
