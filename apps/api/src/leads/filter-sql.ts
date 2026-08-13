@@ -38,6 +38,15 @@ export interface SellerListQueryInput {
   accessMode?: 'mine' | 'shared_with_me' | 'all' | undefined;
   sortBy?: 'createdAt' | 'updatedAt' | 'name' | undefined;
   sortDirection?: 'asc' | 'desc' | undefined;
+  /**
+   * Restrict to these ids, on top of everything else.
+   *
+   * Bulk import uses it to ask "which of the leads my duplicate check matched
+   * may this importer actually be told about?" — a question that has to be
+   * answered by the *same* clause the Seller List uses, not by a second
+   * scoping rule that could drift from it.
+   */
+  leadIds?: readonly string[] | undefined;
   page: number;
   pageSize: number;
   now?: Date | undefined;
@@ -88,6 +97,9 @@ function whereClause(input: SellerListQueryInput, params: Params): string {
     'l.active',
     accessClause(input, params),
   ];
+  if (input.leadIds !== undefined) {
+    parts.push(`l.id = ANY(${params.bind([...input.leadIds], '::uuid[]')})`);
+  }
   if (input.search !== undefined && input.search.trim() !== '') {
     const term = params.bind(`%${escapeLike(input.search.trim())}%`);
     parts.push(
