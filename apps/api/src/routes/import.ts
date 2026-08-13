@@ -11,7 +11,10 @@ export const createAction = 'create' as const;
 
 export type ImportRouteResult =
   | { status: 200 | 201; body: unknown }
-  | { status: 400 | 403 | 409 | 413; body: { error: string; details?: Record<string, unknown> } };
+  | {
+      status: 400 | 403 | 409 | 413;
+      body: { error: string; message?: string; details?: Record<string, unknown> };
+    };
 
 /**
  * Authorization for a bulk import, decided once for the whole file.
@@ -220,13 +223,29 @@ export async function runImport(input: {
   }
 }
 
+/**
+ * File-level failures carry their message, unlike the rest of the API.
+ *
+ * Everywhere else a body is `{error: <code>}` because the code is all a client
+ * may safely learn. Here the failure is about the admin's own uploaded file and
+ * their own configuration — "two columns are mapped to the same target",
+ * "row 12 has 45 columns but the header has 47" — and a bare code cannot be
+ * turned into the plain-language guidance this flow is required to show. It
+ * discloses nothing they did not just send.
+ *
+ * Authorization failures are unaffected: those return `forbidden` above and
+ * never reach here.
+ */
 function toResponse(error: unknown): ImportRouteResult {
   if (isCsvError(error)) {
-    return { status: 400, body: { error: error.code, details: error.details } };
+    return {
+      status: 400,
+      body: { error: error.code, message: error.message, details: error.details },
+    };
   }
   if (isImportError(error)) {
     const status = error.code === 'conflict' ? 409 : error.code === 'payload_too_large' ? 413 : 400;
-    return { status, body: { error: error.code, details: error.details } };
+    return { status, body: { error: error.code, message: error.message, details: error.details } };
   }
   throw error;
 }
