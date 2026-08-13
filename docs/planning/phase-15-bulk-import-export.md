@@ -1,9 +1,64 @@
 # Phase 15 — Bulk lead import / export
 
-Status: **proposed, awaiting approval.** Nothing implemented.
+Status: approved 2026-08-13. **Delivered.** Recorded as ADR-0016.
 
-Ten decisions are requested below (§D1–§D10) and one **conflict between `docs/`
-and this phase's brief** is surfaced rather than resolved (§D9, per the
+All ten decisions were taken as recommended, including §D9 reading (a): the
+100,000-row resumable requirement in `quality-gates.md` and
+`cronberry-mapping.md` §4 is scoped to the Cronberry migration run, not to this
+general feature. Both documents now say so.
+
+Seven things the implementation found that the plan did not anticipate:
+
+- **`PrismaLeadRepository.transaction` needed no change to be borrowed, but it
+  did need extracting.** `forTransaction` is the body of `transaction` lifted
+  out, so bulk import opens its own transaction — with a timeout no single-lead
+  path has any business choosing — and still gets the identical repository,
+  trigger consumers and all. An imported lead reaches Notifications, Campaigns
+  and Routing because it is the same object doing the work, not a parallel one.
+- **The savepoint design produced a *better* `stopOnError` than the plan
+  proposed.** §6 offered "stop at the first failure"; the rollback mechanism was
+  already there, so the implementation evaluates every row and *then* keeps
+  nothing. The admin gets the whole error list instead of one failure per
+  upload, and it is the same `DryRunRollback` a preview throws.
+- **File-level import errors had to start carrying their message.** The rest of
+  the API returns a bare `{error: <code>}`, which is right when the code is all
+  a client may safely learn. "Two columns are mapped to the same target" is
+  about the admin's own upload, and the phase's plain-language requirement
+  cannot be met from a code alone. Authorization failures still return
+  `forbidden` with nothing else.
+- **The first vacuity check failed for the wrong reason, and had to be redone.**
+  Making a preview roll back each row as it went broke the run with a 500
+  (rolled-back leads leaving dangling audit references) rather than failing the
+  fidelity assertion. The faithful mutation — hiding the run's own creations
+  from the duplicate lookup — fails the deep-equal on exactly the two rows that
+  duplicate each other, which is the claim.
+- **The export vacuity check exposed a vacuous assertion.** Swapping the
+  predicate source to `leads:export` leaked 19 leads where the list showed 1 —
+  but in the *passing* case the wide-export role owned nothing, so the test had
+  been comparing two empty sets. It now owns exactly one lead, and asserts the
+  listed set is non-empty before asserting equality.
+- **jsdom cannot carry a `File` through `fetch`.** Its `File` is not undici's,
+  and undici's multipart parser asserts on the difference, so a `FormData` file
+  arrives stringified under test. The mock handlers answer with fixtures rather
+  than parsing the upload; parsing is covered by the CSV unit tests and the
+  engine by the Postgres suite.
+- **A one-column CSV cannot represent a row whose only value is empty.** `\n` is
+  both "a record of one empty field" and a blank line, and dropping blank lines
+  is what stops every spreadsheet export's trailing newline reporting a spurious
+  row. Pinned by a test rather than left to be discovered, because it bounds
+  what round-tripping guarantees.
+
+The two security-critical tests were checked for vacuity by mutation before the
+PR, as 14a and 14b were. Full gate — `format:check`, `lint`, `typecheck`,
+`test`, `build` — run and observed green, with the Postgres suite against a real
+Postgres 16 (CI runs 17.5).
+
+---
+
+## The plan as approved
+
+Ten decisions were requested below (§D1–§D10) and one **conflict between `docs/`
+and this phase's brief** was surfaced rather than resolved (§D9, per the
 `source-of-truth.md` precedence rule and `PLANS.md`'s "stop and surface it").
 
 Four things the investigation found that the brief assumed differently. They are
