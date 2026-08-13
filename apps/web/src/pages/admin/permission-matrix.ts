@@ -74,6 +74,22 @@ export function setScopeForAll(rows: PermissionRows, scope: DataScope): Permissi
   return rows.map((row) => ({ ...row, scope }));
 }
 
+/**
+ * How a data scope is named in the UI.
+ *
+ * `TEAM` is qualified deliberately. Phase 14a added Teams as an entity under
+ * Departments, and this scope has nothing to do with them — it resolves through
+ * the reporting hierarchy (ADR-0006, ADR-0014). The bare token "TEAM" beside a
+ * product that also has Teams reads as though the two are connected, and this
+ * label plus `scopeHint` is the whole mitigation for that collision.
+ */
+export function scopeLabel(scope: DataScope): string {
+  return scope === 'TEAM' ? 'Team (reporting line)' : scope;
+}
+
+export const scopeHint =
+  'Team (reporting line) means everyone reporting to this user through the org chart, at any depth. It is not related to Teams configured under Departments.';
+
 export type ModuleSelection = 'none' | 'some' | 'all';
 
 export function moduleSelection(rows: PermissionRows, module: CatalogModule): ModuleSelection {

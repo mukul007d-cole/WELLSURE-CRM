@@ -28,6 +28,11 @@ import type {
   NotificationItem,
   NotificationRule,
   Campaign,
+  Team,
+  TeamMember,
+  RoutingGrant,
+  RoutingRule,
+  RoutingState,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -218,6 +223,47 @@ export const adminApi = {
   createDepartment: (body: object) => request<Department>('/departments', json('POST', body)),
   editDepartment: (id: string, body: object) =>
     request<Department>(`/departments/${id}`, json('PUT', body)),
+  department: (id: string) => request<Department>(`/departments/${id}`),
+  teams: (departmentId: string, page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
+    request<Page<Team>>(
+      `/departments/${departmentId}/teams${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
+    ),
+  createTeam: (departmentId: string, body: object) =>
+    request<Team>(`/departments/${departmentId}/teams`, json('POST', body)),
+  editTeam: (id: string, body: object) => request<Team>(`/teams/${id}`, json('PUT', body)),
+  deactivateTeam: (id: string) => request<Team>(`/teams/${id}/deactivate`, json('POST', {})),
+  saveTeamMembers: (id: string, members: TeamMember[]) =>
+    request<TeamMember[]>(`/teams/${id}/members`, json('PUT', { members })),
+};
+
+/**
+ * Per-Status assignment routing.
+ *
+ * Rule configuration and the per-Status role grants are separate endpoints on
+ * purpose: the first is gated on `lead_routing:configure`, the second on
+ * `roles_permissions:edit`, so configuring routing can never widen who may
+ * operate it.
+ */
+export const routingApi = {
+  rule: (statusId: string) =>
+    request<{ statusId: string; rule: RoutingRule | null }>(`/statuses/${statusId}/routing`),
+  state: (statusId: string) => request<RoutingState>(`/statuses/${statusId}/routing/state`),
+  saveRule: (statusId: string, body: object) =>
+    request<RoutingRule>(`/statuses/${statusId}/routing`, json('PUT', body)),
+  deactivateRule: (statusId: string) =>
+    request<RoutingRule>(`/statuses/${statusId}/routing/deactivate`, json('POST', {})),
+  grants: (statusId: string) =>
+    request<RoutingGrant[]>(`/statuses/${statusId}/routing/permissions`),
+  saveGrants: (statusId: string, permissions: RoutingGrant[]) =>
+    request<RoutingGrant[]>(
+      `/statuses/${statusId}/routing/permissions`,
+      json('PUT', { permissions }),
+    ),
+  assign: (leadId: string, body: object) =>
+    request<{ assignedUserId: string; previousUserId: string | null }>(
+      `/leads/${leadId}/routing-assign`,
+      json('POST', body),
+    ),
 };
 
 export const campaignsApi = {

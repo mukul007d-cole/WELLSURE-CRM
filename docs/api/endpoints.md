@@ -41,15 +41,41 @@ GET    /departments
 POST   /departments
 GET    /departments/:id
 PUT    /departments/:id
+
+GET    /departments/:id/teams
+POST   /departments/:id/teams           -- body: key, name, members[] (>=1 isLeader)
+GET    /teams/:id                       -- includes members
+PUT    /teams/:id                       -- name only
+POST   /teams/:id/deactivate
+PUT    /teams/:id/members               -- body: complete members array; whole-set replace
 ```
 
+Team routes are gated on `users:view/create/edit` like the rest of Department
+administration (ADR-0009). Members must be active Users of the Team's own
+Department, and an active Team must have at least one leader — see ADR-0014 for
+both, and for why a Team is not the `TEAM` data scope.
+
 ### Journeys, Statuses, Services
+
+Routing rules live under a Status. Every routing route needs both the
+`lead_routing` module action **and** a `status_routing_permissions` row for that
+(status, role, action) — the same layering `field_visibility` uses. Editing those
+grants is gated on `roles_permissions:edit`, never on `lead_routing:configure`.
+See ADR-0015.
 ```
 GET    /journeys
 POST   /journeys
 PATCH  /journeys/:id
 DELETE /journeys/:id
 PUT    /journeys/:id/status-order      -- body: complete ordered statusIds array; atomic
+
+GET    /statuses/:id/routing              -- lead_routing:view; null rule = unrouted Status
+PUT    /statuses/:id/routing              -- lead_routing:configure; whole-rule replace
+POST   /statuses/:id/routing/deactivate   -- lead_routing:configure
+GET    /statuses/:id/routing/state        -- lead_routing:view; cursor holder + per-candidate open counts
+GET    /statuses/:id/routing/permissions  -- roles_permissions:view
+PUT    /statuses/:id/routing/permissions  -- roles_permissions:edit; whole-set replace
+POST   /leads/:id/routing-assign          -- lead_routing:operate AND the caller's normal leads:edit + record scope
 
 GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses

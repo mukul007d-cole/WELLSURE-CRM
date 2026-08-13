@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
@@ -115,6 +116,13 @@ export function DepartmentsPage() {
                     Edit
                   </Button>
                 ) : null}
+                {/* Where this Department's Teams are administered. */}
+                <Link
+                  to={`/admin/departments/${department.id}`}
+                  className="text-sm text-ink-soft hover:text-ink"
+                >
+                  Manage
+                </Link>
               </RowActions>
             </DataCell>
           </DataRow>

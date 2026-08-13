@@ -23,6 +23,40 @@ departments
   id, organization_id, key, name, active, version,
   created_by, updated_by, created_at, updated_at
 
+status_routing_rules
+  id, organization_id, journey_id, status_id, assignment_type,
+  algorithm (round_robin | least_loaded), pool_type (team | users),
+  team_id (nullable), cursor_user_id (nullable), active, version,
+  created_by, updated_by, created_at, updated_at
+  UNIQUE (organization_id, status_id)          -- at most one rule per Status
+  FK (organization_id, journey_id, status_id) -> statuses
+  -- cursor_user_id is the user assigned *last*, not an index: an index means a
+  -- different person as soon as the pool changes size.
+
+status_routing_rule_members     -- pool_type = 'users' only; Team pools read team_members
+  id, organization_id, rule_id, user_id, created_at
+  UNIQUE (organization_id, rule_id, user_id)
+
+status_routing_permissions      -- per-(Status, Role) grant; allow-list, absence denies
+  id, organization_id, status_id, role_id, action (view | configure | operate), created_at
+  UNIQUE (organization_id, status_id, role_id, action)
+  -- Layered on the lead_routing module action exactly as field_visibility is on
+  -- leads:view — both are required. See ADR-0015.
+
+teams
+  id, organization_id, department_id, key, name, active, version,
+  created_by, updated_by, created_at, updated_at
+  UNIQUE (organization_id, department_id, key)
+
+team_members
+  id, organization_id, team_id, department_id, user_id, is_leader, created_at
+  UNIQUE (organization_id, team_id, user_id)
+  FK (organization_id, department_id, team_id) -> teams
+  FK (organization_id, department_id, user_id) -> users
+  -- Those two keys together are what makes "a member belongs to the Team's
+  -- Department" a database invariant. A Team is NOT the TEAM data scope; see
+  -- ADR-0014.
+
 designations
   id, organization_id, key, name, active, version,
   created_by, updated_by, created_at, updated_at
@@ -82,7 +116,7 @@ statuses
   is_default_on_create,
   outcome_type (open | closed_won | closed_lost),
   behavior_type (default | call_later | follow_up | archived),
-  auto_reassign_to_role_id (nullable), sort_order,
+  sort_order,
   created_by, updated_by, created_at, updated_at
 
 fields
@@ -128,11 +162,15 @@ lead_links
 activity_logs
   id, organization_id, lead_id, process_instance_id (nullable),
   actor_user_id (nullable), timestamp,
-  action_type (comment | status_change | reassignment | field_edit | share_changed | lead_deactivated),
+  action_type (comment | status_change | reassignment | field_edit | share_changed |
+               lead_deactivated | journey_change | routing_skipped),
   source, comment_text, recording_reference_url (nullable),
   old_value, new_value
   -- Append-only. Example sources include manual,
-  -- migrated_cronberry_remark, and migrated_cronberry_call_log.
+  -- migrated_cronberry_remark, and migrated_cronberry_call_log. A routing rule
+  -- writes `reassignment` with source `routing` (or `routing_manual` for an
+  -- override), so an automatic assignment is distinguishable from a human one;
+  -- `routing_skipped` records a rule that could not resolve a candidate.
 
 system_audit_logs
   id, organization_id, actor_user_id, timestamp,

@@ -6,6 +6,7 @@ import type {
   PageRequest,
   PermissionInput,
   RoleVisibilityInput,
+  TeamMemberInput,
 } from './types.js';
 
 export function pagination(page: unknown, pageSize: unknown): PageRequest {
@@ -105,6 +106,35 @@ export function roleVisibility(value: unknown): RoleVisibilityInput[] {
     'duplicate roleId',
   );
   return result.sort((a, b) => a.roleId.localeCompare(b.roleId));
+}
+
+/**
+ * A Team's complete member set.
+ *
+ * At least one member must be a leader. This system already refuses states with
+ * no accountable party — `replacePermissions` rejects a replacement leaving no
+ * permission administrator — and a Team nobody leads is the same shape of
+ * mistake. The rule binds *configuration*: it is enforced here and on every
+ * write path an admin drives. A leader later leaving the Department is not a
+ * configuration act, and the repository resolves that case by deactivating the
+ * team rather than by refusing the personnel change (see ADR-0014).
+ */
+export function teamMembers(value: unknown): TeamMemberInput[] {
+  if (!Array.isArray(value)) throw new AdminError('validation_error', 'members must be an array');
+  const result = value.map((item) => {
+    const row = item as Record<string, unknown>;
+    const userId = text(row.userId, 'userId');
+    if (row.isLeader !== undefined && typeof row.isLeader !== 'boolean')
+      throw new AdminError('validation_error', 'isLeader must be a boolean');
+    return { userId, isLeader: row.isLeader === true };
+  });
+  unique(
+    result.map((row) => row.userId),
+    'duplicate userId',
+  );
+  if (!result.some((row) => row.isLeader))
+    throw new AdminError('validation_error', 'a Team requires at least one Team Leader');
+  return result.sort((a, b) => a.userId.localeCompare(b.userId));
 }
 
 function unique(values: string[], message: string): void {

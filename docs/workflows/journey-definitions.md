@@ -57,8 +57,17 @@ Lead Owner, Prev Lead Owner (history), Sales Associate, Team Leader, Operations 
 1. Update the process instance's current status.
 2. Look up the new status's `behavior_type`:
    - `call_later` → create a task (due date, assigned to current owner)
-   - `follow_up` → create a task; if `auto_reassign_to_role_id` is set, reassign ownership
+   - `follow_up` → create a task
    - `archived` → excluded from active list/kanban views by default, still queryable
 3. Write an `activity_logs` entry (`status_change`, old/new values).
+4. If the new Status has an active routing rule, assign the lead to one member of
+   its pool — ending the previous assignment for that assignment type in the same
+   transaction — and write a `reassignment` entry naming both holders. See
+   ADR-0015.
+
+Automatic reassignment is per-Status configuration (`status_routing_rules`), not
+a `behavior_type` side-effect. The `statuses.auto_reassign_to_role_id` column
+this document previously described was never implemented and was dropped in
+Phase 14b.
 
 Deleting a status with active leads in it is blocked until they're bulk-reassigned to a replacement status — no silent data loss.

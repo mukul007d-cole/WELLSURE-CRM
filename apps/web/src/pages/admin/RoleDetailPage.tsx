@@ -20,6 +20,8 @@ import {
   setModule,
   setPermission,
   setScopeForAll,
+  scopeHint,
+  scopeLabel,
   type CatalogModule,
 } from './permission-matrix';
 
@@ -174,7 +176,7 @@ export function RoleDetailPage() {
               <option value="">Set all scopes…</option>
               {catalog.data?.supportedScopes.map((scope) => (
                 <option key={scope} value={scope}>
-                  {scope}
+                  {scopeLabel(scope)}
                 </option>
               ))}
             </Select>
@@ -182,6 +184,12 @@ export function RoleDetailPage() {
         }
       >
         <div className="space-y-5">
+          {/*
+            Two things in this product are called "team" and they are unrelated
+            (ADR-0014). Saying so where the scope is actually chosen is the
+            mitigation; anywhere else is too late.
+          */}
+          <p className="rounded-control bg-paper px-3 py-2 text-xs text-ink-soft">{scopeHint}</p>
           {modules.map((module) => {
             const selection = moduleSelection(permissions, module);
             return (
@@ -242,7 +250,9 @@ export function RoleDetailPage() {
                           }
                         >
                           {catalog.data?.supportedScopes.map((scope) => (
-                            <option key={scope}>{scope}</option>
+                            <option key={scope} value={scope}>
+                              {scopeLabel(scope)}
+                            </option>
                           ))}
                         </Select>
                       </div>

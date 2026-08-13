@@ -26,6 +26,14 @@ export interface RoleVisibilityInput {
   roleId: string;
   accessLevel: FieldAccessLevel;
 }
+/**
+ * One member of a Team. A leader is a member with `isLeader`, never a separate
+ * row or a column on the team, so "a leader is in their own team" is structural.
+ */
+export interface TeamMemberInput {
+  userId: string;
+  isLeader: boolean;
+}
 export interface UserWriteInput {
   name: string;
   email: string;

@@ -7,9 +7,11 @@ import { AuthProvider } from '../../app/AuthContext';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { DepartmentsPage } from './DepartmentsPage';
+import { DepartmentDetailPage } from './DepartmentDetailPage';
 import { FieldsPage } from './FieldsPage';
 import { JourneyDetailPage } from './JourneyDetailPage';
 import { JourneysPage } from './JourneysPage';
+import { RoleDetailPage } from './RoleDetailPage';
 import { RolesPage } from './RolesPage';
 import { UsersPage } from './UsersPage';
 
@@ -361,6 +363,131 @@ describe('administration resource flows', () => {
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: /Deactivate/ })).not.toBeInTheDocument(),
     );
+  });
+
+  it('creates and edits a Team from inside the Department, and refuses a leaderless one', async () => {
+    const renderDetail = () =>
+      renderPage(
+        <DepartmentDetailPage />,
+        '/admin/departments/department-synthetic',
+        '/admin/departments/:departmentId',
+      );
+    renderDetail();
+
+    // The seeded Team, summarized by who leads it.
+    expect(await screen.findByText('Synthetic team')).toBeInTheDocument();
+    expect(screen.getByText(/led by Alba Fenn/)).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Team' }));
+    change('Stable key', 'synthetic_new_team');
+    change('Name', 'Synthetic new team');
+
+    // Save stays disabled until somebody leads the Team — the same rule the
+    // API enforces, surfaced before the request rather than as a 400.
+    const save = screen.getByRole('button', { name: 'Save Team' });
+    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/Bo Ridley/));
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/at least one Team Leader/i);
+    const leaderToggles = screen.getAllByLabelText('Team Leader');
+    fireEvent.click(leaderToggles[1] as HTMLElement);
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    expect(await screen.findByText('Synthetic new team')).toBeInTheDocument();
+
+    // Only this Department's Users are offered as members.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' }).at(-1) as HTMLElement);
+    expect(screen.queryByLabelText(/Sales Rep/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate' }).at(-1) as HTMLElement);
+    await waitFor(() => expect(screen.queryByText('Synthetic new team')).not.toBeInTheDocument());
+  });
+
+  it('names the TEAM data scope as the reporting line, not the Team entity', async () => {
+    renderPage(<RoleDetailPage />, '/admin/roles/role-admin', '/admin/roles/:roleId');
+    const hint = await screen.findByText(/not related to Teams configured under Departments/i);
+    expect(hint).toBeInTheDocument();
+
+    // The label is qualified everywhere it appears — there is one scope select
+    // per action — and the submitted value is still the raw token.
+    const options = await screen.findAllByRole('option', { name: 'Team (reporting line)' });
+    expect(options.length).toBeGreaterThan(1);
+    for (const option of options) expect(option).toHaveValue('TEAM');
+    expect(screen.queryAllByRole('option', { name: 'TEAM' })).toHaveLength(0);
+  });
+
+  it('configures a per-status routing rule and its role grants inside the Statuses list', async () => {
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    await screen.findByRole('heading', { level: 2 });
+
+    // Routing lives inside the Statuses list, not in a tab of its own.
+    const toggles = await screen.findAllByRole('button', { name: 'Routing' });
+    fireEvent.click(toggles[0] as HTMLElement);
+    expect(
+      await screen.findByText(/keep whatever assignment they already have/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add routing rule' }));
+    // Free text, not a picker: the suggestion list is derived from assignments
+    // that already exist, so a Journey with none must still be configurable.
+    change('Assignment type', 'synthetic_owner');
+    change('Algorithm', 'least_loaded');
+
+    const save = screen.getByRole('button', { name: 'Save routing rule' });
+    // A user pool with nobody in it is not a rule.
+    expect(save).toBeDisabled();
+    fireEvent.click(await screen.findByLabelText(/Alba Fenn/));
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+
+    expect(await screen.findByText('synthetic_owner')).toBeInTheDocument();
+    expect(screen.getByText(/least loaded/)).toBeInTheDocument();
+
+    // Second section: the per-status role grants, gated on permissions
+    // administration rather than on routing configuration.
+    const grant = await screen.findByLabelText(/Synthetic role B Operate routing/i);
+    fireEvent.click(grant);
+    fireEvent.click(screen.getByRole('button', { name: 'Save role permissions' }));
+    await waitFor(() => expect(grant).toBeChecked());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear rule' }));
+    await waitFor(() =>
+      expect(screen.getByText(/keep whatever assignment they already have/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('hides the routing grant editor from someone who cannot edit permissions', async () => {
+    server.use(
+      http.get('/api/v1/auth/capabilities', () =>
+        HttpResponse.json({
+          permissions: [
+            { module: 'journeys_statuses', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'lead_routing', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'lead_routing', action: 'configure', scope: 'ORGANIZATION' },
+          ],
+          journeyIds: ['journey-alpha'],
+          fieldVisibility: [],
+        }),
+      ),
+    );
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Routing' }))[0] as HTMLElement);
+
+    // It can configure the rule…
+    expect(await screen.findByRole('button', { name: 'Add routing rule' })).toBeInTheDocument();
+    // …and cannot reach the grid that decides who may operate it. Granting
+    // routing rights is a permissions act, so a routing configurator must not be
+    // able to widen its own access from here.
+    expect(screen.queryByText(/Role permissions for this Status/i)).not.toBeInTheDocument();
   });
 
   it('renders loading, empty, API error, and stale-capability forbidden states', async () => {
