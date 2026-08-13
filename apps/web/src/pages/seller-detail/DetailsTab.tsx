@@ -1,5 +1,6 @@
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Eyebrow } from '../../components/ui/Heading';
 import { formatFieldValue } from '../../lib/format';
 import type { FieldDefinition } from '../../types/domain';
 
@@ -85,9 +86,9 @@ export function DetailsTab({
           {/* Suppressed when there is only one group — a lone heading over
               every field on the page is noise, not structure. */}
           {sections.length > 1 ? (
-            <h3 className="mb-3 border-b border-line-soft pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
+            <Eyebrow as="h3" className="mb-3 border-b border-line-soft pb-1.5">
               {section.name}
-            </h3>
+            </Eyebrow>
           ) : null}
           <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             {section.fields.map((field) => (

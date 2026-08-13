@@ -162,3 +162,57 @@ describe('seller list filter builder', () => {
     );
   });
 });
+
+describe('seller list export', () => {
+  beforeEach(() => {
+    sentFilters.length = 0;
+    sessionStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('sends the filters currently on screen, not a fresh unfiltered request', async () => {
+    const exported: Array<string | null> = [];
+    server.use(
+      http.get('/api/v1/leads/export', ({ request }) => {
+        const url = new URL(request.url);
+        exported.push(url.searchParams.get('search'));
+        return HttpResponse.text('lead_id,name\r\n', {
+          headers: {
+            'content-type': 'text/csv',
+            'content-disposition': 'attachment; filename="sellers.csv"',
+          },
+        });
+      }),
+    );
+    // jsdom has neither; the click path uses both to hand the file over.
+    URL.createObjectURL = () => 'blob:mock';
+    URL.revokeObjectURL = () => undefined;
+
+    renderPage('/sellers?search=Vantage');
+    fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(exported).toEqual(['Vantage']));
+  });
+
+  it('hides the button from a role without leads:export', async () => {
+    document.cookie = setCookieHeader(createSession('user-rep'));
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter initialEntries={['/sellers']}>
+          <PreferencesProvider>
+            <AuthProvider>
+              <Routes>
+                <Route path="/sellers" element={<SellerListPage />} />
+              </Routes>
+            </AuthProvider>
+          </PreferencesProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    // The real enforcement is server-side; this only checks the affordance is
+    // not offered to someone who would be refused.
+    await screen.findByRole('heading', { name: /sellers/i });
+    expect(screen.queryByRole('button', { name: /export csv/i })).not.toBeInTheDocument();
+  });
+});

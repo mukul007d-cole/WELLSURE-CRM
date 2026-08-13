@@ -42,7 +42,7 @@ export function DataTable({
                   scope="col"
                   style={config.width ? { width: config.width } : undefined}
                   className={cn(
-                    'border-b border-line bg-surface-sunken px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft',
+                    'border-b border-line bg-surface-sunken px-4 py-2 text-eyebrow uppercase text-ink-soft',
                     config.align === 'right' && 'text-right',
                   )}
                 >

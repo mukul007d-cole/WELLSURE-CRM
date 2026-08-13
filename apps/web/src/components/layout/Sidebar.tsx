@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import { Eyebrow } from '../ui/Heading';
 import { useAuth } from '../../app/AuthContext';
 
 interface NavItem {
@@ -95,14 +96,9 @@ function SectionHeading({
     );
   }
   return (
-    <p
-      className={cn(
-        'px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-on-ink-soft',
-        first ? 'mt-0' : 'mt-6',
-      )}
-    >
+    <Eyebrow tone="onInk" className={cn('px-3', first ? 'mt-0' : 'mt-6')}>
       {label}
-    </p>
+    </Eyebrow>
   );
 }
 
@@ -119,6 +115,17 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
       : []),
     ...(can('fields', 'view')
       ? [{ label: 'Fields', to: '/admin/fields', icon: <Icon d="M5 5h14v14H5z" /> }]
+      : []),
+    ...(can('leads', 'import')
+      ? [
+          {
+            label: 'Import leads',
+            to: '/import',
+            icon: (
+              <Icon d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 17v1.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V17" />
+            ),
+          },
+        ]
       : []),
     ...(can('roles_permissions', 'view')
       ? [
@@ -205,7 +212,7 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
         {collapsed ? null : (
           <div className="font-display leading-tight">
             <p className="text-sm font-bold tracking-wide text-on-ink">WELLSURE</p>
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-gold">CRM</p>
+            <Eyebrow className="text-gold">CRM</Eyebrow>
           </div>
         )}
       </div>

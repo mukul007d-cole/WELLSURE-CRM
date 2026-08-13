@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Heading } from './Heading';
 
 interface EmptyStateProps {
   title: string;
@@ -22,7 +23,7 @@ export function EmptyState({ title, description, action, icon }: EmptyStateProps
       <span className="flex h-16 w-16 items-center justify-center rounded-full bg-gold-soft/40">
         {icon ?? <DefaultRingIcon />}
       </span>
-      <h3 className="font-display text-lg font-semibold text-ink">{title}</h3>
+      <Heading level="section">{title}</Heading>
       <p className="max-w-sm text-sm text-ink-soft">{description}</p>
       {action ? <div className="mt-2">{action}</div> : null}
     </div>

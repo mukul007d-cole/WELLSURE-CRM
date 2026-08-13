@@ -71,6 +71,54 @@
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
   /*
+   * Type scale.
+   *
+   * The colour ramp above was designed; the type was not. An audit of every
+   * `.tsx` found 190 of 200 size usages were `text-sm` or `text-xs` — a screen
+   * with two sizes has no hierarchy, only density — and fourteen more had
+   * escaped below the ramp's floor into arbitrary `text-[10px]` and
+   * `text-[11px]`, because the floor was missing.
+   *
+   * The worst of it was the small-caps section label: the same visual element
+   * was written from scratch in about ten places at four sizes (10px, 11px,
+   * `sm`) and four letter-spacings (0.06em, 0.1em, 0.14em, `tracking-wide`).
+   * `--text-eyebrow` ends that argument, and the `Eyebrow` primitive is how it
+   * gets used.
+   *
+   * Display steps are paired with their line height so a heading is one
+   * decision rather than three guesses. Body sizes stay on Tailwind's defaults;
+   * the gap was never there.
+   */
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.06em;
+  --text-eyebrow--font-weight: 600;
+
+  --text-title-sm: 0.9375rem;
+  --text-title-sm--line-height: 1.375rem;
+  --text-title-sm--letter-spacing: -0.005em;
+
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.5rem;
+  --text-title--letter-spacing: -0.01em;
+
+  --text-title-lg: 1.5rem;
+  --text-title-lg--line-height: 1.875rem;
+  --text-title-lg--letter-spacing: -0.02em;
+
+  --text-display: 2rem;
+  --text-display--line-height: 2.375rem;
+  --text-display--letter-spacing: -0.025em;
+
+  /*
+   * Padding rhythm for panels. Four values (p-3/p-4/p-5/p-6) were in use across
+   * ~30 card call sites with nothing choosing between them; `CardBody` and its
+   * siblings spend these instead.
+   */
+  --space-panel: 1.25rem;
+  --space-panel-tight: 0.875rem;
+
+  /*
    * Radius. Tightened from 14px: a large corner radius reads consumer-app,
    * and on a screen full of adjacent panels it wastes edge alignment. Data
    * tooling wants crisp corners, so panels sit at 10px and controls at 6px.
