@@ -20,6 +20,7 @@ import { RoleDetailPage } from './pages/admin/RoleDetailPage';
 import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 import { OrgChartPage } from './pages/admin/OrgChartPage';
 import { CampaignsPage } from './pages/admin/campaigns/CampaignsPage';
+import { ImportPage } from './pages/import/ImportPage';
 import { UserManagementPage } from './pages/admin/UserManagementPage';
 import { BoardPage } from './pages/board/BoardPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
@@ -62,6 +63,9 @@ export function App() {
                       path="/admin/departments/:departmentId"
                       element={<DepartmentDetailPage />}
                     />
+                  </Route>
+                  <Route element={<PermissionRoute module="leads" action="import" />}>
+                    <Route path="/import" element={<ImportPage />} />
                   </Route>
                   <Route element={<PermissionRoute module="campaigns" />}>
                     <Route path="/admin/campaigns" element={<CampaignsPage />} />

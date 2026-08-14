@@ -12,6 +12,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerImportExportRoutes } from './routes/import.js';
 import { registerLeadRoutes } from './routes/leads.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerRoutingRoutes } from './routes/routing.js';
@@ -28,8 +29,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     await registerCors(app, deps.corsOrigins);
     await registerOpenApi(app);
     await registerRateLimit(app, deps.authRateLimit ?? { max: 20, timeWindow: 60_000 });
-    // Attachment uploads are the only multipart route; per-request limits are
-    // set there rather than globally.
+    // Attachment uploads and import uploads are the multipart routes;
+    // per-request limits are set there rather than globally.
     await app.register(multipart);
     registerHealthRoutes(app);
     registerAuthRoutes(app, deps);
@@ -37,6 +38,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
       registerAdminRoutes(app, { ...deps, adminRepository: deps.adminRepository });
     registerConfigurationRoutes(app, deps);
     registerLeadRoutes(app, deps);
+    // `/leads/export` and `/leads/import/*` sit under the same prefix as
+    // `/leads/:id`. Fastify's router prefers a static segment over a parametric
+    // one, so this resolves regardless of registration order — asserted by test
+    // rather than trusted, since an id-shaped 404 would be a confusing failure.
+    registerImportExportRoutes(app, deps);
     registerNotificationRoutes(app, deps);
     registerAttachmentRoutes(app, deps);
     registerCampaignRoutes(app, deps);

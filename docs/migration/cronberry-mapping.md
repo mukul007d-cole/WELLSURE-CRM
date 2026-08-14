@@ -200,7 +200,17 @@ mapping decision rather than a guessed destination. Header coverage is complete,
 while the substantive questions in `docs/requirements/open-decisions.md` still
 block final import mapping where noted.
 
-Before implementation, the importer must provide:
+**Scope note (ADR-0016).** The requirements below describe the *Cronberry
+migration run*, not the general bulk-import feature built in phase 15. That
+feature is a synchronous, single-file CSV flow (`POST /leads/import/*`) capped
+at 5,000 rows; the migration is expected to be performed by mapping a
+cleaned-up export through it, in batches, the same way any admin imports a CSV.
+Resumability, idempotent batching and 100,000-row load validation attach to the
+migration and remain open. Preview-before-commit, immutable counts,
+permission-safe error reporting and the exclusion of security data are already
+provided by the feature.
+
+Before implementation, the migration must provide:
 
 - immutable source/staged/inserted/updated/duplicate/rejected counts;
 - preview and validation before commit;

@@ -11,6 +11,15 @@ export const permissionCatalog = [
   {
     module: 'leads',
     label: 'Leads',
+    // `import` is deliberately separate from `create`: creating one lead you are
+    // looking at and creating thousands from a file are different levels of
+    // trust and different blast radii — the same split as `campaigns:send`
+    // against `campaigns:edit` below.
+    //
+    // It is an *additional* gate, never a replacement. Import requires
+    // `leads:create` as well, so holding `import` never lets someone create a
+    // lead they could not create singly, in a journey they cannot access, or
+    // with a Field they cannot edit. See ADR-0016.
     actions: [
       'view',
       'create',
@@ -18,6 +27,7 @@ export const permissionCatalog = [
       'comment',
       'delete',
       'export',
+      'import',
       'bulk_reassign',
       'bulk_status_change',
     ],

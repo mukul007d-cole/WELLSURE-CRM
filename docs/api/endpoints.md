@@ -176,9 +176,72 @@ DELETE /leads/:id/shares/:shareId
 POST   /leads/:id/deactivate
 POST   /leads/bulk/reassign            -- NOT IMPLEMENTED (leads:bulk_reassign is grantable but honoured by no route)
 POST   /leads/bulk/status              -- NOT IMPLEMENTED (leads:bulk_status_change is grantable but honoured by no route)
-GET    /leads/export                   -- NOT IMPLEMENTED (leads:export is grantable but honoured by no route)
-POST   /leads/import                   -- NOT IMPLEMENTED
+GET    /leads/export                   -- CSV of the Seller List under the same query parameters as GET /leads; leads:export
+POST   /leads/import/analyze           -- multipart; returns the file's columns, samples and fill rates. leads:import
+POST   /leads/import/preview           -- multipart; runs the real creation path and rolls it back. Writes nothing. leads:import + leads:create
+POST   /leads/import/commit            -- multipart; the same run, kept. leads:import + leads:create
+GET    /leads/import/jobs              -- this organization's committed import runs, newest first. leads:import
 ```
+
+### Bulk import (Phase 15)
+
+- `leads:import` is a **separate action from `leads:create`, and both are
+  required**. It is an additional gate, never a replacement — the same shape as
+  `lead_routing:operate`. See ADR-0016.
+- Authorization is decided **once per file**, not once per row: the mapping is
+  per-file, so the union of mapped Field ids is checked as
+  `requestedEditFieldIds` in a single decision. A Field the caller cannot edit
+  refuses the mapping with `field_edit_denied`, naming the column, rather than
+  failing row 4,000.
+- Each row is mapped to a Lead core column, an **existing** configured Field, an
+  assignment of a named type (the cell holds a user's email), a Status (the cell
+  holds a configured Status name or key within the chosen Journey), or `skip`.
+  **Every header column must carry an explicit entry**, including `skip`; a
+  mapping that omits one is rejected. No column is ever guessed into a target,
+  and this flow never creates a Field.
+- The chosen Journey is per file and required. Status is a per-file default, a
+  per-row column, or absent — in which case the Journey's `is_default_on_create`
+  applies, exactly as for `POST /leads`. At least one assignment must resolve
+  per row; a row whose owner column names no user is **rejected**, never
+  assigned to the importer or to any default.
+- `preview` and `commit` are the same code path. Both run
+  `LeadService.createLead` per row inside one transaction with a savepoint per
+  row; a preview then rolls the transaction back. Whatever a preview predicts,
+  a commit over the same bytes does.
+- `commit` takes the `contentHash` its preview returned and answers `409
+  conflict` if the uploaded bytes hash differently.
+- Duplicate matching is off unless the mapping names at least one match key.
+  Matching runs organization-wide, but a matched lead outside the importer's
+  record scope is reported without its id or name.
+- Partial success is the default: valid rows are created and invalid ones
+  reported, with `created + skipped + rejected == rowCount`. `stopOnError=true`
+  evaluates every row and then keeps nothing.
+- Limits: 5,000 rows and 5 MB per file. **The resumable 100,000-row importer in
+  `docs/testing/quality-gates.md` is the Cronberry migration run, not this
+  endpoint** — see ADR-0016.
+- File-level failures (a malformed file, an unusable mapping) return
+  `{error, message, details}`; the message describes the caller's own upload.
+  Authorization failures return `forbidden` with no message, as elsewhere.
+
+### Bulk export (Phase 15)
+
+- `GET /leads/export` accepts exactly the query parameters `GET /leads` accepts
+  and applies them identically, so an export matches the list on screen.
+- **Gated on `leads:export`; the record predicate and field visibility come from
+  `leads:view`.** Data scope is stored per (role, module, action), so taking the
+  data decision from `export` would let a wide `export` scope over a narrow
+  `view` scope export records the caller cannot list. A deliberately narrower
+  `export` scope is therefore not honoured — `export` is a capability, not a
+  scope. See ADR-0016.
+- Fields the caller cannot see are **absent from the header**, not blank in
+  every row, so the file does not disclose which Fields exist. A filter on an
+  invisible Field is refused, exactly as the list refuses it.
+- One row per (lead × visible active process instance), re-filtered through the
+  caller's accessible Journeys.
+- Capped at 50,000 rows; a truncated export says so in `x-export-truncated`.
+- Every export writes one `system_audit_logs` row (`entity_type:
+  'lead_export'`) carrying the actor, the filters, the row count and the
+  exported Field ids.
 
 
 ### Notifications

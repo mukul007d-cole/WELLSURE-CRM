@@ -49,6 +49,7 @@ model Organization {
   leads               Lead[]
   auditLogs           SystemAuditLog[]
   importJobs          ImportJob[]
+  importJobRows       ImportJobRow[]
   payments            Payment[]
   notifications       Notification[]
   notificationRules   NotificationRule[]
@@ -504,6 +505,8 @@ model Lead {
   linksFrom        LeadLink[]        @relation("LeadLinkFrom")
   linksTo          LeadLink[]        @relation("LeadLinkTo")
   campaignSends    CampaignSend[]
+  importedByRows   ImportJobRow[]    @relation("ImportJobRowLead")
+  matchedByRows    ImportJobRow[]    @relation("ImportJobRowMatchedLead")
 
   @@id([organizationId, id])
   @@index([organizationId, active, updatedAt])
@@ -527,10 +530,11 @@ model ProcessInstance {
   lead          Lead          @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
   journey       Journey       @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
   currentStatus Status        @relation(fields: [organizationId, journeyId, currentStatusId], references: [organizationId, journeyId, id], onDelete: Restrict)
-  assignments   Assignment[]
-  leadServices  LeadService[]
-  activities    ActivityLog[]
-  tasks         Task[]
+  assignments    Assignment[]
+  leadServices   LeadService[]
+  activities     ActivityLog[]
+  tasks          Task[]
+  importJobRows  ImportJobRow[]
 
   @@id([organizationId, id])
   @@index([organizationId, journeyId, currentStatusId])
@@ -699,23 +703,73 @@ model Attachment {
   @@map("attachments")
 }
 
+/// One bulk import run.
+///
+/// Dormant since phase 1 and wired up by phase 15. `fileKey` predates the
+/// decision that object storage is optional (ADR-0012), so it holds
+/// `sha256:<hex>` of the uploaded bytes rather than an object key — which is
+/// also what lets a commit refuse a file that differs from the one previewed.
+/// See ADR-0016.
 model ImportJob {
   id             String   @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   source         String
+  /// `sha256:<hex>` of the uploaded bytes. Not an object-storage key.
   fileKey        String   @map("file_key")
+  /// `preview` | `committed` | `failed`
   status         String
   mappingJson    Json     @map("mapping_json") @db.JsonB
+  fileName       String   @default("") @map("file_name")
+  rowCount       Int      @default(0) @map("row_count")
+  createdCount   Int      @default(0) @map("created_count")
+  skippedCount   Int      @default(0) @map("skipped_count")
+  rejectedCount  Int      @default(0) @map("rejected_count")
   createdById    String   @map("created_by") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy    User         @relation(fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User            @relation(fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  rows         ImportJobRow[]
 
   @@id([organizationId, id])
   @@index([organizationId, status, createdAt])
+  @@index([organizationId, createdAt(sort: Desc)])
   @@map("import_jobs")
+}
+
+/// What one imported row did.
+///
+/// Written on commit only: a preview's rows live inside the transaction that is
+/// deliberately rolled back, so they never reach the table. This is what "trace
+/// back what was created" means in practice — for any lead, which import made it
+/// and from which row; for any import, exactly what it did and why a row did not
+/// become a lead.
+model ImportJobRow {
+  id                String   @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  importJobId       String   @map("import_job_id") @db.Uuid
+  /// The record's position in the file, counting the header as 1.
+  rowNumber         Int      @map("row_number")
+  /// `created` | `skipped_duplicate` | `rejected`
+  outcome           String
+  leadId            String?  @map("lead_id") @db.Uuid
+  processInstanceId String?  @map("process_instance_id") @db.Uuid
+  matchedLeadId     String?  @map("matched_lead_id") @db.Uuid
+  /// The rejection's error code and message. Never a cell from the source file.
+  reason            String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  importJob       ImportJob        @relation(fields: [organizationId, importJobId], references: [organizationId, id], onDelete: Restrict)
+  lead            Lead?            @relation("ImportJobRowLead", fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  matchedLead     Lead?            @relation("ImportJobRowMatchedLead", fields: [organizationId, matchedLeadId], references: [organizationId, id], onDelete: Restrict)
+  processInstance ProcessInstance? @relation(fields: [organizationId, processInstanceId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, importJobId, rowNumber])
+  @@index([organizationId, leadId])
+  @@map("import_job_rows")
 }
 
 model Invoice {

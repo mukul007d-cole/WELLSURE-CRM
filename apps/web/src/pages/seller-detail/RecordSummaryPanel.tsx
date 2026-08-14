@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Eyebrow } from '../../components/ui/Heading';
 import { RingAvatar } from '../../components/ui/RingAvatar';
 import { StatusPill } from '../../components/ui/StatusPill';
 import type { LeadShare, Seller360Record } from '../../types/domain';
@@ -38,7 +39,9 @@ function ContactActions({ phone }: { phone: string }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-[0.06em] text-ink-soft">{label}</dt>
+      <Eyebrow as="dt" className="font-normal">
+        {label}
+      </Eyebrow>
       <dd className="mt-0.5 text-sm text-ink">{value}</dd>
     </div>
   );
@@ -104,9 +107,7 @@ export function RecordSummaryPanel({
       </dl>
 
       <div className="border-t border-line-soft pt-4">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
-          Journeys
-        </h3>
+        <Eyebrow as="h3">Journeys</Eyebrow>
         {seller.processInstances.length === 0 ? (
           <p className="mt-2 text-sm text-ink-soft">No visible journeys.</p>
         ) : (
@@ -134,9 +135,7 @@ export function RecordSummaryPanel({
 
       {shares.length > 0 ? (
         <div className="border-t border-line-soft pt-4">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
-            Shared with
-          </h3>
+          <Eyebrow as="h3">Shared with</Eyebrow>
           <ul className="mt-2 flex flex-col gap-1">
             {shares.map((share) => (
               <li key={share.id} className="text-sm text-ink-muted">

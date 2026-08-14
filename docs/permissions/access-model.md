@@ -21,7 +21,7 @@ ALLOW =
 
 | Module | Actions |
 |---|---|
-| Leads | view, create, edit, comment, delete, export, bulk_reassign, bulk_status_change |
+| Leads | view, create, edit, comment, delete, export, import, bulk_reassign, bulk_status_change |
 | Fields | view, create, edit, delete |
 | Journeys & Statuses | view, create, edit, delete |
 | Services | view, create, edit |
@@ -93,6 +93,13 @@ Lead shares are action-scoped direct grants supporting `view`, `edit`, and `comm
 - Count endpoints use the exact same access-filtering query as list endpoints (a common bug source: counts leaking record existence beyond what a user can actually see).
 - Saved views never bypass the permission engine.
 - Bulk operations re-check every selected record server-side, not just at selection time.
-- Exports include only permitted rows and permitted fields.
+- Exports include only permitted rows and permitted fields. `leads:export` is
+  the gate; the rows and fields come from the caller's `leads:view` scope and
+  `field_visibility`, so an export can never exceed what the same user sees in
+  the Seller List. A Field the caller cannot see is absent from the CSV header
+  rather than blank in every row. See ADR-0016.
+- `leads:import` is required **in addition to** `leads:create`, never instead of
+  it: a bulk import can only create what its actor could create one at a time,
+  in a Journey they can access, with Fields they can edit.
 - Every reassignment, status change, finance action, document event, bulk action, and export writes to `system_audit_logs` or `activity_logs` as appropriate.
 - Build and test the permission engine as an isolated package with table-driven tests before building any UI that depends on it (Seller List, Seller 360).

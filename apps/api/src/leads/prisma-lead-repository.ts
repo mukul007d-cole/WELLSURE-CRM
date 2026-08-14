@@ -160,15 +160,26 @@ export class PrismaLeadRepository
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
     if (this.prisma.$transaction === undefined) return work(this);
-    return this.prisma.$transaction((tx) =>
-      work(
-        new PrismaLeadRepository(
-          tx,
-          this.notifications ? new NotificationService(tx as never) : undefined,
-          this.campaignTriggers ? new CampaignTriggerService(tx as never) : undefined,
-          this.routing ? buildRoutingService(tx as never) : undefined,
-        ),
-      ),
+    return this.prisma.$transaction((tx) => work(this.forTransaction(tx)));
+  }
+
+  /**
+   * This repository, re-bound to someone else's transaction.
+   *
+   * Extracted from `transaction` rather than duplicated: bulk import opens its
+   * own transaction — it needs a lifetime longer than one lead and a timeout
+   * this method has no business choosing — and then runs the ordinary
+   * `LeadService.createLead` per row through the repository this returns. The
+   * trigger consumers are rebuilt against `tx` exactly as they are above, so an
+   * imported lead reaches Notifications, Campaigns and Routing identically to a
+   * hand-created one.
+   */
+  forTransaction(tx: PrismaTransactionClient): PrismaLeadRepository {
+    return new PrismaLeadRepository(
+      tx,
+      this.notifications ? new NotificationService(tx as never) : undefined,
+      this.campaignTriggers ? new CampaignTriggerService(tx as never) : undefined,
+      this.routing ? buildRoutingService(tx as never) : undefined,
     );
   }
 

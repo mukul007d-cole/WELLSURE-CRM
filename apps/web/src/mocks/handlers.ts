@@ -23,6 +23,7 @@ import {
 import type { NotificationItem } from '../types/domain';
 
 const API_BASE = '/api/v1';
+
 const MOCK_SHARES: Array<{
   id: string;
   leadId: string;
@@ -1359,4 +1360,64 @@ export const handlers = [
     MOCK_NOTIFICATION_RULES.push(row);
     return HttpResponse.json(row, { status: 201 });
   }),
+
+  /*
+   * Bulk import.
+   *
+   * These handlers deliberately ignore the uploaded bytes and answer with fixed
+   * fixtures. jsdom's `File` is not undici's, so a `File` appended to `FormData`
+   * does not survive `fetch` in this environment — it arrives stringified, and
+   * any mock that parsed it would be testing that bug rather than the UI.
+   *
+   * Nothing is lost: parsing is covered exhaustively by `@falcon/validation`'s
+   * unit tests, and the engine by the Postgres suite. What these exercise is the
+   * flow — the mapping defaults, the preview's counts and filtering, and the
+   * explicit confirm before anything commits.
+   */
+  http.post(`${API_BASE}/leads/import/analyze`, () =>
+    HttpResponse.json({
+      fileName: 'leads.csv',
+      contentHash: `sha256:${'0'.repeat(64)}`,
+      rowCount: 3,
+      raggedRowNumbers: [],
+      columns: [
+        { index: 0, name: 'name', samples: ['Ada Lovelace', 'Grace Hopper'], fillRate: 0.67 },
+        { index: 1, name: 'phone', samples: ['111', '222', '333'], fillRate: 1 },
+        { index: 2, name: 'junk', samples: ['x', 'y', 'z'], fillRate: 1 },
+      ],
+    }),
+  ),
+  ...(['preview', 'commit'] as const).map((mode) =>
+    http.post(`${API_BASE}/leads/import/${mode}`, () =>
+      HttpResponse.json({
+        mode,
+        committed: mode === 'commit',
+        jobId: mode === 'commit' ? 'job-1' : null,
+        fileName: 'leads.csv',
+        contentHash: `sha256:${'0'.repeat(64)}`,
+        rowCount: 3,
+        createdCount: 2,
+        skippedCount: 0,
+        rejectedCount: 1,
+        rows: [
+          { rowNumber: 2, outcome: 'created', leadId: 'imported-2' },
+          { rowNumber: 3, outcome: 'created', leadId: 'imported-3' },
+          {
+            rowNumber: 4,
+            outcome: 'rejected',
+            code: 'validation_error',
+            reason: 'lead name is required',
+          },
+        ],
+      }),
+    ),
+  ),
+  http.get(`${API_BASE}/leads/export`, () =>
+    HttpResponse.text('lead_id,name\r\nlead-1,Synthetic Seller\r\n', {
+      headers: {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="sellers-export.csv"',
+      },
+    }),
+  ),
 ];

@@ -35,4 +35,6 @@ export const qk = {
   directoryUsers: () => ['directory', 'users'] as const,
   directoryRoles: () => ['directory', 'roles'] as const,
   directoryDepartments: () => ['directory', 'departments'] as const,
+
+  importJobs: () => ['import', 'jobs'] as const,
 };

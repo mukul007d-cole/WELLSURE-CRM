@@ -19,6 +19,8 @@ import type { LeadActivityReadRepository, SellerReadRepository } from '../routes
 import type { LeadSharingService } from '../leads/sharing.js';
 import type { NotificationService } from '../notifications/service.js';
 import type { AttachmentService } from '../attachments/service.js';
+import type { ImportService } from '../import/service.js';
+import type { ExportAuditWriter, ExportFieldRepository } from '../routes/export.js';
 
 export interface ServerDependencies {
   authRepository: LoginRepository & SessionRepository & PasswordResetRepository;
@@ -37,6 +39,14 @@ export interface ServerDependencies {
   notificationService?: NotificationService;
   /** Absent when object storage isn't configured; the locker degrades to 503. */
   attachmentService?: AttachmentService;
+  /**
+   * Bulk import. Needs a real database client for its own transaction — the run
+   * holds one open across the whole file — so a deployment wired without one has
+   * no import routes rather than half-working ones, exactly as campaigns do.
+   */
+  importService?: ImportService;
+  /** Supplies the export's Field columns and writes its audit row. */
+  exportRepository?: ExportFieldRepository & ExportAuditWriter;
   authConfig: AuthConfig;
   corsOrigins: readonly string[];
   logLevel?: string;

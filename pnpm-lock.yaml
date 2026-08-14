@@ -53,6 +53,9 @@ importers:
       '@falcon/permission-engine':
         specifier: workspace:*
         version: link:../../packages/permission-engine
+      '@falcon/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
       '@fastify/cookie':
         specifier: 11.1.2
         version: 11.1.2

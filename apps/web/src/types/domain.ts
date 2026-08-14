@@ -436,3 +436,68 @@ export interface ApiErrorBody {
   error: string;
   details?: Record<string, unknown> | undefined;
 }
+
+/* ── Bulk import / export ─────────────────────────────────────────────────── */
+
+/**
+ * Where one source column's values go. `skip` is a real choice the admin makes,
+ * never an absence — the server rejects a mapping that omits any column.
+ */
+export type ImportColumnTarget =
+  | { kind: 'skip' }
+  | { kind: 'core'; column: 'name' | 'phone' | 'email' }
+  | { kind: 'field'; fieldId: string }
+  | { kind: 'assignment'; assignmentType: string }
+  | { kind: 'status' };
+
+export type ImportMatchKey =
+  { kind: 'core'; column: 'name' | 'phone' | 'email' } | { kind: 'field'; fieldId: string };
+
+export interface ImportMapping {
+  journeyId: string;
+  statusId?: string;
+  assignments: Array<{ assignmentType: string; userId: string }>;
+  columns: Record<string, ImportColumnTarget>;
+  matchKeys: ImportMatchKey[];
+}
+
+export interface ImportAnalysisColumn {
+  index: number;
+  name: string;
+  samples: string[];
+  /** 0–1. */
+  fillRate: number;
+}
+
+export interface ImportAnalysis {
+  fileName: string;
+  contentHash: string;
+  rowCount: number;
+  columns: ImportAnalysisColumn[];
+  raggedRowNumbers: number[];
+}
+
+export interface ImportRowOutcome {
+  rowNumber: number;
+  outcome: 'created' | 'skipped_duplicate' | 'rejected';
+  leadId?: string;
+  processInstanceId?: string;
+  /** Null when the matched record is outside the importer's own scope. */
+  matchedLeadId?: string | null;
+  matchedLeadName?: string | null;
+  code?: string;
+  reason?: string;
+}
+
+export interface ImportRunResult {
+  mode: 'preview' | 'commit';
+  committed: boolean;
+  jobId: string | null;
+  fileName: string;
+  contentHash: string;
+  rowCount: number;
+  createdCount: number;
+  skippedCount: number;
+  rejectedCount: number;
+  rows: ImportRowOutcome[];
+}

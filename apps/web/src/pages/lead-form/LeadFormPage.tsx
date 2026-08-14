@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
+import { Eyebrow } from '../../components/ui/Heading';
 import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
@@ -185,9 +186,9 @@ export function LeadFormPage() {
           {submitError ? <Banner tone="error">{submitError}</Banner> : null}
 
           <Card className="flex flex-col gap-4 p-6">
-            <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            <Eyebrow as="h3" className="font-display">
               Core details
-            </h3>
+            </Eyebrow>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Name" error={errors.name?.message} required className="sm:col-span-2">
                 {({ inputId, describedBy }) => (
@@ -217,9 +218,9 @@ export function LeadFormPage() {
           </Card>
 
           <Card className="flex flex-col gap-4 p-6">
-            <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            <Eyebrow as="h3" className="font-display">
               Journey &amp; status
-            </h3>
+            </Eyebrow>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Journey" error={errors.journeyId?.message} required>
                 {({ inputId, describedBy }) => (
@@ -310,9 +311,9 @@ export function LeadFormPage() {
           </Card>
 
           <Card className="flex flex-col gap-4 p-6">
-            <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-soft">
+            <Eyebrow as="h3" className="font-display">
               Additional details
-            </h3>
+            </Eyebrow>
             {fieldsQuery.isPending ? (
               <Skeleton className="h-24 w-full" />
             ) : (

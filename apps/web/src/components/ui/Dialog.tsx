@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { Heading } from './Heading';
 
 interface DialogProps {
   title: string;
@@ -49,9 +50,9 @@ export function Dialog({ title, onClose, children, footer, className }: DialogPr
           className,
         )}
       >
-        <h2 id={titleId} className="font-display text-lg font-bold text-ink">
+        <Heading level="section" as="h2" id={titleId}>
           {title}
-        </h2>
+        </Heading>
         <div className="mt-3 text-sm text-ink-soft">{children}</div>
         {footer ? <div className="mt-5 flex justify-end gap-2">{footer}</div> : null}
       </div>

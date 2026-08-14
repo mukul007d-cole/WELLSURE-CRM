@@ -33,6 +33,9 @@ import type {
   RoutingGrant,
   RoutingRule,
   RoutingState,
+  ImportAnalysis,
+  ImportMapping,
+  ImportRunResult,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -102,9 +105,11 @@ async function requestBlob(path: string): Promise<{ blob: Blob; fileName: string
   }
   const disposition = response.headers.get('content-disposition') ?? '';
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  // Attachments send the RFC 5987 form; the export sends a plain quoted name.
+  const plain = /filename="([^"]+)"/i.exec(disposition)?.[1];
   return {
     blob: await response.blob(),
-    fileName: encoded ? decodeURIComponent(encoded) : null,
+    fileName: encoded ? decodeURIComponent(encoded) : (plain ?? null),
   };
 }
 
@@ -494,4 +499,60 @@ export const configApi = {
       .then(items)
       .then((rows) => rows.map(normalizeField)),
   services: () => request<Page<Service> | Service[]>('/services').then(items),
+};
+
+/**
+ * Bulk import and export.
+ *
+ * The file is held by the browser across all three steps and re-sent each time,
+ * because the server stores nothing between them — object storage is optional
+ * (ADR-0012) and a run that spans requests would need somewhere to put it.
+ * `contentHash` is what makes that safe: the preview returns it, `commit`
+ * echoes it, and the server refuses a commit whose bytes hash differently, so
+ * what gets created is what was previewed.
+ */
+export const importApi = {
+  analyze: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return requestMultipart<ImportAnalysis>('/leads/import/analyze', form);
+  },
+  run: (
+    mode: 'preview' | 'commit',
+    input: {
+      file: File;
+      mapping: ImportMapping;
+      stopOnError?: boolean;
+      /** Required on commit; the server compares it to the bytes it received. */
+      contentHash?: string;
+    },
+  ) => {
+    const form = new FormData();
+    form.append('mapping', JSON.stringify(input.mapping));
+    if (input.stopOnError) form.append('stopOnError', 'true');
+    if (input.contentHash !== undefined) form.append('contentHash', input.contentHash);
+    form.append('file', input.file);
+    return requestMultipart<ImportRunResult>(`/leads/import/${mode}`, form);
+  },
+};
+
+export const exportApi = {
+  /**
+   * The Seller List as CSV, under whatever filters are on screen. Deliberately
+   * the same query shape `sellersApi.list` sends, so "export what I am looking
+   * at" is one set of parameters rather than two that have to agree.
+   */
+  sellers: (input: SellerListInput) =>
+    requestBlob(
+      `/leads/export${toQuery({
+        search: input.search,
+        journeyId: input.journeyId,
+        statusId: input.statusId,
+        ownerUserId: input.ownerUserId,
+        sortBy: input.sortBy,
+        sortDirection: input.sortDirection,
+        accessMode: input.accessMode,
+        filter: input.filter,
+      })}`,
+    ),
 };

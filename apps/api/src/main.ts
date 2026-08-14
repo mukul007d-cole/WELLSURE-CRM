@@ -4,7 +4,10 @@ import { S3AttachmentStorage } from './attachments/s3-storage.js';
 import { AttachmentService } from './attachments/service.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
+import { PrismaExportRepository } from './export/prisma-export-repository.js';
 import { buildServer } from './http/build-server.js';
+import { PrismaImportRepository, visibleLeadIds } from './import/prisma-import-repository.js';
+import { ImportService } from './import/service.js';
 import { PrismaLeadRepository } from './leads/prisma-lead-repository.js';
 import { LeadSharingService } from './leads/sharing.js';
 import { NotificationService } from './notifications/service.js';
@@ -29,17 +32,32 @@ const attachmentService = env.storage
       new S3AttachmentStorage(env.storage),
     )
   : undefined;
+const leadRepository = new PrismaLeadRepository(
+  prisma as never,
+  notificationService,
+  campaignTriggerService,
+  statusRoutingService,
+);
+/*
+ * Import runs the ordinary creation path per row, so it borrows the very
+ * repository the single-lead route uses — rebound to its own transaction. An
+ * imported lead therefore reaches Notifications, Campaigns and Routing exactly
+ * as a hand-created one does, because it is the same object doing the work.
+ */
+const importService = new ImportService(
+  prisma,
+  new PrismaImportRepository(prisma),
+  leadRepository,
+  visibleLeadIds,
+);
 const server = buildServer({
   authRepository,
   audit: authRepository,
   emailSender,
   permissionRepository: new PrismaPermissionRepository(prisma as never),
-  leadRepository: new PrismaLeadRepository(
-    prisma as never,
-    notificationService,
-    campaignTriggerService,
-    statusRoutingService,
-  ),
+  leadRepository,
+  importService,
+  exportRepository: new PrismaExportRepository(prisma),
   configurationRepository: new PrismaConfigurationRepository(prisma),
   adminRepository: new PrismaAdminRepository(prisma),
   leadSharingService: new LeadSharingService(prisma, notificationService),

@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { configApi, sellersApi } from '../../lib/api-client';
+import { useAuth } from '../../app/AuthContext';
+import { configApi, exportApi, sellersApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { DEFAULT_PAGE_SIZE } from '../../lib/constants';
 import { Banner } from '../../components/ui/Banner';
@@ -26,6 +27,7 @@ import { qk } from '../../lib/query-keys';
 export function SellerListPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { can } = useAuth();
   const { tableDensity } = usePreferences();
   usePageChrome('Sellers', [qk.sellers(), qk.journeys()]);
   const [params, setParams] = useSearchParams();
@@ -97,6 +99,34 @@ export function SellerListPage() {
     placeholderData: (previous) => previous,
   });
 
+  /**
+   * Export what is on screen.
+   *
+   * Sends the same parameters the list query above sends, so there is no second
+   * idea of "the current filters" that could drift from the visible one. The
+   * server decides the rows and the columns from the caller's own `leads:view`
+   * scope and field visibility — this button cannot widen either.
+   */
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const result = await exportApi.sellers({
+        journeyId,
+        statusId,
+        search: search || undefined,
+        sortBy: 'updatedAt',
+        sortDirection: 'desc',
+        accessMode,
+        ...(filter ? { filter } : {}),
+      });
+      const url = URL.createObjectURL(result.blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = result.fileName ?? 'sellers.csv';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+
   function updateParam(key: string, value: string | undefined) {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -128,10 +158,22 @@ export function SellerListPage() {
                   { label: 'Board', to: '/sellers/board', icon: 'board' },
                 ]}
               />
+              {can('leads', 'export') ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => exportMutation.mutate()}
+                  loading={exportMutation.isPending}
+                >
+                  Export CSV
+                </Button>
+              ) : null}
               <ButtonLink to="/sellers/new">New seller</ButtonLink>
             </>
           }
         />
+        {exportMutation.error ? (
+          <Banner tone="error">{friendlyErrorMessage(exportMutation.error)}</Banner>
+        ) : null}
 
         <Toolbar
           trailing={

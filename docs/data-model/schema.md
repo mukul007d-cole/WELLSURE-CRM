@@ -138,6 +138,8 @@ leads
   id, organization_id, name, phone, email,
   field_values (JSONB, GIN indexed), active, deactivated_at (nullable),
   deactivated_by_user_id (nullable), created_at, updated_at
+  -- Indexed on phone and on email, plus `lower(email)` for the
+  --   case-insensitive duplicate matching bulk import offers (ADR-0016).
 
 process_instances
   id, organization_id, lead_id, journey_id, current_status_id,
@@ -199,8 +201,23 @@ attachments
   uploaded_by, uploaded_at, active, version
 
 import_jobs
-  id, organization_id, source, file_key, status, mapping_json,
+  id, organization_id, source, file_key, status, mapping_json, file_name,
+  row_count, created_count, skipped_count, rejected_count,
   created_by, created_at, updated_at
+  -- status: preview | committed | failed
+  -- file_key holds `sha256:<hex>` of the uploaded bytes, NOT an object-storage
+  --   key: object storage is optional (ADR-0012), and the hash is what lets a
+  --   commit refuse bytes that differ from the ones previewed. See ADR-0016.
+  -- Counts reconcile: row_count = created_count + skipped_count + rejected_count
+
+import_job_rows
+  id, organization_id, import_job_id, row_number, outcome,
+  lead_id (nullable), process_instance_id (nullable),
+  matched_lead_id (nullable), reason (nullable), created_at
+  -- outcome: created | skipped_duplicate | rejected
+  -- Written on commit only; a preview's rows are rolled back with its
+  --   transaction. `reason` carries an error code and message generated from
+  --   configuration ids, never a cell from the source file.
 
 invoices
   id, organization_id, lead_id, invoice_number, customer_name,

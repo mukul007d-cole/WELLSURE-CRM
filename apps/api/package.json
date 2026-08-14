@@ -17,6 +17,7 @@
     "@aws-sdk/client-s3": "^3.1106.0",
     "@falcon/database": "workspace:*",
     "@falcon/permission-engine": "workspace:*",
+    "@falcon/validation": "workspace:*",
     "@fastify/cookie": "11.1.2",
     "@fastify/cors": "11.3.0",
     "@fastify/multipart": "^10.1.0",

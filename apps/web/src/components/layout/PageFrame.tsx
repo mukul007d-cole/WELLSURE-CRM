@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import { Heading } from '../ui/Heading';
 
 /**
  * One page frame for every surface.
@@ -24,7 +25,7 @@ export function PageHeader({
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         {breadcrumb ? <div className="mb-1">{breadcrumb}</div> : null}
-        <h2 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h2>
+        <Heading level="page">{title}</Heading>
         {description ? <p className="mt-0.5 text-sm text-ink-soft">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
@@ -71,14 +72,14 @@ export function SectionCard({
         className,
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-(--space-panel) py-(--space-panel-tight)">
         <div className="min-w-0">
-          <h3 className="font-display text-base font-bold text-ink">{title}</h3>
+          <Heading level="subsection">{title}</Heading>
           {description ? <p className="mt-0.5 text-sm text-ink-soft">{description}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-(--space-panel)">{children}</div>
     </section>
   );
 }
