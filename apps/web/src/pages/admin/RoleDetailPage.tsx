@@ -12,6 +12,7 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import { cn } from '../../lib/cn';
 import type { CapabilitySet, DataScope, FieldAccessLevel } from '../../types/domain';
 import { usePageChrome } from '../../app/page-chrome';
+import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { loadAllPages } from './shared';
 import {
   hasPermission,
@@ -124,6 +125,7 @@ export function RoleDetailPage() {
   const visibilityDirty =
     JSON.stringify([...visibility].sort((a, b) => a.fieldId.localeCompare(b.fieldId))) !==
     JSON.stringify([...originalVisibility].sort((a, b) => a.fieldId.localeCompare(b.fieldId)));
+  useUnsavedChanges(permissionDirty || journeyDirty || visibilityDirty);
 
   const modules: CatalogModule[] = catalog.data?.modules ?? [];
   const grantedCount = permissions.length;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -8,10 +8,25 @@ import { useNavigate } from 'react-router-dom';
  * seller search, so this routes into the seller list's existing `search`
  * param rather than implying it also finds users or journeys.
  */
-export function GlobalSearch() {
+interface GlobalSearchProps {
+  focusOnMount?: boolean;
+  mobile?: boolean;
+  onNavigate?: () => void;
+}
+
+export function GlobalSearch({
+  focusOnMount = false,
+  mobile = false,
+  onNavigate,
+}: GlobalSearchProps) {
   const navigate = useNavigate();
+  const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState('');
+
+  useEffect(() => {
+    if (focusOnMount) inputRef.current?.focus();
+  }, [focusOnMount]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -36,14 +51,15 @@ export function GlobalSearch() {
   return (
     <form
       role="search"
-      className="hidden min-w-0 flex-1 sm:block sm:max-w-sm"
+      className={mobile ? 'block min-w-0 flex-1' : 'hidden min-w-0 flex-1 sm:block sm:max-w-sm'}
       onSubmit={(event) => {
         event.preventDefault();
         const query = term.trim();
         void navigate(query ? `/sellers?search=${encodeURIComponent(query)}` : '/sellers');
+        onNavigate?.();
       }}
     >
-      <label htmlFor="global-search" className="sr-only">
+      <label htmlFor={inputId} className="sr-only">
         Search sellers
       </label>
       <div className="relative">
@@ -53,7 +69,7 @@ export function GlobalSearch() {
           viewBox="0 0 24 24"
           fill="none"
           aria-hidden="true"
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-on-ink-soft"
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-soft"
         >
           <path
             d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm10 2-4.35-4.35"
@@ -63,17 +79,17 @@ export function GlobalSearch() {
           />
         </svg>
         <input
-          id="global-search"
+          id={inputId}
           ref={inputRef}
           type="search"
           value={term}
           onChange={(event) => setTerm(event.target.value)}
           placeholder="Search sellers"
-          className="h-9 w-full rounded-control border border-on-ink-line bg-ink-raised pl-8 pr-9 text-sm text-on-ink placeholder:text-on-ink-soft focus-visible:border-gold"
+          className="h-9 w-full rounded-control border border-line-strong bg-surface pl-8 pr-9 text-sm text-ink placeholder:text-ink-soft focus-visible:border-gold"
         />
         <kbd
           aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-on-ink-line px-1.5 py-0.5 text-[10px] font-medium text-on-ink-soft md:block"
+          className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-line-strong px-1.5 py-0.5 text-[10px] font-medium text-ink-soft md:block"
         >
           /
         </kbd>

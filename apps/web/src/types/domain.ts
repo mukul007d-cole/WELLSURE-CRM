@@ -89,6 +89,7 @@ export interface JourneyFieldSetting {
 export interface LeadProcessRecord {
   processInstanceId: string;
   journeyId: string;
+  isPrimary?: boolean;
   active: boolean;
 }
 

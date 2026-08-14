@@ -11,6 +11,17 @@ export interface BoardCardProcess {
   ownerName: string | null;
 }
 
+function updatedLabel(value: string | undefined): string | null {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return null;
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+  if (elapsedDays === 0) return 'Updated today';
+  if (elapsedDays === 1) return 'Updated yesterday';
+  if (elapsedDays < 30) return `Updated ${elapsedDays}d ago`;
+  return `Updated ${new Date(value).toLocaleDateString()}`;
+}
+
 /** The visual card, shared by the column and the drag overlay. */
 export function BoardCardBody({
   row,
@@ -23,6 +34,7 @@ export function BoardCardBody({
   lifted?: boolean;
   children?: React.ReactNode;
 }) {
+  const lastUpdated = updatedLabel(row.updatedAt);
   return (
     <div
       className={cn(
@@ -46,8 +58,15 @@ export function BoardCardBody({
           ) : null}
         </div>
       </div>
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span className="truncate text-xs text-ink-soft">{ownerName ?? 'Unassigned'}</span>
+      <div className="mt-2.5 flex items-end justify-between gap-2">
+        <span className="min-w-0">
+          <span className="block truncate text-xs text-ink-soft">{ownerName ?? 'Unassigned'}</span>
+          {lastUpdated ? (
+            <time dateTime={row.updatedAt} className="block text-[11px] text-ink-soft">
+              {lastUpdated}
+            </time>
+          ) : null}
+        </span>
         {children}
       </div>
     </div>

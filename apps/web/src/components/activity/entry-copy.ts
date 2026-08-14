@@ -30,7 +30,7 @@ export const TONE_CLASSES: Record<ActivityTone, string> = {
   neutral: 'bg-surface-sunken text-ink-soft',
   edit: 'bg-status-followup-bg text-status-followup',
   status: 'bg-status-open-bg text-status-open',
-  people: 'bg-gold-soft text-gold-deep',
+  people: 'bg-gold-soft text-gold-foreground',
   removed: 'bg-status-lost-bg text-status-lost',
 };
 

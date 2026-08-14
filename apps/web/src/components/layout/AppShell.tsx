@@ -16,6 +16,12 @@ export function AppShell({ title }: AppShellProps) {
   return (
     <PageChromeProvider fallbackTitle={title}>
       <div className="flex h-dvh bg-paper">
+        <a
+          href="#main-content"
+          className="fixed left-4 top-3 z-[60] -translate-y-20 rounded-control bg-gold px-4 py-2 text-sm font-semibold text-ink transition-transform focus:translate-y-0"
+        >
+          Skip to main content
+        </a>
         <div className="hidden lg:block">
           <Sidebar
             collapsed={sidebarCollapsed}
@@ -44,7 +50,7 @@ export function AppShell({ title }: AppShellProps) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar title={title} onOpenMenu={() => setMobileNavOpen(true)} />
-          <main className="flex-1 overflow-y-auto">
+          <main id="main-content" className="flex-1 overflow-y-auto">
             <Outlet />
           </main>
         </div>

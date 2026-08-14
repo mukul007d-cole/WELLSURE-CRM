@@ -47,6 +47,7 @@ describe('seller list filter builder', () => {
   beforeEach(() => {
     sentFilters.length = 0;
     sessionStorage.clear();
+    localStorage.clear();
     document.cookie = 'falcon_session=; Path=/; Max-Age=0';
   });
 
@@ -167,6 +168,7 @@ describe('seller list export', () => {
   beforeEach(() => {
     sentFilters.length = 0;
     sessionStorage.clear();
+    localStorage.clear();
     document.cookie = 'falcon_session=; Path=/; Max-Age=0';
   });
 
@@ -214,5 +216,53 @@ describe('seller list export', () => {
     // not offered to someone who would be refused.
     await screen.findByRole('heading', { name: /sellers/i });
     expect(screen.queryByRole('button', { name: /export csv/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('seller list sorting', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('sends the selected server sort and keeps it in the URL-backed view', async () => {
+    const sorts: string[] = [];
+    server.use(
+      http.get('/api/v1/leads', ({ request }) => {
+        const url = new URL(request.url);
+        sorts.push(`${url.searchParams.get('sortBy')}:${url.searchParams.get('sortDirection')}`);
+        return HttpResponse.json({ total: 0, rows: [] });
+      }),
+    );
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText('Sort sellers'), {
+      target: { value: 'name:asc' },
+    });
+
+    await waitFor(() => expect(sorts.at(-1)).toBe('name:asc'));
+    expect(screen.getByLabelText('Sort sellers')).toHaveValue('name:asc');
+  });
+});
+
+describe('seller list columns', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('persists optional column visibility in this browser', async () => {
+    renderPage();
+    expect(await screen.findByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Columns'));
+    fireEvent.click(screen.getByLabelText('Owner'));
+
+    expect(screen.queryByRole('columnheader', { name: 'Owner' })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('falcon.ui.sellerColumns') ?? '[]')).not.toContain(
+      'owner',
+    );
   });
 });

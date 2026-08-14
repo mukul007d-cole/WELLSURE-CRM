@@ -23,17 +23,21 @@ import { DataCell, DataRow, DataTable, RowActions } from '../../components/ui/Da
 import { usePageChrome } from '../../app/page-chrome';
 import { usePreferences } from '../../app/preferences';
 import { qk } from '../../lib/query-keys';
+import { ColumnManager } from './ColumnManager';
 
 export function SellerListPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { can } = useAuth();
-  const { tableDensity } = usePreferences();
+  const { tableDensity, sellerColumns, setSellerColumns } = usePreferences();
   usePageChrome('Sellers', [qk.sellers(), qk.journeys()]);
   const [params, setParams] = useSearchParams();
   const journeyId = params.get('journeyId') ?? undefined;
   const statusId = params.get('statusId') ?? undefined;
   const search = params.get('search') ?? '';
+  const sortBy = (params.get('sortBy') as 'updatedAt' | 'createdAt' | 'name' | null) ?? 'updatedAt';
+  const sortDirection =
+    (params.get('sortDirection') as 'asc' | 'desc' | null) ?? (sortBy === 'name' ? 'asc' : 'desc');
   const page = Number(params.get('page') ?? '1');
   const accessMode =
     (params.get('accessMode') as 'mine' | 'shared_with_me' | 'all' | null) ?? 'all';
@@ -83,7 +87,10 @@ export function SellerListPage() {
   });
 
   const sellersQuery = useQuery({
-    queryKey: ['sellers', { journeyId, statusId, search, page, accessMode, filter }],
+    queryKey: [
+      'sellers',
+      { journeyId, statusId, search, page, accessMode, filter, sortBy, sortDirection },
+    ],
     queryFn: () =>
       sellersApi.list({
         journeyId,
@@ -91,8 +98,8 @@ export function SellerListPage() {
         search: search || undefined,
         page,
         pageSize: DEFAULT_PAGE_SIZE,
-        sortBy: 'updatedAt',
-        sortDirection: 'desc',
+        sortBy,
+        sortDirection,
         accessMode,
         ...(filter ? { filter } : {}),
       }),
@@ -113,8 +120,8 @@ export function SellerListPage() {
         journeyId,
         statusId,
         search: search || undefined,
-        sortBy: 'updatedAt',
-        sortDirection: 'desc',
+        sortBy,
+        sortDirection,
         accessMode,
         ...(filter ? { filter } : {}),
       });
@@ -167,7 +174,9 @@ export function SellerListPage() {
                   Export CSV
                 </Button>
               ) : null}
-              <ButtonLink to="/sellers/new">New seller</ButtonLink>
+              {can('leads', 'create') ? (
+                <ButtonLink to="/sellers/new">New seller</ButtonLink>
+              ) : null}
             </>
           }
         />
@@ -230,6 +239,30 @@ export function SellerListPage() {
               ))}
             </Select>
           </div>
+          <div className="w-full sm:w-48">
+            <label htmlFor="seller-sort" className="sr-only">
+              Sort sellers
+            </label>
+            <Select
+              id="seller-sort"
+              value={`${sortBy}:${sortDirection}`}
+              onChange={(event) => {
+                const [nextSortBy, nextDirection] = event.target.value.split(':');
+                setParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set('sortBy', nextSortBy!);
+                  next.set('sortDirection', nextDirection!);
+                  next.set('page', '1');
+                  return next;
+                });
+              }}
+            >
+              <option value="updatedAt:desc">Recently updated</option>
+              <option value="createdAt:desc">Recently added</option>
+              <option value="name:asc">Name A–Z</option>
+              <option value="name:desc">Name Z–A</option>
+            </Select>
+          </div>
           {hasFilters ? (
             <Button
               variant="ghost"
@@ -242,6 +275,7 @@ export function SellerListPage() {
               Clear filters
             </Button>
           ) : null}
+          <ColumnManager columns={sellerColumns} onChange={setSellerColumns} />
         </Toolbar>
         <FilterBuilder
           conditions={conditions}
@@ -299,9 +333,9 @@ export function SellerListPage() {
                 >
                   Clear filters
                 </Button>
-              ) : (
+              ) : can('leads', 'create') ? (
                 <ButtonLink to="/sellers/new">Add your first seller</ButtonLink>
-              )
+              ) : undefined
             }
           />
         ) : (
@@ -311,7 +345,13 @@ export function SellerListPage() {
               <DataTable
                 caption="Sellers"
                 density={tableDensity}
-                headers={['Seller', 'Journey', 'Status', 'Owner', { label: '', width: '5rem' }]}
+                headers={[
+                  'Seller',
+                  ...(sellerColumns.includes('journey') ? ['Journey'] : []),
+                  ...(sellerColumns.includes('status') ? ['Status'] : []),
+                  ...(sellerColumns.includes('owner') ? ['Owner'] : []),
+                  { label: '', width: '5rem' },
+                ]}
               >
                 {rows.map((row) => {
                   const process = row.processInstances?.[0];
@@ -337,19 +377,25 @@ export function SellerListPage() {
                           </span>
                         </span>
                       </DataCell>
-                      <DataCell>{process?.journeyName ?? '—'}</DataCell>
-                      <DataCell>
-                        {process ? (
-                          <StatusPill
-                            name={process.statusName}
-                            outcomeType={process.statusOutcomeType}
-                            behaviorType={process.statusBehaviorType}
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </DataCell>
-                      <DataCell>{process?.ownerName ?? 'Unassigned'}</DataCell>
+                      {sellerColumns.includes('journey') ? (
+                        <DataCell>{process?.journeyName ?? '—'}</DataCell>
+                      ) : null}
+                      {sellerColumns.includes('status') ? (
+                        <DataCell>
+                          {process ? (
+                            <StatusPill
+                              name={process.statusName}
+                              outcomeType={process.statusOutcomeType}
+                              behaviorType={process.statusBehaviorType}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </DataCell>
+                      ) : null}
+                      {sellerColumns.includes('owner') ? (
+                        <DataCell>{process?.ownerName ?? 'Unassigned'}</DataCell>
+                      ) : null}
                       <DataCell align="right">
                         <RowActions>
                           <Link

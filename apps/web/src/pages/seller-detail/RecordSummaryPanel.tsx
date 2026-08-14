@@ -3,6 +3,7 @@ import { Eyebrow } from '../../components/ui/Heading';
 import { RingAvatar } from '../../components/ui/RingAvatar';
 import { StatusPill } from '../../components/ui/StatusPill';
 import type { LeadShare, Seller360Record } from '../../types/domain';
+import { cn } from '../../lib/cn';
 
 /** Copy-to-clipboard, call and WhatsApp, straight off the number. */
 function ContactActions({ phone }: { phone: string }) {
@@ -59,15 +60,21 @@ export function RecordSummaryPanel({
   shares,
   repeatCount,
   actions,
+  selectedProcessId,
 }: {
   seller: Seller360Record;
   shares: LeadShare[];
   repeatCount: number;
   actions: ReactNode;
+  selectedProcessId?: string;
 }) {
   // The first current assignment is the closest thing to an owner; assignment
   // types are configurable, so no particular one is privileged.
-  const owner = seller.processInstances[0]?.assignments[0];
+  const selectedProcess =
+    seller.processInstances.find((process) => process.processInstanceId === selectedProcessId) ??
+    seller.processInstances.find((process) => process.isPrimary) ??
+    seller.processInstances[0];
+  const owner = selectedProcess?.assignments[0];
   const date = (value: string | undefined) => (value ? new Date(value).toLocaleDateString() : '—');
   return (
     <aside
@@ -113,8 +120,21 @@ export function RecordSummaryPanel({
         ) : (
           <ul className="mt-3 flex flex-col gap-3">
             {seller.processInstances.map((process) => (
-              <li key={process.processInstanceId} className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">{process.journey.name}</span>
+              <li
+                key={process.processInstanceId}
+                className={cn(
+                  'flex flex-col gap-1.5 border-l-2 pl-3',
+                  process.processInstanceId === selectedProcess?.processInstanceId
+                    ? 'border-gold'
+                    : 'border-transparent',
+                )}
+              >
+                <span className="text-sm font-medium text-ink">
+                  {process.journey.name}
+                  {process.isPrimary ? (
+                    <span className="ml-2 text-xs font-normal text-ink-soft">Primary</span>
+                  ) : null}
+                </span>
                 <StatusPill
                   name={process.currentStatus.name}
                   outcomeType={process.currentStatus.outcomeType}

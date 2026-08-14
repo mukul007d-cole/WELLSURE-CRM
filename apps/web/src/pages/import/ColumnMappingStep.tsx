@@ -302,7 +302,10 @@ function ColumnRow({
 
       <span
         aria-hidden="true"
-        className={cn('hidden shrink-0 sm:block', skipped ? 'text-line-strong' : 'text-gold-deep')}
+        className={cn(
+          'hidden shrink-0 sm:block',
+          skipped ? 'text-line-strong' : 'text-gold-foreground',
+        )}
       >
         <svg width="28" height="12" viewBox="0 0 28 12" fill="none">
           <path

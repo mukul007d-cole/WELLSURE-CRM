@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GlobalSearch } from './GlobalSearch';
 
 function LocationProbe() {
@@ -53,5 +53,27 @@ describe('global search', () => {
     // A slash typed inside an input is a slash, not a shortcut.
     fireEvent.keyDown(input, { key: '/' });
     expect(input).not.toHaveFocus();
+  });
+
+  it('supports the mobile search surface and closes it after navigation', () => {
+    const onNavigate = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <GlobalSearch mobile focusOnMount onNavigate={onNavigate} />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const input = screen.getByLabelText('Search sellers');
+    expect(input).toHaveFocus();
+    expect(screen.getByRole('search')).toHaveClass('block');
+
+    fireEvent.change(input, { target: { value: 'Northwind' } });
+    fireEvent.submit(screen.getByRole('search'));
+
+    expect(onNavigate).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('location')).toHaveTextContent('/sellers?search=Northwind');
   });
 });

@@ -15,6 +15,7 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminField, FieldAccessLevel, FieldRoleVisibility } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
+import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE, loadAllPages } from './shared';
 
 type FieldDraft = {
@@ -48,6 +49,7 @@ export function FieldsPage() {
   const [page, setPage] = useState(1);
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<FieldDraft | null>(null);
+  useUnsavedChanges(draft !== null);
   const canGrant = can('roles_permissions', 'edit');
   const canSeeGrants = canGrant || can('roles_permissions', 'view');
   const query = useQuery({

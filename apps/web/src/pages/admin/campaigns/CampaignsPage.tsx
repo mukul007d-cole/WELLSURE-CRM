@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useAuth } from '../../../app/AuthContext';
 import { usePageChrome } from '../../../app/page-chrome';
+import { useUnsavedChanges } from '../../../app/use-unsaved-changes';
 import { Banner } from '../../../components/ui/Banner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -47,6 +48,7 @@ export function CampaignsPage() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
+  useUnsavedChanges(draft !== null);
   /*
    * The composer hands its "insert this token" function up so the variable
    * picker can call it. Held in a ref, not state: the composer re-registers on
