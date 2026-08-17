@@ -15,7 +15,7 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminField, FieldAccessLevel, FieldRoleVisibility } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
-import { useUnsavedChanges } from '../../app/use-unsaved-changes';
+import { useUnsavedDraft } from '../../app/use-unsaved-changes';
 import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE, loadAllPages } from './shared';
 
 type FieldDraft = {
@@ -49,7 +49,10 @@ export function FieldsPage() {
   const [page, setPage] = useState(1);
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<FieldDraft | null>(null);
-  useUnsavedChanges(draft !== null);
+  // The draft as it was loaded. Compared against, so merely opening the editor
+  // is not treated as unsaved work.
+  const [pristine, setPristine] = useState<FieldDraft | null>(null);
+  useUnsavedDraft(draft, pristine);
   const canGrant = can('roles_permissions', 'edit');
   const canSeeGrants = canGrant || can('roles_permissions', 'view');
   const query = useQuery({
@@ -74,7 +77,9 @@ export function FieldsPage() {
   const [syncedVisibilityFieldId, setSyncedVisibilityFieldId] = useState<string | null>(null);
   if (draft?.id && visibility.data && syncedVisibilityFieldId !== draft.id) {
     setSyncedVisibilityFieldId(draft.id);
-    setDraft({ ...draft, visibility: visibility.data });
+    const hydrated = { ...draft, visibility: visibility.data };
+    setDraft(hydrated);
+    setPristine(hydrated);
   }
   /**
    * Opening the editor always re-syncs grants. Without clearing the marker,
@@ -85,6 +90,7 @@ export function FieldsPage() {
   const openDraft = (next: FieldDraft) => {
     setSyncedVisibilityFieldId(null);
     setDraft(next);
+    setPristine(next);
   };
   // Whether the draft's grants reflect what is stored. A brand-new Field is
   // ready immediately — granted to nobody is its real state. An existing one
@@ -114,6 +120,7 @@ export function FieldsPage() {
     },
     onSuccess: async () => {
       setDraft(null);
+      setPristine(null);
       await qc.invalidateQueries({ queryKey: ['admin', 'fields'] });
       await qc.invalidateQueries({ queryKey: ['admin', 'field-visibility'] });
     },
@@ -140,7 +147,10 @@ export function FieldsPage() {
           draft={draft}
           setDraft={setDraft}
           save={() => save.mutate()}
-          cancel={() => setDraft(null)}
+          cancel={() => {
+            setDraft(null);
+            setPristine(null);
+          }}
           loading={save.isPending}
           roles={roles.data ?? []}
           rolesLoading={roles.isPending || visibilityLoading}

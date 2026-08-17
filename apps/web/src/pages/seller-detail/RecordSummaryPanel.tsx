@@ -125,7 +125,7 @@ export function RecordSummaryPanel({
                 className={cn(
                   'flex flex-col gap-1.5 border-l-2 pl-3',
                   process.processInstanceId === selectedProcess?.processInstanceId
-                    ? 'border-gold'
+                    ? 'border-gold-foreground'
                     : 'border-transparent',
                 )}
               >

@@ -94,7 +94,7 @@ export function Tabs<Id extends string>({
             className={cn(
               'shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors',
               selected
-                ? 'border-gold text-ink'
+                ? 'border-gold-foreground text-ink'
                 : 'border-transparent text-ink-soft hover:border-line-strong hover:text-ink',
             )}
           >

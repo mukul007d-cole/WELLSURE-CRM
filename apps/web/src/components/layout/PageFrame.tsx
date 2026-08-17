@@ -110,7 +110,7 @@ export function SubNav({ items }: { items: SubNavItem[] }) {
             cn(
               'whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
               isActive
-                ? 'border-gold text-ink'
+                ? 'border-gold-foreground text-ink'
                 : 'border-transparent text-ink-soft hover:border-line-strong hover:text-ink',
             )
           }

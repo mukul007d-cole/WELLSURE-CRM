@@ -12,7 +12,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
     'bg-gold text-ink hover:bg-gold-deep active:bg-gold-pressed disabled:bg-gold-soft disabled:text-ink-soft',
   secondary:
-    'bg-surface text-ink border border-line-strong hover:border-ink hover:bg-paper disabled:text-ink-soft disabled:border-line',
+    'bg-surface text-ink border border-control-border hover:border-ink hover:bg-paper disabled:text-ink-soft disabled:border-line',
   ghost: 'bg-transparent text-ink hover:bg-paper disabled:text-ink-soft',
   danger: 'bg-status-lost text-white hover:brightness-110 disabled:opacity-50',
 };

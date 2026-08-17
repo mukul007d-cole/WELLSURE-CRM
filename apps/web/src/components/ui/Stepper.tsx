@@ -54,7 +54,7 @@ export function Stepper<Id extends string>({
                   'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[0.6875rem] font-semibold transition-colors',
                   isCurrent && 'border-gold bg-gold text-ink',
                   isDone && 'border-gold-deep bg-gold-soft text-ink',
-                  !isCurrent && !isDone && 'border-line-strong bg-surface text-ink-soft',
+                  !isCurrent && !isDone && 'border-control-border bg-surface text-ink-soft',
                 )}
               >
                 {isDone ? (

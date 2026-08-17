@@ -85,7 +85,7 @@ export function GlobalSearch({
           value={term}
           onChange={(event) => setTerm(event.target.value)}
           placeholder="Search sellers"
-          className="h-9 w-full rounded-control border border-line-strong bg-surface pl-8 pr-9 text-sm text-ink placeholder:text-ink-soft focus-visible:border-gold"
+          className="h-9 w-full rounded-control border border-control-border bg-surface pl-8 pr-9 text-sm text-ink placeholder:text-ink-soft"
         />
         <kbd
           aria-hidden="true"
