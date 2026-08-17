@@ -10,7 +10,9 @@ interface SpinnerProps {
  * `motion-reduce:animate-none` utility (falls back to a static ring).
  */
 export function Spinner({ size = 20, tone = 'gold', label = 'Loading' }: SpinnerProps) {
-  const color = tone === 'gold' ? 'var(--color-gold)' : 'var(--color-ink)';
+  // `gold` renders as the readable accent, not the raw yellow: these spin on
+  // white far more often than on ink, and `#fff200` on `surface` is 1.17:1.
+  const color = tone === 'gold' ? 'var(--color-gold-foreground)' : 'var(--color-ink)';
   return (
     <svg
       role="status"

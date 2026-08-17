@@ -13,6 +13,7 @@ import { friendlyErrorMessage } from '../../lib/api-error';
 import type { Status } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
+import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { StatusRoutingPanel } from './StatusRoutingPanel';
 
 type StatusDraft = {
@@ -116,6 +117,12 @@ export function JourneyDetailPage() {
   const orderedStatuses = (order ?? statuses.map((status) => status.id))
     .map((id) => statuses.find((status) => status.id === id))
     .filter((status): status is Status => Boolean(status));
+  useUnsavedChanges(
+    statusDraft !== null ||
+      settingDraft !== null ||
+      order !== null ||
+      Boolean(journeyName && journeyName !== journey.data?.name),
+  );
   const move = (index: number, direction: -1 | 1) => {
     const next = [...orderedStatuses.map((status) => status.id)];
     const target = index + direction;

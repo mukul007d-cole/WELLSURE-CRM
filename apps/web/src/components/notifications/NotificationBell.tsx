@@ -29,7 +29,7 @@ export function NotificationBell() {
         aria-label={`Notifications${unread.data?.count ? ` (${unread.data.count} unread)` : ''}`}
         aria-expanded={open}
         onClick={() => setOpen((x) => !x)}
-        className="relative rounded-control p-2 hover:bg-ink-raised"
+        className="relative rounded-control p-2 text-ink-soft hover:bg-surface-sunken hover:text-ink"
       >
         🔔
         {unread.data?.count ? (

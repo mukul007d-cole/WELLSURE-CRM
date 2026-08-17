@@ -4,24 +4,77 @@
 /*
  * Wellsure design tokens.
  *
- * Brand identity (ink/gold/paper) lives in structural moments: sidebar,
- * topbar, login, primary actions, active states. Working surfaces (lists,
- * detail views, forms) stay on the light `paper`/`surface` pair so hours of
- * table-reading don't happen against a black background. Status colors are
- * a deliberately separate palette so gold never doubles as a status meaning.
+ * Brand identity (ink/yellow/paper) lives in structural moments: the sidebar,
+ * login, primary actions and active states. Working surfaces (lists, detail
+ * views, forms) — and, since the shell was lightened, the top bar — stay on the
+ * `paper`/`surface` pair so hours of table-reading don't happen against a black
+ * background. Status colors are a deliberately separate palette so yellow never
+ * doubles as a status meaning.
+ *
+ * One rule the yellow makes load-bearing: **`--color-gold` is a surface, never
+ * a foreground and never an indicator.** At 1.17:1 against white it cannot
+ * carry meaning on a light background — text on it is excellent (16.8:1), text
+ * *of* it is invisible. Use `--color-gold-foreground` when yellow has to be ink,
+ * and `--color-focus-ring` for focus.
  */
 @theme {
   /* Brand */
   --color-ink: #0b0b0c;
   --color-ink-raised: #19181c;
-  --color-gold: #e8b923;
-  --color-gold-deep: #c79a1b;
-  --color-gold-soft: #f6e6b0;
-  --color-paper: #f8f6f1;
+  /*
+   * Keep the established `gold` token name for utility compatibility, but use
+   * Wellsure's supplied yellow exactly. Interaction and text tones are split:
+   * the darker foreground is readable on light surfaces, while hover/pressed
+   * remain bright brand treatments with ink text.
+   */
+  --color-gold: #fff200;
+  --color-gold-deep: #e6da00;
+  --color-gold-pressed: #cfc400;
+  /*
+   * The brand, when it has to be seen rather than sat on.
+   *
+   * 6.56:1 on white. Every place the brand is a *mark* on a light ground — an
+   * active tab's underline, a spinner, the selected-journey rail, a meter fill
+   * — uses this. `--color-gold` stays for fills that carry ink text on top and
+   * for anything drawn on the ink sidebar, where the raw yellow is 16.8:1.
+   */
+  --color-gold-foreground: #665f00;
+  --color-gold-soft: #fffbd6;
+  --color-paper: #f7f7f5;
   --color-surface: #ffffff;
   --color-ink-soft: #6b6864;
   --color-line: #e7e3da;
   --color-line-strong: #d8d3c6;
+
+  /*
+   * The boundary of an interactive control — input, select, textarea, checkbox,
+   * secondary button.
+   *
+   * Split from `--color-line-strong`, which was doing two jobs at one value.
+   * A decorative hairline may be as faint as it likes; a control's edge is
+   * "visual information required to identify a UI component" and owes 3:1
+   * against its background (WCAG 1.4.11). `line-strong` managed 1.49:1 on
+   * white, so every form field in the app had an edge that was decoration
+   * pretending to be an affordance.
+   *
+   * 3.54:1 on `surface`, 3.30:1 on `paper`, 3.18:1 on `surface-sunken` — it
+   * clears the bar on every ground it is actually drawn against, and stays in
+   * the warm family rather than importing a cool grey.
+   */
+  --color-control-border: #8d887b;
+
+  /*
+   * Focus.
+   *
+   * Ink, not yellow. The ring has to be legible against whatever is behind it,
+   * and `#fff200` on `surface` is 1.17:1 — a focus indicator you cannot see is
+   * not one. Ink gives 19.7:1 on white, 18.3:1 on paper, and 16.8:1 on a yellow
+   * primary button, so one value serves every light ground.
+   *
+   * The dark sidebar and login flip it back to yellow below, where ink would
+   * vanish for the same reason.
+   */
+  --color-focus-ring: #0b0b0c;
 
   /*
    * Working-surface ramp.
@@ -35,9 +88,9 @@
    *
    * Warm, to stay in the paper/ink family rather than importing a cool grey.
    */
-  --color-surface-sunken: #f4f2ed;
-  --color-surface-hover: #faf9f6;
-  --color-line-soft: #f0ede6;
+  --color-surface-sunken: #f3f3f1;
+  --color-surface-hover: #fafaf8;
+  --color-line-soft: #efefec;
   --color-ink-muted: #4a4744;
 
   /* Text/foreground on ink surfaces */
@@ -160,15 +213,22 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-gold);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
     border-radius: 2px;
   }
 
-  /* On ink surfaces the gold focus ring needs a dark halo to read clearly */
+  /*
+   * On the ink sidebar and login the ink ring would disappear, so it flips to
+   * yellow — 16.8:1 there — with a dark halo separating it from the surface.
+   *
+   * Deliberately `outline` only on light grounds: a `box-shadow` ring would
+   * replace the shadow of anything that already carries one, and `Dialog` and
+   * `Card` both do.
+   */
   .surface-ink :focus-visible {
     outline-color: var(--color-gold);
-    box-shadow: 0 0 0 4px rgba(232, 185, 35, 0.25);
+    box-shadow: 0 0 0 4px rgba(11, 11, 12, 0.55);
   }
 
   @media (prefers-reduced-motion: reduce) {

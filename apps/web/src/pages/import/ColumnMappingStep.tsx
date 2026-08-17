@@ -147,7 +147,7 @@ export function ColumnMappingStep({
                 aria-describedby={describedBy}
                 value={draft.assignmentType}
                 onChange={(event) => onChange({ ...draft, assignmentType: event.target.value })}
-                className="h-10 w-full rounded-control border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-soft hover:border-ink-soft"
+                className="h-10 w-full rounded-control border border-control-border bg-surface px-3 text-sm text-ink placeholder:text-ink-soft hover:border-ink-soft"
                 placeholder="lead_owner"
               />
             )}
@@ -181,9 +181,12 @@ export function ColumnMappingStep({
               <span className="text-sm font-medium text-ink">
                 {mapped} of {total} mapped
               </span>
-              <span aria-hidden="true" className="h-1.5 w-24 overflow-hidden rounded-pill bg-line">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-24 overflow-hidden rounded-pill bg-line-strong"
+              >
                 <span
-                  className="block h-full rounded-pill bg-gold transition-[width]"
+                  className="block h-full rounded-pill bg-gold-deep transition-[width]"
                   style={{ width: `${total === 0 ? 0 : (mapped / total) * 100}%` }}
                 />
               </span>
@@ -284,7 +287,7 @@ function ColumnRow({
         </div>
         <span
           aria-hidden="true"
-          className="mt-1 block h-1 w-full overflow-hidden rounded-pill bg-line-soft"
+          className="mt-1 block h-1 w-full overflow-hidden rounded-pill bg-line-strong"
         >
           <span
             className={cn('block h-full rounded-pill', skipped ? 'bg-line-strong' : 'bg-gold-deep')}
@@ -302,7 +305,10 @@ function ColumnRow({
 
       <span
         aria-hidden="true"
-        className={cn('hidden shrink-0 sm:block', skipped ? 'text-line-strong' : 'text-gold-deep')}
+        className={cn(
+          'hidden shrink-0 sm:block',
+          skipped ? 'text-line-strong' : 'text-gold-foreground',
+        )}
       >
         <svg width="28" height="12" viewBox="0 0 28 12" fill="none">
           <path

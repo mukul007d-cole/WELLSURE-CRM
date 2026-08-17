@@ -184,7 +184,9 @@ export function BoardPage() {
                   { label: 'Board', to: '/sellers/board', icon: 'board' },
                 ]}
               />
-              <ButtonLink to="/sellers/new">New seller</ButtonLink>
+              {can('leads', 'create') ? (
+                <ButtonLink to="/sellers/new">New seller</ButtonLink>
+              ) : null}
             </>
           }
         />

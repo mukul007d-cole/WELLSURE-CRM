@@ -39,6 +39,7 @@ export function Seller360Page() {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [journeyAction, setJourneyAction] = useState<JourneyAction | null>(null);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
 
   usePageChrome('Seller', sellerId ? [qk.seller(sellerId)] : []);
 
@@ -52,20 +53,24 @@ export function Seller360Page() {
   });
 
   const seller = sellerQuery.data;
-  const firstProcess = seller?.processInstances[0];
+  const selectedProcess = seller
+    ? (seller.processInstances.find((process) => process.processInstanceId === selectedProcessId) ??
+      seller.processInstances.find((process) => process.isPrimary) ??
+      seller.processInstances[0])
+    : undefined;
   // Every lead mutation is authorized against a journey plus the assignment
   // types the caller claims, so these travel with all four calls below.
-  const journeyContext = firstProcess
+  const journeyContext = selectedProcess
     ? {
-        journeyId: firstProcess.journeyId,
-        assignmentTypes: firstProcess.assignments.map((a) => a.assignmentType),
+        journeyId: selectedProcess.journeyId,
+        assignmentTypes: selectedProcess.assignments.map((a) => a.assignmentType),
       }
     : null;
 
   const statusesQuery = useQuery({
-    queryKey: qk.journeyStatuses(firstProcess?.journeyId ?? ''),
-    queryFn: () => configApi.statuses(firstProcess!.journeyId),
-    enabled: Boolean(firstProcess),
+    queryKey: qk.journeyStatuses(selectedProcess?.journeyId ?? ''),
+    queryFn: () => configApi.statuses(selectedProcess!.journeyId),
+    enabled: Boolean(selectedProcess),
     retry: false,
   });
   const sharesQuery = useQuery({
@@ -123,8 +128,16 @@ export function Seller360Page() {
   });
 
   const reassign = useMutation({
-    mutationFn: (input: { processInstanceId: string; assignmentType: string; userId: string }) =>
-      sellersApi.reassign(sellerId!, { ...journeyContext!, ...input }),
+    mutationFn: (input: { processInstanceId: string; assignmentType: string; userId: string }) => {
+      const process = seller!.processInstances.find(
+        (candidate) => candidate.processInstanceId === input.processInstanceId,
+      )!;
+      return sellersApi.reassign(sellerId!, {
+        journeyId: process.journeyId,
+        assignmentTypes: process.assignments.map((assignment) => assignment.assignmentType),
+        ...input,
+      });
+    },
     onSuccess: async () => {
       setReassignOpen(false);
       await Promise.all([
@@ -140,10 +153,17 @@ export function Seller360Page() {
       processInstanceId: string;
       targetJourneyId: string;
       statusId: string | undefined;
-    }): Promise<unknown> =>
-      journeyAction === 'move'
+    }): Promise<unknown> => {
+      const source = seller!.processInstances.find(
+        (candidate) => candidate.processInstanceId === input.processInstanceId,
+      )!;
+      const sourceContext = {
+        journeyId: source.journeyId,
+        assignmentTypes: source.assignments.map((assignment) => assignment.assignmentType),
+      };
+      return journeyAction === 'move'
         ? sellersApi.moveJourney(sellerId!, {
-            ...journeyContext!,
+            ...sourceContext,
             processInstanceId: input.processInstanceId,
             targetJourneyId: input.targetJourneyId,
             ...(input.statusId ? { statusId: input.statusId } : {}),
@@ -160,11 +180,12 @@ export function Seller360Page() {
             email: seller?.email ?? null,
             fieldValues: {},
             assignments:
-              seller?.processInstances[0]?.assignments.map((assignment) => ({
+              source.assignments.map((assignment) => ({
                 assignmentType: assignment.assignmentType,
                 userId: assignment.userId,
               })) ?? [],
-          }),
+          });
+    },
     onSuccess: async () => {
       setJourneyAction(null);
       await Promise.all([
@@ -216,6 +237,14 @@ export function Seller360Page() {
   }
 
   const fields = fieldsQuery.data ?? [];
+  const orderedProcesses = selectedProcess
+    ? [
+        selectedProcess,
+        ...seller.processInstances.filter(
+          (process) => process.processInstanceId !== selectedProcess.processInstanceId,
+        ),
+      ]
+    : seller.processInstances;
   const repeatCount = repeatsQuery.data?.length ?? 0;
   const tabItems: TabItem<Tab>[] = [
     { id: 'timeline', label: 'Activity' },
@@ -230,6 +259,9 @@ export function Seller360Page() {
     <div className="p-4 sm:p-6">
       <PageHeader
         title={seller.name}
+        {...(seller.processInstances.length > 1
+          ? { description: `Working in ${selectedProcess?.journey.name ?? 'the selected journey'}` }
+          : {})}
         breadcrumb={
           <Link to="/sellers" className="text-sm text-ink-soft hover:text-ink">
             ← Sellers
@@ -264,9 +296,34 @@ export function Seller360Page() {
         }
       />
 
+      {seller.processInstances.length > 1 ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-y border-line bg-surface-sunken px-4 py-3">
+          <label htmlFor="seller-journey-context" className="text-sm font-medium text-ink">
+            Journey context
+          </label>
+          <select
+            id="seller-journey-context"
+            value={selectedProcess?.processInstanceId ?? ''}
+            onChange={(event) => setSelectedProcessId(event.target.value)}
+            className="h-9 min-w-52 rounded-control border border-line-strong bg-surface px-3 text-sm text-ink"
+          >
+            {seller.processInstances.map((process) => (
+              <option key={process.processInstanceId} value={process.processInstanceId}>
+                {process.journey.name}
+                {process.isPrimary ? ' (Primary)' : ''} — {process.currentStatus.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-ink-soft">
+            Sharing, activity, documents, and record actions use this journey.
+          </span>
+        </div>
+      ) : null}
+
       <div className="mt-5 grid gap-5 lg:grid-cols-[20rem_1fr]">
         <RecordSummaryPanel
           seller={seller}
+          {...(selectedProcess ? { selectedProcessId: selectedProcess.processInstanceId } : {})}
           shares={sharesQuery.data ?? []}
           repeatCount={repeatCount}
           actions={
@@ -348,7 +405,7 @@ export function Seller360Page() {
       ) : null}
       {reassignOpen ? (
         <ReassignDialog
-          processes={seller.processInstances}
+          processes={orderedProcesses}
           onClose={() => setReassignOpen(false)}
           onSubmit={(input) => reassign.mutate(input)}
           pending={reassign.isPending}
@@ -358,7 +415,7 @@ export function Seller360Page() {
       {journeyAction ? (
         <JourneyDialog
           action={journeyAction}
-          processes={seller.processInstances}
+          processes={orderedProcesses}
           onClose={() => setJourneyAction(null)}
           onSubmit={(input) => journeyMove.mutate(input)}
           pending={journeyMove.isPending}

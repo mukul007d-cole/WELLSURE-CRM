@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useAuth } from '../../../app/AuthContext';
 import { usePageChrome } from '../../../app/page-chrome';
+import { useUnsavedDraft } from '../../../app/use-unsaved-changes';
 import { Banner } from '../../../components/ui/Banner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -47,6 +48,18 @@ export function CampaignsPage() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
+  // The draft as it was opened, so looking at a campaign and closing the tab
+  // does not raise a warning about work that does not exist.
+  const [pristine, setPristine] = useState<Draft | null>(null);
+  const openDraft = (next: Draft) => {
+    setDraft(next);
+    setPristine(next);
+  };
+  const closeDraft = () => {
+    setDraft(null);
+    setPristine(null);
+  };
+  useUnsavedDraft(draft, pristine);
   /*
    * The composer hands its "insert this token" function up so the variable
    * picker can call it. Held in a ref, not state: the composer re-registers on
@@ -85,7 +98,7 @@ export function CampaignsPage() {
       return current.id ? campaignsApi.update(current.id, body) : campaignsApi.create(body);
     },
     onSuccess: async () => {
-      setDraft(null);
+      closeDraft();
       await invalidate();
     },
   });
@@ -106,7 +119,7 @@ export function CampaignsPage() {
         description="Email your sellers — once, or automatically when they reach a status."
         actions={
           can('campaigns', 'create') ? (
-            <Button onClick={() => setDraft(emptyDraft())}>Create campaign</Button>
+            <Button onClick={() => openDraft(emptyDraft())}>Create campaign</Button>
           ) : undefined
         }
       />
@@ -129,7 +142,7 @@ export function CampaignsPage() {
           }}
           insertToken={(token) => insertToken.current(token)}
           save={() => save.mutate()}
-          cancel={() => setDraft(null)}
+          cancel={closeDraft}
           loading={save.isPending}
         />
       ) : null}
@@ -160,7 +173,7 @@ export function CampaignsPage() {
               <RowActions>
                 {can('campaigns', 'edit') ? (
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => setDraft(toDraft(campaign))}>
+                    <Button size="sm" variant="ghost" onClick={() => openDraft(toDraft(campaign))}>
                       Edit
                     </Button>
                     <Button

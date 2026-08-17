@@ -31,7 +31,7 @@ export function RefreshButton() {
       aria-label="Refresh this page's data"
       aria-busy={refreshing}
       title={nothingToRefresh ? 'Nothing to refresh on this page' : "Refresh this page's data"}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-control text-on-ink-soft transition-colors hover:bg-ink-raised hover:text-on-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+      className="hidden h-9 w-9 items-center justify-center rounded-control text-ink-soft transition-colors hover:bg-surface-sunken hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent sm:inline-flex"
     >
       {refreshing ? (
         <Spinner size={16} tone="gold" label="Refreshing" />

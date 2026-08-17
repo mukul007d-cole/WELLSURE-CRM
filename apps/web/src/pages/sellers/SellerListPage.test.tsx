@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
@@ -47,6 +47,7 @@ describe('seller list filter builder', () => {
   beforeEach(() => {
     sentFilters.length = 0;
     sessionStorage.clear();
+    localStorage.clear();
     document.cookie = 'falcon_session=; Path=/; Max-Age=0';
   });
 
@@ -167,6 +168,7 @@ describe('seller list export', () => {
   beforeEach(() => {
     sentFilters.length = 0;
     sessionStorage.clear();
+    localStorage.clear();
     document.cookie = 'falcon_session=; Path=/; Max-Age=0';
   });
 
@@ -214,5 +216,87 @@ describe('seller list export', () => {
     // not offered to someone who would be refused.
     await screen.findByRole('heading', { name: /sellers/i });
     expect(screen.queryByRole('button', { name: /export csv/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('seller list sorting', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('sends the selected server sort and keeps it in the URL-backed view', async () => {
+    const sorts: string[] = [];
+    server.use(
+      http.get('/api/v1/leads', ({ request }) => {
+        const url = new URL(request.url);
+        sorts.push(`${url.searchParams.get('sortBy')}:${url.searchParams.get('sortDirection')}`);
+        return HttpResponse.json({ total: 0, rows: [] });
+      }),
+    );
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText('Sort sellers'), {
+      target: { value: 'name:asc' },
+    });
+
+    await waitFor(() => expect(sorts.at(-1)).toBe('name:asc'));
+    expect(screen.getByLabelText('Sort sellers')).toHaveValue('name:asc');
+  });
+});
+
+describe('seller list columns', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('persists optional column visibility in this browser', async () => {
+    renderPage();
+    expect(await screen.findByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
+
+    // The trigger carries the count, so the current state is readable without
+    // opening the panel.
+    fireEvent.click(screen.getByRole('button', { name: 'Columns (3)' }));
+    fireEvent.click(screen.getByLabelText('Owner'));
+
+    expect(screen.queryByRole('columnheader', { name: 'Owner' })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('falcon.ui.sellerColumns') ?? '[]')).not.toContain(
+      'owner',
+    );
+    expect(screen.getByRole('button', { name: 'Columns (2)' })).toBeInTheDocument();
+  });
+
+  it('closes the column panel on Escape and outside clicks', async () => {
+    renderPage();
+    await screen.findByRole('columnheader', { name: 'Owner' });
+
+    const trigger = screen.getByRole('button', { name: /^Columns/ });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('group', { name: 'Column options' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('group', { name: 'Column options' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('group', { name: 'Column options' })).not.toBeInTheDocument();
+  });
+
+  it('refuses to hide the last context column rather than ignoring the click', async () => {
+    renderPage();
+    await screen.findByRole('columnheader', { name: 'Owner' });
+    fireEvent.click(screen.getByRole('button', { name: /^Columns/ }));
+
+    // Scoped to the panel: "Journey" also names a filter-builder option.
+    const panel = () => within(screen.getByRole('group', { name: 'Column options' }));
+    fireEvent.click(panel().getByLabelText('Owner'));
+    fireEvent.click(panel().getByLabelText('Status'));
+    // One left: it is disabled, so the rule is visible rather than a dead click.
+    expect(panel().getByLabelText('Journey')).toBeDisabled();
+    expect(screen.getByRole('columnheader', { name: 'Journey' })).toBeInTheDocument();
   });
 });

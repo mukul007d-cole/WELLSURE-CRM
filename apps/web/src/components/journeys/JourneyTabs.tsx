@@ -56,7 +56,7 @@ function TabButton({
       className={cn(
         'whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors',
         active
-          ? 'border-gold text-ink'
+          ? 'border-gold-foreground text-ink'
           : 'border-transparent text-ink-soft hover:border-line-strong hover:text-ink',
       )}
     >
