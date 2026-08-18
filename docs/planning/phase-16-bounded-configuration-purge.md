@@ -118,13 +118,19 @@ deactivate route for them either, though `departments.active` exists in the
 schema. Under the "must already be inactive" precondition proposed in D5, a
 Department could never reach a purgeable state. See D1.
 
-### 6. This work depends on Part 1 even though the branches are independent
+### 6. This work depended on Part 1, which has landed
 
-Purge requires the entity to be inactive first (D5). Deactivating a Journey,
-Status, Service or Field is currently denied to every role — that is the Part 1
-bug. So purge for those four is **unreachable in practice until Part 1 merges**,
-even though nothing in this plan's diff touches Part 1's files. Sequencing, not
-a merge conflict.
+Purge requires the entity to be inactive first (D5), and deactivating a Journey,
+Status, Service or Field was denied to every role — the Part 1 bug. Part 1
+merged as `35d2b36` (PR #33), so the precondition is now reachable and this
+phase has no blocker of its own. Two things it settled that this plan builds on:
+
+- `journeys_statuses:delete` and `fields:delete` are the deactivate gates, and
+  `services:edit` is the Services one because the catalog gives `services` no
+  `delete` action. D2's `purge` naming assumes exactly that split.
+- `mutate` in `routes/configuration.ts` now types its action against the
+  catalog entry for the module, so the purge routes get that check for free and
+  cannot repeat the ungrantable-pair failure.
 
 ## Proposed approach
 
@@ -430,8 +436,9 @@ the page. Flagged rather than silently shipping a permission nobody can exercise
   Journey together with its Statuses. A Journey with Statuses is blocked until
   each Status is purged individually; that is a deliberate limit, not an
   oversight.
-- Any change to how deactivation itself works. Part 1 fixes *whether it can run
-  at all*; neither part changes its rules, its conflict checks, or its audit.
+- Any change to how deactivation itself works. Part 1 fixed *whether it could
+  run at all*; neither part changes its rules, its conflict checks, or its
+  audit.
 - Undo, restore, or a recycle bin. Purge is final; backups are the only recovery.
 - Purging `activity_logs` or `system_audit_logs` rows — both are append-only by
   database trigger and stay that way.

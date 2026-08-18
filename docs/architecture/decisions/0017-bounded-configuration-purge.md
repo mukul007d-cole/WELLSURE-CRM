@@ -160,9 +160,11 @@ applied to refusing a validate-only import path.
   about it. Any future feature storing a field, journey, or status id in JSON
   must add it to the dependency table in `configuration/purge.ts`. Stated as a
   standing obligation because no test can express it.
-- Purge is the second step of a two-step operation. Deactivating a Journey,
-  Status, Service or Field is impossible for every role until Part 1 of this
-  phase merges, so purge for those four is unreachable until then.
+- Purge is the second step of a two-step operation: deactivate, then remove.
+  Part 1 of this phase (PR #33, merged as `35d2b36`) is what made the first step
+  possible at all, and it established the gates this decision builds on —
+  `journeys_statuses:delete` and `fields:delete` deactivate, while Services use
+  `services:edit` because the catalog gives them no `delete` action.
 - Rolling the catalog back requires deleting `role_permissions` rows with
   `action = 'purge'`; leaving them behind produces rows whose pair no longer
   exists — ungrantable, unremovable through the role editor, invisible in the
