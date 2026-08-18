@@ -1,18 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import {
+  isPermissionPair,
+  permissionCatalog,
+  resolveAuthorization,
+  type PermissionRepository,
+} from '@falcon/permission-engine';
 
 import { ConfigurationService } from '../configuration/service.js';
 import {
   createField,
   createJourney,
+  createService,
+  deactivateField,
+  deactivateJourney,
+  deactivateService,
   deactivateStatus,
   readConfiguration,
   reorderStatuses,
   upsertFieldVisibility,
+  type ConfigurationRouteResult,
 } from '../routes/configuration.js';
 import {
   MemoryConfigurationRepository,
   actorId,
   auth,
+  catalogPermissionRepository,
   journeyId,
   orgA,
   permissionRepository,
@@ -320,5 +332,171 @@ describe('configuration catalog visibility without journey access', () => {
     });
 
     expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
+  });
+});
+
+/**
+ * Regression: every configuration deactivation checked a `<module>:deactivate`
+ * permission that the catalog has never defined for `journeys_statuses`,
+ * `services` or `fields`.
+ *
+ * `role_permissions` rows are validated against the catalog on write and
+ * `bootstrapFirstAdmin` creates the catalog and nothing else, so no role — the
+ * initial administrator included — could hold one. Deactivating a Journey,
+ * Status, Service or Field was denied for everybody, permanently.
+ *
+ * These cases grant exactly what bootstrap grants and drive the real
+ * `resolveAuthorization`, so the grant set under test is the one a real
+ * deployment can actually have.
+ */
+describe('configuration deactivation permission actions', () => {
+  const wholeCatalog = permissionCatalog.flatMap(({ module, actions }) =>
+    actions.map((action) => `${module}:${action}` as const),
+  );
+  const without = (pair: string) => wholeCatalog.filter((granted) => granted !== pair);
+
+  type Grants = readonly `${string}:${string}`[];
+  interface Target {
+    repository: MemoryConfigurationRepository;
+    id: string;
+  }
+
+  const create = async (
+    repository: MemoryConfigurationRepository,
+    write: (permissionRepository: PermissionRepository) => Promise<ConfigurationRouteResult>,
+  ): Promise<Target> => {
+    const created = await write(catalogPermissionRepository(wholeCatalog));
+    expect(created.status).toBe(201);
+    return { repository, id: (created.body as { id: string }).id };
+  };
+
+  /**
+   * Per entity: the action its deactivation must require, a fixture holding one
+   * of it, and the route call. `services` is the one module the catalog gives
+   * no `delete` action, so its routes gate on `edit` — see the comments in
+   * `routes/configuration.ts`.
+   */
+  const cases = [
+    {
+      name: 'Journey',
+      requires: 'journeys_statuses:delete',
+      seed: () =>
+        Promise.resolve({ repository: new MemoryConfigurationRepository(), id: journeyId }),
+      run: (granted: Grants, target: Target) =>
+        deactivateJourney({
+          auth: auth(),
+          permissionRepository: catalogPermissionRepository(granted),
+          configurationRepository: target.repository,
+          journeyId: target.id,
+        }),
+    },
+    {
+      name: 'Status',
+      requires: 'journeys_statuses:delete',
+      seed: () =>
+        Promise.resolve({ repository: new MemoryConfigurationRepository(), id: statusId }),
+      run: (granted: Grants, target: Target) =>
+        deactivateStatus({
+          auth: auth(),
+          permissionRepository: catalogPermissionRepository(granted),
+          configurationRepository: target.repository,
+          journeyId,
+          statusId: target.id,
+        }),
+    },
+    {
+      name: 'Service',
+      requires: 'services:edit',
+      seed: () => {
+        const repository = new MemoryConfigurationRepository();
+        return create(repository, (permissionRepository) =>
+          createService({
+            auth: auth(),
+            permissionRepository,
+            configurationRepository: repository,
+            key: 'test_service_a',
+            name: 'Test Service A',
+          }),
+        );
+      },
+      run: (granted: Grants, target: Target) =>
+        deactivateService({
+          auth: auth(),
+          permissionRepository: catalogPermissionRepository(granted),
+          configurationRepository: target.repository,
+          serviceId: target.id,
+        }),
+    },
+    {
+      name: 'Field',
+      requires: 'fields:delete',
+      seed: () => {
+        const repository = new MemoryConfigurationRepository();
+        return create(repository, (permissionRepository) =>
+          createField({
+            auth: auth(),
+            permissionRepository,
+            configurationRepository: repository,
+            key: 'test_field_b',
+            name: 'Test Field B',
+            fieldType: 'text',
+            editMode: 'manual',
+            source: 'manual',
+          }),
+        );
+      },
+      run: (granted: Grants, target: Target) =>
+        deactivateField({
+          auth: auth(),
+          permissionRepository: catalogPermissionRepository(granted),
+          configurationRepository: target.repository,
+          fieldId: target.id,
+        }),
+    },
+  ] as const;
+
+  for (const { name, requires, run, seed } of cases) {
+    it(`deactivates a ${name} for a role holding the whole catalog`, async () => {
+      const target = await seed();
+      const response = await run(wholeCatalog, target);
+      expect(response).toMatchObject({ status: 200 });
+      expect(target.repository.systemAudits.at(-1)?.action).toBe('deactivate');
+    });
+
+    it(`denies ${name} deactivation to a role missing ${requires}`, async () => {
+      const target = await seed();
+      const response = await run(without(requires), target);
+      expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
+    });
+  }
+
+  /**
+   * The 403 body is a bare code, so the *reason* is asserted where the engine
+   * produces it: a missing module action, not a journey or record-scope denial.
+   */
+  it('denies the missing action at the feature-permission axis', async () => {
+    const decision = await resolveAuthorization({
+      repository: catalogPermissionRepository(without('journeys_statuses:delete')),
+      request: {
+        organizationId: orgA,
+        userId: actorId,
+        module: 'journeys_statuses',
+        action: 'delete',
+        journeyId,
+      },
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.deniedReasons).toEqual(['FEATURE_ACTION_DENIED']);
+    expect(decision.journeyAllowed).toBe(true);
+  });
+
+  /**
+   * The pair the routes used to ask for. It is absent from the catalog, so no
+   * role can hold it and `admin/validation` refuses to store it — asserted here
+   * so re-introducing `<module>:deactivate` anywhere fails loudly.
+   */
+  it('has no deactivate action in the catalog for any configuration module', () => {
+    for (const module of ['journeys_statuses', 'services', 'fields'] as const)
+      expect(isPermissionPair(module, 'deactivate')).toBe(false);
   });
 });

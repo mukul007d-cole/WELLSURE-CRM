@@ -34,11 +34,26 @@ ALLOW =
 | Integrations | configure |
 
 The immutable runtime source for these identifiers is
-`packages/permission-engine/src/catalog.ts`. Department administration is part
-of the User scope and uses `users:view/create/edit`; V1 has no separate
-Department permission module. See ADR-0009. **Team administration rides on the
-same actions**, so `users:edit` now also confers restructuring the Teams inside
-any Department (ADR-0014).
+`packages/permission-engine/src/catalog.ts`. **An action absent from that file
+cannot be granted at all** — `role_permissions` writes are validated against it
+and the bootstrap command creates it and nothing else — so a route checking a
+pair the catalog does not define is denied to every role, permanently, rather
+than merely being ungranted. There is no `deactivate` action for any
+configuration module; see the row below for what deactivation actually checks.
+
+Department administration is part of the User scope and uses
+`users:view/create/edit`; V1 has no separate Department permission module. See
+ADR-0009. **Team administration rides on the same actions**, so `users:edit` now
+also confers restructuring the Teams inside any Department (ADR-0014).
+
+Configuration entities are deactivated, never hard-deleted (`AGENTS.md`), so
+`delete` on a configuration module is the *deactivate* gate:
+`journeys_statuses:delete` deactivates a Journey or a Status, and `fields:delete`
+deactivates a Field. Services are the exception — the catalog gives them no
+`delete` action, so deactivating a Service and unmapping one from a Journey both
+check `services:edit`, matching how role and Team deactivation ride on their
+module's `edit` action, and how unmapping a Field from a Journey checks
+`fields:edit`.
 
 `lead_routing:configure` and `lead_routing:operate` are distinct for the same
 reason: deciding who *may* receive leads at a Status and moving one particular

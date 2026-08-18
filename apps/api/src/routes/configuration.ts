@@ -1,4 +1,8 @@
-import { resolveAuthorization, type PermissionRepository } from '@falcon/permission-engine';
+import {
+  resolveAuthorization,
+  type PermissionAction,
+  type PermissionRepository,
+} from '@falcon/permission-engine';
 
 import type { AuthenticatedContext } from '../auth/middleware.js';
 import { isConfigurationError } from '../configuration/errors.js';
@@ -20,7 +24,6 @@ export type ConfigurationRouteResult =
   | { status: 400 | 403 | 404 | 409; body: { error: string; details?: Record<string, unknown> } };
 
 type ModuleName = (typeof configurationModules)[keyof typeof configurationModules];
-type ActionName = 'create' | 'edit' | 'deactivate' | 'delete';
 
 export async function readConfiguration(input: {
   auth: AuthenticatedContext;
@@ -147,7 +150,7 @@ export async function deactivateJourney(input: {
   return mutate(
     input,
     configurationModules.journeys,
-    'deactivate',
+    'delete',
     input.journeyId,
     (service) =>
       service.deactivateJourney({
@@ -222,7 +225,7 @@ export async function deactivateStatus(input: {
   return mutate(
     input,
     configurationModules.statuses,
-    'deactivate',
+    'delete',
     input.journeyId,
     (service) =>
       service.deactivateStatus({
@@ -299,10 +302,17 @@ export async function deactivateService(input: {
   serviceId: string;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
+  // `services:edit`, where the Journey and Field equivalents use `delete`: the
+  // catalog gives `services` only view/create/edit, so `services:delete` is not
+  // a grantable pair and gating on it would leave this route as denied as
+  // `services:deactivate` was. Deactivation-gated-on-edit is the established
+  // fallback here — role and Team deactivation already work that way
+  // (`http/routes/admin.ts`). Whether Services should gain its own `delete`
+  // action for symmetry is a permission-model change, not a bug fix.
   return mutate(
     input,
     configurationModules.services,
-    'deactivate',
+    'edit',
     undefined,
     (service) =>
       service.deactivateService({
@@ -356,7 +366,7 @@ export async function deactivateField(input: {
   return mutate(
     input,
     configurationModules.fields,
-    'deactivate',
+    'delete',
     undefined,
     (service) =>
       service.deactivateField({
@@ -505,10 +515,14 @@ export async function unmapJourneyService(input: {
   serviceId: string;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
+  // Was `services:delete`, which the catalog does not define either, so
+  // unmapping a Service from a Journey was denied for every role by the same
+  // root cause. `edit` matches the Field-side unmap, which has always gated
+  // `unmapFieldJourneySetting` on `fields:edit`.
   return mutate(
     input,
     configurationModules.journeyServices,
-    'delete',
+    'edit',
     input.journeyId,
     (service) =>
       service.unmapJourneyService({
@@ -546,15 +560,27 @@ export async function upsertFieldVisibility(input: {
   );
 }
 
-async function mutate(
+/**
+ * `action` is typed against the catalog entry for `module`, not against a local
+ * union of plausible action names.
+ *
+ * The looser union let four call sites ask for `<module>:deactivate`, which the
+ * catalog has never defined for any configuration module. `role_permissions`
+ * rejects rows outside the catalog (`admin/validation.ts`) and bootstrap only
+ * creates catalog pairs, so no role could hold one and every Journey, Status,
+ * Service and Field deactivation was denied for everybody, permanently. Binding
+ * the parameter to `PermissionAction<M>` makes that class of typo a compile
+ * error rather than a silent 403.
+ */
+async function mutate<M extends ModuleName>(
   input: {
     auth: AuthenticatedContext;
     permissionRepository: PermissionRepository;
     configurationRepository: ConfigurationRepository;
     now?: Date;
   },
-  module: ModuleName,
-  action: ActionName,
+  module: M,
+  action: PermissionAction<M>,
   journeyId: string | undefined,
   work: (service: ConfigurationService) => Promise<unknown>,
   successStatus: 200 | 201,
