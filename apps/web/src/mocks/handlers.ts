@@ -20,7 +20,7 @@ import {
   resolveUserId,
   setCookieHeader,
 } from './session';
-import type { NotificationItem } from '../types/domain';
+import type { NotificationItem, NotificationRule } from '../types/domain';
 
 const API_BASE = '/api/v1';
 
@@ -154,7 +154,44 @@ const MOCK_NOTIFICATIONS: NotificationItem[] = [
     createdAt: new Date().toISOString(),
   },
 ];
-const MOCK_NOTIFICATION_RULES: unknown[] = [];
+/**
+ * Seeded with a real multi-recipient rule, the same shape
+ * `apps/api/src/notifications/seed-example-rules.ts` writes: a rule carries an
+ * ordered recipient list, not a single resolver.
+ */
+const MOCK_NOTIFICATION_RULES: NotificationRule[] = [
+  {
+    id: 'rule-lead-modified',
+    key: 'lead_modified_example',
+    name: 'Lead modified',
+    triggerType: 'field_edited',
+    scope: null,
+    active: true,
+    version: 1,
+    recipients: [
+      { resolverType: 'assignment_holder', parameters: { assignmentType: 'owner' }, sortOrder: 0 },
+      {
+        resolverType: 'assignment_holder_manager',
+        parameters: { assignmentType: 'owner' },
+        sortOrder: 1,
+      },
+    ],
+  },
+];
+interface RuleWriteBody {
+  key?: string;
+  name: string;
+  triggerType: string;
+  active?: boolean;
+  recipients: Array<{ resolverType: string; parameters?: Record<string, unknown> }>;
+}
+/** `sortOrder` is the position in the request, exactly as the service assigns it. */
+const numberRecipients = (recipients: RuleWriteBody['recipients']) =>
+  recipients.map((recipient, sortOrder) => ({
+    resolverType: recipient.resolverType,
+    parameters: recipient.parameters ?? {},
+    sortOrder,
+  }));
 const MOCK_CAMPAIGNS = [
   {
     id: 'campaign-synthetic',
@@ -273,6 +310,7 @@ const INITIAL_ADMIN_STATE = structuredClone({
   routingGrants: MOCK_ROUTING_GRANTS,
   fields: MOCK_ADMIN_FIELDS,
   users: MOCK_ADMIN_USERS,
+  notificationRules: MOCK_NOTIFICATION_RULES,
 });
 
 /**
@@ -303,6 +341,7 @@ export function resetAdminMockState() {
   MOCK_ROUTING_GRANTS.splice(0, MOCK_ROUTING_GRANTS.length, ...initial.routingGrants);
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
+  MOCK_NOTIFICATION_RULES.splice(0, MOCK_NOTIFICATION_RULES.length, ...initial.notificationRules);
   MOCK_JOURNEY_FIELDS.splice(0);
   MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
@@ -1355,10 +1394,35 @@ export const handlers = [
     HttpResponse.json({ total: MOCK_NOTIFICATION_RULES.length, items: MOCK_NOTIFICATION_RULES }),
   ),
   http.post(`${API_BASE}/notification-rules`, async ({ request }) => {
-    const body = (await request.json()) as Record<string, unknown>;
-    const row = { id: `rule-${Date.now()}`, active: true, version: 1, ...body };
+    const body = (await request.json()) as RuleWriteBody;
+    const row: NotificationRule = {
+      id: `rule-${MOCK_NOTIFICATION_RULES.length + 1}-${Date.now()}`,
+      key: body.key ?? '',
+      name: body.name,
+      triggerType: body.triggerType,
+      scope: null,
+      active: true,
+      version: 1,
+      recipients: numberRecipients(body.recipients),
+    };
     MOCK_NOTIFICATION_RULES.push(row);
     return HttpResponse.json(row, { status: 201 });
+  }),
+  /*
+   * Mirrors `NotificationService.updateRule`: the recipient list is replaced
+   * wholesale from the request, the key is not writable, and deactivation is
+   * this same call with `active: false` — the API has no DELETE.
+   */
+  http.put(`${API_BASE}/notification-rules/:id`, async ({ params, request }) => {
+    const body = (await request.json()) as RuleWriteBody;
+    const row = MOCK_NOTIFICATION_RULES.find((rule) => rule.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    row.name = body.name;
+    row.triggerType = body.triggerType;
+    row.active = body.active ?? true;
+    row.version += 1;
+    row.recipients = numberRecipients(body.recipients);
+    return HttpResponse.json(row);
   }),
 
   /*
