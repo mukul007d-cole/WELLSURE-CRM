@@ -349,3 +349,35 @@ export function permissionRepository(
     },
   };
 }
+
+/**
+ * Answers `getRolePermission` from an explicit `module:action` grant set, the
+ * way a `role_permissions` lookup does.
+ *
+ * `permissionRepository(true)` above answers *every* pair, which is precisely
+ * what hid the bug this fixture exists for: four routes asked for
+ * `<module>:deactivate`, a pair the catalog does not define, `admin/validation`
+ * refuses to store and bootstrap never creates — so the fake said yes where
+ * Postgres could only ever say no, and configuration deactivation was denied
+ * for every role in production while the unit tests stayed green.
+ *
+ * Any test asserting *which* action a route requires must use this one.
+ */
+export function catalogPermissionRepository(
+  granted: Iterable<`${string}:${string}`>,
+): PermissionRepository {
+  const pairs = new Set<string>(granted);
+  return {
+    ...permissionRepository(),
+    async getRolePermission(input: {
+      roleId: string;
+      organizationId: string;
+      module: string;
+      action: string;
+    }) {
+      return pairs.has(`${input.module}:${input.action}`)
+        ? { module: input.module, action: input.action, scope: 'ORGANIZATION' as const }
+        : null;
+    },
+  };
+}

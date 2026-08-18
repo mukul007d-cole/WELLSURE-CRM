@@ -66,7 +66,7 @@ See ADR-0015.
 GET    /journeys
 POST   /journeys
 PATCH  /journeys/:id
-DELETE /journeys/:id
+DELETE /journeys/:id                   -- deactivate; journeys_statuses:delete
 PUT    /journeys/:id/status-order      -- body: complete ordered statusIds array; atomic
 
 GET    /statuses/:id/routing              -- lead_routing:view; null rule = unrouted Status
@@ -80,15 +80,21 @@ POST   /leads/:id/routing-assign          -- lead_routing:operate AND the caller
 GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses
 PATCH  /statuses/:id
-DELETE /statuses/:id                   -- requires lead-migration step
+DELETE /statuses/:id                   -- deactivate; journeys_statuses:delete. requires lead-migration step
 
 GET    /services
 GET    /services/:id
 POST   /services
+DELETE /services/:id                   -- deactivate; services:edit
 PUT    /journeys/:id/services
 ```
 
-The services mapping request is `{ action: "map" | "unmap", serviceId }`.
+The services mapping request is `{ action: "map" | "unmap", serviceId }`. The
+map half checks `services:create` and the unmap half `services:edit`.
+
+Deactivating a Service and unmapping one check `services:edit` rather than a
+`delete` action, because the catalog gives `services` only view/create/edit —
+see `docs/permissions/access-model.md`.
 
 ### Fields
 ```
@@ -96,7 +102,7 @@ GET    /fields
 GET    /fields/:id
 POST   /fields
 PATCH  /fields/:id
-DELETE /fields/:id
+DELETE /fields/:id                     -- deactivate; fields:delete
 GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
 DELETE /journeys/:id/fields/:fieldId   -- semantic unmap/deactivate
