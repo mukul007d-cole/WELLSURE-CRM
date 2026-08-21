@@ -28,6 +28,7 @@ POST   /roles
 GET    /roles/:id
 PUT    /roles/:id
 POST   /roles/:id/deactivate            -- optional atomic replacementRoleId
+POST   /roles/:id/purge                 -- permanent; roles_permissions:purge
 GET    /roles/:id/permissions
 PUT    /roles/:id/permissions
 GET    /roles/:id/journey-access
@@ -47,6 +48,7 @@ POST   /departments/:id/teams           -- body: key, name, members[] (>=1 isLea
 GET    /teams/:id                       -- includes members
 PUT    /teams/:id                       -- name only
 POST   /teams/:id/deactivate
+POST   /teams/:id/purge                 -- permanent; users:purge
 PUT    /teams/:id/members               -- body: complete members array; whole-set replace
 ```
 
@@ -67,6 +69,7 @@ GET    /journeys
 POST   /journeys
 PATCH  /journeys/:id
 DELETE /journeys/:id                   -- deactivate; journeys_statuses:delete
+POST   /journeys/:id/purge             -- permanent; journeys_statuses:purge
 PUT    /journeys/:id/status-order      -- body: complete ordered statusIds array; atomic
 
 GET    /statuses/:id/routing              -- lead_routing:view; null rule = unrouted Status
@@ -81,11 +84,13 @@ GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST o
 POST   /journeys/:id/statuses
 PATCH  /statuses/:id
 DELETE /statuses/:id                   -- deactivate; journeys_statuses:delete. requires lead-migration step
+POST   /statuses/:id/purge             -- permanent; journeys_statuses:purge
 
 GET    /services
 GET    /services/:id
 POST   /services
 DELETE /services/:id                   -- deactivate; services:edit
+POST   /services/:id/purge             -- permanent; services:purge
 PUT    /journeys/:id/services
 ```
 
@@ -103,6 +108,7 @@ GET    /fields/:id
 POST   /fields
 PATCH  /fields/:id
 DELETE /fields/:id                     -- deactivate; fields:delete
+POST   /fields/:id/purge               -- permanent; fields:purge
 GET    /journeys/:id/fields
 PUT    /journeys/:id/fields/:fieldId   -- requirement, required_from_status, visibility
 DELETE /journeys/:id/fields/:fieldId   -- semantic unmap/deactivate
@@ -258,6 +264,7 @@ PATCH  /notifications/:id/read
 GET    /notification-rules
 POST   /notification-rules
 PUT    /notification-rules/:id
+POST   /notification-rules/:id/purge   -- permanent; roles_permissions:purge
 ```
 
 ### Tasks
@@ -341,6 +348,47 @@ Configuration endpoints operate on tenant-scoped IDs/keys and never depend on We
   remain readable as configuration and require an explicitly documented
   renderer before they become editable controls.
 - Field visibility: uses the existing `field_visibility` allow-list contract consumed by the permission engine. No separate visibility evaluator exists in the API.
+
+### Bounded hard-delete (purge)
+
+`POST /<entity>/:id/purge` permanently removes a configuration entity. See
+ADR-0017. Available for Journeys, Statuses, Fields, Services, Teams, Roles and
+Notification Rules — **never** Leads, Users, or Departments.
+
+Every purge is one transaction that, in order: locks the row `FOR UPDATE`,
+refuses an entity that is still active (`400 validation_error`, details
+`{ reason: "must_be_deactivated_first" }`), runs the entity's guards and its
+dependency checks, snapshots the entity and its mapping rows, deletes them, and
+writes one `system_audit_logs` row with `action = 'purge'`, `new_value = null`
+and `old_value = { entity, cascaded }`.
+
+- **Blocked** by any real dependent: `409 dependency_conflict`, with `details`
+  naming each relationship and its count, e.g. `{ "leads": 3, "campaigns": 1 }`.
+  Four of those checks are not foreign keys at all — `leads.field_values`,
+  `campaigns.filter` and `import_jobs.mapping_json` reference Fields and
+  Journeys inside JSONB, where no constraint could ever fire.
+- **Cascaded** with the entity: the mapping and grant rows that describe only
+  its own participation (`role_journey_access`, `journey_services`,
+  `field_journey_settings`, `field_visibility`, `status_routing_permissions`,
+  `team_members`, `role_permissions`, `notification_rule_recipients`), captured
+  in `old_value` first. This is the same class the mapping-row rule below
+  already treats as current-state relationships rather than entities.
+- A Role that is `is_system_default` is refused with
+  `{ reason: "system_default_role" }`.
+- The response body is `{ entity, id, key, name, cascaded, auditLogId }`, where
+  `cascaded` counts the rows removed per relationship.
+- There is deliberately **no preflight endpoint**. Clients render the `409`
+  from the real operation; a second implementation of the dependency rule could
+  disagree with the real one, silently, in exactly the cases nobody tested.
+
+Purge requires the module's `purge` action, which `bootstrapFirstAdmin` does
+not grant. A route is registered only when the deployment has a database
+client, as campaigns and import are.
+
+**Not in the V1 user interface:** Services have no admin page, and a deactivated
+Status is not returned by `GET /journeys/:id` (which filters statuses by
+`active`), so both are API-only for now. Journeys, Fields, Teams, Roles and
+Notification Rules have the confirmation dialog.
 
 ### Mapping row deletion rule
 

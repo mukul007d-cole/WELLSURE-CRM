@@ -1,5 +1,5 @@
 import type { FalconPrismaClient } from '@falcon/database';
-import { permissionCatalog } from '@falcon/permission-engine';
+import { bootstrapGrantedPairs, withheldFromBootstrapPairs } from '@falcon/permission-engine';
 
 import type { AuthConfig } from '../auth/config.js';
 import { preparePasswordReset, type EmailSender } from '../auth/password-reset.js';
@@ -32,16 +32,22 @@ export async function bootstrapFirstAdmin(input: {
         name: 'Initial administrator',
       },
     });
+    /*
+     * The catalog minus each entry's `withheldFromBootstrap` actions — today,
+     * `purge` and nothing else (ADR-0017, amending ADR-0009's "complete
+     * catalog"). The exclusion is decided in the catalog, not here: a second
+     * place that decides which pairs exist is what made configuration
+     * deactivation ungrantable for every role, and it is not coming back.
+     */
+    const granted = bootstrapGrantedPairs();
     await tx.rolePermission.createMany({
-      data: permissionCatalog.flatMap(({ module, actions }) =>
-        actions.map((action) => ({
-          organizationId: input.organizationId,
-          roleId: role.id,
-          module,
-          action,
-          scope: 'ORGANIZATION' as const,
-        })),
-      ),
+      data: granted.map(({ module, action }) => ({
+        organizationId: input.organizationId,
+        roleId: role.id,
+        module,
+        action,
+        scope: 'ORGANIZATION' as const,
+      })),
     });
     const journeys = await tx.journey.findMany({
       where: { organizationId: input.organizationId, active: true },
@@ -94,7 +100,8 @@ export async function bootstrapFirstAdmin(input: {
           entityId: role.id,
           action: 'bootstrap.role_created',
           newValue: {
-            permissionCount: permissionCatalog.reduce((n, x) => n + x.actions.length, 0),
+            permissionCount: granted.length,
+            withheldPermissions: withheldFromBootstrapPairs(),
             journeyCount: journeys.length,
             fieldCount: fields.length,
           },

@@ -1,8 +1,7 @@
 # ADR-0017: Bounded hard-delete (purge) for configuration entities
 
-**Status:** Proposed (phase 16, part 2) — **not accepted; nothing implemented.**
-Supersedes nothing until approved. Amends the `AGENTS.md` no-hard-delete rule
-and ADR-0009's bootstrap contract if accepted.
+**Status:** Accepted (phase 16, part 2). Amends the `AGENTS.md` no-hard-delete
+rule and ADR-0009's bootstrap contract.
 
 ## Context
 
@@ -152,9 +151,14 @@ applied to refusing a validate-only import path.
 - Five new permission identifiers appear in every role editor, as `campaigns`
   did in 13c and `lead_routing` in 14b — but unchecked by default and ungranted
   by bootstrap.
-- `services:purge` ships with no user interface: there is no Services admin page
-  in the web app. The endpoint is real and tested; the button arrives with the
-  page.
+- **Two entity types ship API-only.** Services have no admin page at all. And a
+  deactivated Status is never returned to the client: `GET /journeys/:id`
+  filters its nested statuses by the same `active` flag that filters the
+  Journey, so there is no request that yields an active Journey's inactive
+  Statuses, and a purge control there would be dead. Both endpoints are real and
+  tested; the controls arrive when a surface exists to put them on. Giving
+  Statuses one needs a read change (separating the journey's `active` filter
+  from its statuses'), which is its own decision.
 - **A new JSONB column holding a configuration id will not be caught by anything
   automatically.** Foreign keys do not see it and the purge checks will not know
   about it. Any future feature storing a field, journey, or status id in JSON

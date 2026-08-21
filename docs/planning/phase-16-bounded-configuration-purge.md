@@ -1,9 +1,28 @@
 # Phase 16 — Bounded hard-delete (purge) for configuration entities
 
-Status: **proposed — not approved, nothing implemented.** Seven decisions below
-(D1–D7) need sign-off before any code is written. Three of them contradict a
-rule stated in `AGENTS.md` or in the phase brief, and are called out as such
-rather than resolved silently, per `PLANS.md`.
+Status: **approved 2026-08-18. Delivered.** All seven decisions (D1–D7) were
+approved as proposed, including the three that contradict a rule in `AGENTS.md`
+or in the phase brief: the two-class dependent split (D3), amending the
+no-hard-delete rule, and withholding `purge` from the bootstrap grant (D4).
+Recorded in ADR-0017.
+
+Three things the implementation found that the plan did not, all covered by
+tests:
+
+- **Statuses ship API-only, like Services.** `GET /journeys/:id` filters its
+  nested statuses by the same `active` flag that filters the Journey, so no
+  request returns an active Journey's deactivated Statuses and a purge control
+  there would have been dead UI. D7's dialog is wired into Journeys, Fields,
+  Teams, Roles and Notification Rules.
+- **The dependency table is checked against the database, not by hand.** A test
+  asks `pg_constraint` for every foreign key pointing at each purgeable table
+  and fails unless each one is classified as a blocker or a cascade — the
+  standing obligation ADR-0017 records, made mechanical for the FK half of it.
+- **The routes live in their own module** (`routes/purge.ts`,
+  `http/routes/purge.ts`) rather than being split across the configuration and
+  admin route files as the plan's file list assumed. Seven entity types share
+  one handler because the difference between them is the descriptor table, not
+  control flow.
 
 This is Part 2 of Phase 16 and is independent of Part 1 (the deactivation
 permission fix) for review purposes. It is **not** independent of it

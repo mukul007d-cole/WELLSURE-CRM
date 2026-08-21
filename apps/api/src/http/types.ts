@@ -13,6 +13,7 @@ import type {
 import type { LoginRepository } from '../auth/login.js';
 import type { SessionRepository } from '../auth/session.js';
 import type { ConfigurationRepository } from '../configuration/service.js';
+import type { PurgeService } from '../configuration/purge-service.js';
 import type { AdminRepository } from '../admin/repository.js';
 import type { LeadRepository } from '../leads/service.js';
 import type { LeadActivityReadRepository, SellerReadRepository } from '../routes/leads.js';
@@ -47,6 +48,12 @@ export interface ServerDependencies {
   importService?: ImportService;
   /** Supplies the export's Field columns and writes its audit row. */
   exportRepository?: ExportFieldRepository & ExportAuditWriter;
+  /**
+   * Bounded hard-delete (ADR-0017). Needs a real database client for its
+   * transaction-scoped `SET LOCAL falcon.purge` and its raw JSONB dependency
+   * probes, so a deployment wired without one has no purge routes at all.
+   */
+  purgeService?: PurgeService;
   authConfig: AuthConfig;
   corsOrigins: readonly string[];
   logLevel?: string;

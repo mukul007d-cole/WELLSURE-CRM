@@ -32,22 +32,43 @@ export const permissionCatalog = [
       'bulk_status_change',
     ],
   },
-  { module: 'fields', label: 'Fields', actions: ['view', 'create', 'edit', 'delete'] },
+  {
+    module: 'fields',
+    label: 'Fields',
+    actions: ['view', 'create', 'edit', 'delete', 'purge'],
+    withheldFromBootstrap: ['purge'],
+  },
   {
     module: 'journeys_statuses',
     label: 'Journeys & Statuses',
-    actions: ['view', 'create', 'edit', 'delete'],
+    actions: ['view', 'create', 'edit', 'delete', 'purge'],
+    withheldFromBootstrap: ['purge'],
   },
-  { module: 'services', label: 'Services', actions: ['view', 'create', 'edit'] },
+  {
+    module: 'services',
+    label: 'Services',
+    // No `delete`: deactivating a Service and unmapping one from a Journey both
+    // check `edit`. See `docs/permissions/access-model.md`.
+    actions: ['view', 'create', 'edit', 'purge'],
+    withheldFromBootstrap: ['purge'],
+  },
   {
     module: 'users',
     label: 'Users & Departments',
-    actions: ['view', 'create', 'edit', 'deactivate'],
+    // `purge` governs **Teams only**. Users are never hard-deleted and neither
+    // are Departments — see ADR-0017, which accepts this naming rather than
+    // hiding it, on the same footing as `users:edit` conferring Team
+    // restructuring without conferring anything about user records.
+    actions: ['view', 'create', 'edit', 'deactivate', 'purge'],
+    withheldFromBootstrap: ['purge'],
   },
   {
     module: 'roles_permissions',
     label: 'Roles & Permissions',
-    actions: ['view', 'create', 'edit'],
+    // `purge` governs Roles and Notification Rules, the latter because rule
+    // administration rides on this module (ADR-0017 D2b).
+    actions: ['view', 'create', 'edit', 'purge'],
+    withheldFromBootstrap: ['purge'],
   },
   {
     module: 'reports',
@@ -89,6 +110,54 @@ const pairs = new Set<string>(
 
 export function isPermissionPair(module: string, action: string): boolean {
   return pairs.has(`${module}:${action}`);
+}
+
+function withheld(entry: (typeof permissionCatalog)[number]): readonly string[] {
+  return 'withheldFromBootstrap' in entry ? entry.withheldFromBootstrap : [];
+}
+
+/**
+ * Every pair `bootstrapFirstAdmin` grants: the catalog minus each entry's
+ * `withheldFromBootstrap` actions.
+ *
+ * ADR-0009 made bootstrap provision the complete catalog. ADR-0017 amends that
+ * for `purge` alone — the one irreversible action, which an administrator must
+ * grant deliberately so that enabling it lands in `system_audit_logs` with an
+ * actor and a timestamp.
+ *
+ * The exclusion is expressed here, beside the actions it refers to, rather than
+ * as a list inside the bootstrap command. A second place that decides which
+ * pairs exist is exactly the defect that made configuration deactivation
+ * undeniable-but-ungrantable for every role; it is not being reintroduced.
+ */
+export function bootstrapGrantedPairs(): { module: string; action: string }[] {
+  return permissionCatalog.flatMap((entry) =>
+    entry.actions
+      .filter((action) => !withheld(entry).includes(action))
+      .map((action) => ({ module: entry.module, action })),
+  );
+}
+
+/**
+ * The pairs bootstrap deliberately withholds, as `module:action` strings.
+ *
+ * Recorded in the bootstrap audit row and printed by the CLI, so a fresh
+ * deployment's first `403` on a purge route is explained rather than mysterious.
+ */
+export function withheldFromBootstrapPairs(): string[] {
+  return permissionCatalog
+    .flatMap((entry) => withheld(entry).map((action) => `${entry.module}:${action}`))
+    .sort();
+}
+
+/** Whether a catalog pair is granted by `bootstrapFirstAdmin`. */
+export function isGrantedOnBootstrap(module: string, action: string): boolean {
+  const entry = permissionCatalog.find((candidate) => candidate.module === module);
+  return (
+    entry !== undefined &&
+    (entry.actions as readonly string[]).includes(action) &&
+    !withheld(entry).includes(action)
+  );
 }
 
 export function isDataScope(scope: string): scope is DataScope {

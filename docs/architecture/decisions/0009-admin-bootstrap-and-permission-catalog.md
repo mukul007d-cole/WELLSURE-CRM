@@ -1,6 +1,13 @@
 # ADR-0009: Administration Permission Catalog and Bootstrap
 
-**Status:** Accepted
+**Status:** Accepted. **Amended by ADR-0017** (phase 16): bootstrap provisions
+the complete catalog *except* actions the catalog itself marks
+`withheldFromBootstrap`, which today is `purge` and nothing else. The amendment
+is narrow and deliberate — `purge` is the only irreversible action in the
+system, so an administrator grants it on purpose and the grant appears in
+`system_audit_logs`. Everything else below stands, including that the exclusion
+is decided in the catalog rather than by a second list inside the bootstrap
+command.
 
 ## Context
 
@@ -12,7 +19,7 @@ The permission engine persisted module/action identifiers as strings without an 
 
 Department administration uses `users:view`, `users:create`, and `users:edit`; V1 does not introduce a Department permission module.
 
-The first administrator is provisioned only by the out-of-band `bootstrapFirstAdmin` command operation. It takes an explicit organization and administrator identity, serializes attempts with an organization-scoped transaction lock, requires zero existing users, provisions a generic role with the complete catalog at organization scope, all active Journeys, and edit visibility for all active Fields, creates a passwordless user and reset token, and writes nullable-actor bootstrap audits atomically. It permanently rejects the organization after any user exists. There is no HTTP bootstrap or general authorization bypass.
+The first administrator is provisioned only by the out-of-band `bootstrapFirstAdmin` command operation. It takes an explicit organization and administrator identity, serializes attempts with an organization-scoped transaction lock, requires zero existing users, provisions a generic role with the complete catalog at organization scope (less any `withheldFromBootstrap` actions — see the amendment above), all active Journeys, and edit visibility for all active Fields, creates a passwordless user and reset token, and writes nullable-actor bootstrap audits atomically. It permanently rejects the organization after any user exists. There is no HTTP bootstrap or general authorization bypass.
 
 Permission replacement uses a transactional role row lock. Role version is incremented for authorization cache invalidation, but is not a client optimistic-lock token in V1. A replacement that would leave the organization with no active user whose role grants `roles_permissions:edit` is rejected in the transaction.
 

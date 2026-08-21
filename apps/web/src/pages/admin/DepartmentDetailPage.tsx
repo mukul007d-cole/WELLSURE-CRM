@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
+import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
@@ -30,6 +31,7 @@ export function DepartmentDetailPage() {
   const [name, setName] = useState('');
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<TeamDraft | null>(null);
+  const [purging, setPurging] = useState<Team | null>(null);
 
   const department = useQuery({
     queryKey: ['admin', 'department', departmentId],
@@ -80,6 +82,13 @@ export function DepartmentDetailPage() {
   const deactivateTeam = useMutation({
     mutationFn: (id: string) => adminApi.deactivateTeam(id),
     onSuccess: refresh,
+  });
+  const purgeTeam = useMutation({
+    mutationFn: (id: string) => adminApi.purgeTeam(id),
+    onSuccess: async () => {
+      setPurging(null);
+      await refresh();
+    },
   });
 
   const error =
@@ -192,11 +201,30 @@ export function DepartmentDetailPage() {
                     </Button>
                   </>
                 ) : null}
+                {can('users', 'purge') && !team.active ? (
+                  <Button size="sm" variant="danger" onClick={() => setPurging(team)}>
+                    Delete permanently
+                  </Button>
+                ) : null}
               </div>
             </li>
           ))}
         </ul>
       </Card>
+      {purging ? (
+        <PurgeDialog
+          entityLabel="Team"
+          entityKey={purging.key}
+          entityName={purging.name}
+          loading={purgeTeam.isPending}
+          error={purgeTeam.error}
+          onCancel={() => {
+            purgeTeam.reset();
+            setPurging(null);
+          }}
+          onConfirm={() => purgeTeam.mutate(purging.id)}
+        />
+      ) : null}
     </PageBody>
   );
 }

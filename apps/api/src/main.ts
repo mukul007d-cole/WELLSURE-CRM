@@ -4,6 +4,7 @@ import { S3AttachmentStorage } from './attachments/s3-storage.js';
 import { AttachmentService } from './attachments/service.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
+import { PurgeService } from './configuration/purge-service.js';
 import { PrismaExportRepository } from './export/prisma-export-repository.js';
 import { buildServer } from './http/build-server.js';
 import { PrismaImportRepository, visibleLeadIds } from './import/prisma-import-repository.js';
@@ -59,6 +60,7 @@ const server = buildServer({
   importService,
   exportRepository: new PrismaExportRepository(prisma),
   configurationRepository: new PrismaConfigurationRepository(prisma),
+  purgeService: new PurgeService(prisma),
   adminRepository: new PrismaAdminRepository(prisma),
   leadSharingService: new LeadSharingService(prisma, notificationService),
   notificationService,

@@ -8,8 +8,10 @@ import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Pagination } from '../../components/ui/Pagination';
+import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
+import type { AdminJourney } from '../../types/domain';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
@@ -22,6 +24,7 @@ export function JourneysPage() {
   const [page, setPage] = useState(1);
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<{ id?: string; key: string; name: string } | null>(null);
+  const [purging, setPurging] = useState<AdminJourney | null>(null);
   const query = useQuery({
     queryKey: ['admin', 'journeys', page, active],
     queryFn: () => adminApi.journeys(page, activeValue(active)),
@@ -40,6 +43,15 @@ export function JourneysPage() {
     mutationFn: (id: string) => adminApi.deactivateJourney(id),
     onSuccess: async () => qc.invalidateQueries({ queryKey: ['admin', 'journeys'] }),
   });
+  const purge = useMutation({
+    mutationFn: (id: string) => adminApi.purgeJourney(id),
+    onSuccess: async () => {
+      setPurging(null);
+      await qc.invalidateQueries({ queryKey: ['admin', 'journeys'] });
+    },
+  });
+  // A purge failure stays inside its dialog, where the blocking relationships
+  // are legible next to what is being deleted, rather than in the page banner.
   const error = query.error ?? save.error ?? deactivate.error;
   return (
     <PageBody>
@@ -111,6 +123,13 @@ export function JourneysPage() {
                       Deactivate
                     </Button>
                   ) : null}
+                  {/* Purge is offered only once the Journey is deactivated,
+                      because the API requires that anyway (ADR-0017). */}
+                  {can('journeys_statuses', 'purge') && !journey.active ? (
+                    <Button size="sm" variant="danger" onClick={() => setPurging(journey)}>
+                      Delete permanently
+                    </Button>
+                  ) : null}
                 </RowActions>
               </div>
             </DataCell>
@@ -123,6 +142,20 @@ export function JourneysPage() {
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
           onPageChange={setPage}
+        />
+      ) : null}
+      {purging ? (
+        <PurgeDialog
+          entityLabel="Journey"
+          entityKey={purging.key}
+          entityName={purging.name}
+          loading={purge.isPending}
+          error={purge.error}
+          onCancel={() => {
+            purge.reset();
+            setPurging(null);
+          }}
+          onConfirm={() => purge.mutate(purging.id)}
         />
       ) : null}
     </PageBody>
