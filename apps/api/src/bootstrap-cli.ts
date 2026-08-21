@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import type { FalconPrismaClient } from '@falcon/database';
+import { withheldFromBootstrapPairs } from '@falcon/permission-engine';
 
 import { bootstrapFirstAdmin } from './admin/bootstrap.js';
 import type { AuthConfig } from './auth/config.js';
@@ -88,6 +89,17 @@ async function main(): Promise<void> {
     console.log(
       `The initial administrator (${options.adminEmail.toLowerCase()}) must use the password-reset email just sent to set their password.`,
     );
+    const withheld = withheldFromBootstrapPairs();
+    if (withheld.length > 0) {
+      // Otherwise the first 403 on a purge route looks like a bug rather than
+      // the deliberate decision it is (ADR-0017).
+      console.log(
+        `\nNot granted, deliberately: ${withheld.join(', ')}.\n` +
+          'Purge permanently deletes configuration and cannot be undone, so it is granted to a role\n' +
+          'on purpose rather than by default — the grant itself is recorded in system_audit_logs.\n' +
+          'Grant it under Roles & Permissions when it is genuinely needed.',
+      );
+    }
   } finally {
     await runtime.prisma.$disconnect();
   }

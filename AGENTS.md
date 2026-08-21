@@ -37,7 +37,7 @@ falcon-crm/
 
 - **Authorization is enforced in the API, never only in the UI.** Every response strips fields/records the requester's role/scope/journey-access doesn't permit, per `docs/permissions/access-model.md`.
 - **Every material mutation writes an audit event** — `activity_logs` for lead-level changes, `system_audit_logs` for configuration changes (roles, fields, journeys, statuses, users).
-- **Nothing is hard-deleted.** Journeys, statuses, fields, services, and roles get deactivated/versioned. Deleting a status with active leads is blocked until they're reassigned.
+- **Nothing is hard-deleted, except through the bounded purge in ADR-0017.** Journeys, statuses, fields, services, and roles get deactivated/versioned. Deleting a status with active leads is blocked until they're reassigned. The single exception is `purge`: an admin holding the module's `purge` action may permanently remove a *deactivated* configuration entity that has **zero** blocking dependents, in one audited transaction. It is not a general delete — anything real still referencing the entity refuses it — and the database triggers that forbid configuration deletes still refuse every other code path. Leads, Users, and anything with audit or legal weight are never hard-deleted at all.
 - **No hardcoded business data in application logic.** Journey names, status names, field names, role names — all live in the database as configuration, never as enum values or string literals in application code (beyond seed/migration scripts).
 - **The `pass` field and any plaintext credentials from the legacy Cronberry export are never migrated or stored anywhere.**
 - Do not introduce a new production dependency without explaining why in the PR/diff description.

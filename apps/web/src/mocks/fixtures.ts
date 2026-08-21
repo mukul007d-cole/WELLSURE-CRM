@@ -109,10 +109,14 @@ export const USERS: MockUser[] = [
       'journeys_statuses:create',
       'journeys_statuses:edit',
       'journeys_statuses:delete',
+      // Purge is withheld by bootstrap and granted deliberately (ADR-0017);
+      // this mock admin is one who has been granted it.
+      'journeys_statuses:purge',
       'fields:view',
       'fields:create',
       'fields:edit',
       'fields:delete',
+      'fields:purge',
       'users:view',
       'users:create',
       'users:edit',

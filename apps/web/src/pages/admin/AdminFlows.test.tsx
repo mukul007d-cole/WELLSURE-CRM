@@ -59,6 +59,81 @@ describe('administration resource flows', () => {
     expect(screen.getByText(/Page 1 of/)).toBeInTheDocument();
   });
 
+  /**
+   * Purge is the only irreversible action in the product, so the two things
+   * that keep it from firing by accident are asserted directly: it is offered
+   * only once the entity is deactivated, and it stays disabled until the
+   * entity's stable key is typed exactly.
+   */
+  it('purges a deactivated Journey only after its key is typed', async () => {
+    renderPage(<JourneysPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
+    change('Stable key', 'synthetic_purgeable');
+    change('Name', 'Synthetic Purgeable');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
+    expect(await screen.findByText('Synthetic Purgeable')).toBeInTheDocument();
+
+    // Not offered while the Journey is still active — deactivate first.
+    expect(screen.queryByRole('button', { name: 'Delete permanently' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate' }).at(-1) as HTMLElement);
+    fireEvent.change(screen.getByLabelText(/^Active$/i), { target: { value: 'false' } });
+
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: 'Delete permanently' })).at(-1) as HTMLElement,
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/cannot be undone/i)).toBeInTheDocument();
+
+    const confirm = within(dialog).getByRole('button', { name: 'Permanently delete' });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/^Type synthetic_purgeable/i), {
+      target: { value: 'synthetic_purgeabl' },
+    });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/^Type synthetic_purgeable/i), {
+      target: { value: 'synthetic_purgeable' },
+    });
+    expect(confirm).toBeEnabled();
+
+    fireEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByText('Synthetic Purgeable')).not.toBeInTheDocument());
+  });
+
+  it('shows what still references a Journey when a purge is refused', async () => {
+    server.use(
+      http.post('/api/v1/journeys/:id/purge', () =>
+        HttpResponse.json(
+          { error: 'dependency_conflict', details: { statuses: 2, processInstances: 7 } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderPage(<JourneysPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
+    change('Stable key', 'synthetic_blocked');
+    change('Name', 'Synthetic Blocked');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
+    expect(await screen.findByText('Synthetic Blocked')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate' }).at(-1) as HTMLElement);
+    fireEvent.change(screen.getByLabelText(/^Active$/i), { target: { value: 'false' } });
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: 'Delete permanently' })).at(-1) as HTMLElement,
+    );
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/^Type synthetic_blocked/i), {
+      target: { value: 'synthetic_blocked' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Permanently delete' }));
+
+    // The refusal names the relationships, in the dialog, without closing it.
+    expect(await within(dialog).findByText(/statuses: 2/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/processInstances: 7/)).toBeInTheDocument();
+    // The dialog stays open and the Journey is still listed — a refusal must
+    // not read as a success.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('Synthetic Blocked')).toBeInTheDocument();
+  });
+
   it('creates, edits, reorders, deactivates Statuses and attaches, edits, unmaps Journey Fields', async () => {
     let setting: Record<string, unknown> | null = null;
     server.use(

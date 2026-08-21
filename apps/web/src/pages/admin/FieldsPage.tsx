@@ -9,6 +9,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Pagination } from '../../components/ui/Pagination';
+import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
@@ -49,6 +50,7 @@ export function FieldsPage() {
   const [page, setPage] = useState(1);
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<FieldDraft | null>(null);
+  const [purging, setPurging] = useState<AdminField | null>(null);
   // The draft as it was loaded. Compared against, so merely opening the editor
   // is not treated as unsaved work.
   const [pristine, setPristine] = useState<FieldDraft | null>(null);
@@ -129,6 +131,16 @@ export function FieldsPage() {
     mutationFn: adminApi.deactivateField,
     onSuccess: async () => qc.invalidateQueries({ queryKey: ['admin', 'fields'] }),
   });
+  const purge = useMutation({
+    mutationFn: adminApi.purgeField,
+    onSuccess: async () => {
+      setPurging(null);
+      await qc.invalidateQueries({ queryKey: ['admin', 'fields'] });
+      await qc.invalidateQueries({ queryKey: ['admin', 'field-visibility'] });
+    },
+  });
+  // The purge failure belongs in its dialog beside what is being deleted, not
+  // in the page banner.
   const error = query.error ?? roles.error ?? visibility.error ?? save.error ?? deactivate.error;
   return (
     <PageBody>
@@ -198,6 +210,11 @@ export function FieldsPage() {
                     Deactivate
                   </Button>
                 ) : null}
+                {can('fields', 'purge') && !field.active ? (
+                  <Button size="sm" variant="danger" onClick={() => setPurging(field)}>
+                    Delete permanently
+                  </Button>
+                ) : null}
               </RowActions>
             </DataCell>
           </DataRow>
@@ -209,6 +226,20 @@ export function FieldsPage() {
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
           onPageChange={setPage}
+        />
+      ) : null}
+      {purging ? (
+        <PurgeDialog
+          entityLabel="Field"
+          entityKey={purging.key}
+          entityName={purging.name}
+          loading={purge.isPending}
+          error={purge.error}
+          onCancel={() => {
+            purge.reset();
+            setPurging(null);
+          }}
+          onConfirm={() => purge.mutate(purging.id)}
         />
       ) : null}
     </PageBody>

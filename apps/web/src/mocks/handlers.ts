@@ -568,6 +568,30 @@ export const handlers = [
     row.isActive = false;
     return HttpResponse.json({ ...row, active: false });
   }),
+  /*
+   * Purge, which is a real removal rather than `isActive = false`. The blocked
+   * case is modelled too: a Journey that still has Statuses answers 409 with
+   * the relationship counts, which is what `PurgeDialog` renders.
+   */
+  http.post(`${API_BASE}/journeys/:id/purge`, ({ params }) => {
+    const index = JOURNEYS.findIndex((journey) => journey.id === params.id);
+    if (index === -1) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    const statuses = STATUSES.filter((status) => status.journeyId === params.id).length;
+    if (statuses > 0)
+      return HttpResponse.json(
+        { error: 'dependency_conflict', details: { statuses } },
+        { status: 409 },
+      );
+    const [removed] = JOURNEYS.splice(index, 1);
+    return HttpResponse.json({
+      entity: 'journey',
+      id: removed?.id,
+      key: removed?.key,
+      name: removed?.name,
+      cascaded: {},
+      auditLogId: 'audit-purge',
+    });
+  }),
 
   // No GET /journeys/:id/statuses handler on purpose: the API registers only
   // POST for that path. Mocking the GET let a client call that 404s in

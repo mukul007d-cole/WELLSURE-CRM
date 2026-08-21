@@ -22,11 +22,11 @@ ALLOW =
 | Module | Actions |
 |---|---|
 | Leads | view, create, edit, comment, delete, export, import, bulk_reassign, bulk_status_change |
-| Fields | view, create, edit, delete |
-| Journeys & Statuses | view, create, edit, delete |
-| Services | view, create, edit |
-| Users | view, create, edit, deactivate |
-| Roles & Permissions | view, create, edit |
+| Fields | view, create, edit, delete, purge |
+| Journeys & Statuses | view, create, edit, delete, purge |
+| Services | view, create, edit, purge |
+| Users | view, create, edit, deactivate, purge |
+| Roles & Permissions | view, create, edit, purge |
 | Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
 | Campaigns | view, create, edit, send |
@@ -46,8 +46,27 @@ Department administration is part of the User scope and uses
 ADR-0009. **Team administration rides on the same actions**, so `users:edit` now
 also confers restructuring the Teams inside any Department (ADR-0014).
 
-Configuration entities are deactivated, never hard-deleted (`AGENTS.md`), so
-`delete` on a configuration module is the *deactivate* gate:
+`purge` is the one irreversible action in the system and is never implied by
+`delete` — the same "additional gate, never a replacement" shape as
+`leads:import` (ADR-0016) and `lead_routing:operate` (ADR-0015). It permanently
+removes a **deactivated** configuration entity that has **zero blocking
+dependents**, in one audited transaction, and refuses everything else. It is
+also the only catalog action `bootstrapFirstAdmin` does **not** grant: an
+administrator grants it deliberately, so enabling it appears in
+`system_audit_logs` with an actor and a timestamp. See ADR-0017 for the full
+decision, including why `users:purge` governs **Teams only** and can never
+purge a User or a Department.
+
+| Entity | Gated on |
+|---|---|
+| Journey, Status | `journeys_statuses:purge` |
+| Field | `fields:purge` |
+| Service | `services:purge` |
+| Team | `users:purge` |
+| Role, Notification Rule | `roles_permissions:purge` |
+
+Configuration entities are otherwise deactivated, never hard-deleted
+(`AGENTS.md`), so `delete` on a configuration module is the *deactivate* gate:
 `journeys_statuses:delete` deactivates a Journey or a Status, and `fields:delete`
 deactivates a Field. Services are the exception — the catalog gives them no
 `delete` action, so deactivating a Service and unmapping one from a Journey both

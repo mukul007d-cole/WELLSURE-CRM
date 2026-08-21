@@ -14,6 +14,7 @@ import type {
   Status,
   CapabilitySet,
   Page,
+  PurgeResult,
   AdminJourney,
   AdminField,
   FieldRoleVisibility,
@@ -139,6 +140,25 @@ const json = (method: string, body?: unknown): RequestInit => ({
   method,
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
+/**
+ * Bounded hard-delete (ADR-0017). Distinct from every `deactivate*` call above:
+ * these remove the row, and nothing brings it back.
+ *
+ * `POST /<entity>/:id/purge` throughout, matching how the other non-idempotent
+ * state changes are spelled. A `409 dependency_conflict` carries the blocking
+ * relationships and their counts in `details`, which `PurgeDialog` renders.
+ */
+const purgeCalls = {
+  purgeJourney: (id: string) => request<PurgeResult>(`/journeys/${id}/purge`, json('POST', {})),
+  purgeStatus: (id: string) => request<PurgeResult>(`/statuses/${id}/purge`, json('POST', {})),
+  purgeField: (id: string) => request<PurgeResult>(`/fields/${id}/purge`, json('POST', {})),
+  purgeService: (id: string) => request<PurgeResult>(`/services/${id}/purge`, json('POST', {})),
+  purgeTeam: (id: string) => request<PurgeResult>(`/teams/${id}/purge`, json('POST', {})),
+  purgeRole: (id: string) => request<PurgeResult>(`/roles/${id}/purge`, json('POST', {})),
+  purgeNotificationRule: (id: string) =>
+    request<PurgeResult>(`/notification-rules/${id}/purge`, json('POST', {})),
+};
+
 export const adminApi = {
   journeys: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
     request<Page<AdminJourney>>(
@@ -239,6 +259,7 @@ export const adminApi = {
   deactivateTeam: (id: string) => request<Team>(`/teams/${id}/deactivate`, json('POST', {})),
   saveTeamMembers: (id: string, members: TeamMember[]) =>
     request<TeamMember[]>(`/teams/${id}/members`, json('PUT', { members })),
+  ...purgeCalls,
 };
 
 /**

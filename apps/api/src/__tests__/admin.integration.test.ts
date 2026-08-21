@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { permissionCatalog } from '@falcon/permission-engine';
+import { bootstrapGrantedPairs, permissionCatalog } from '@falcon/permission-engine';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { bootstrapFirstAdmin } from '../admin/bootstrap.js';
@@ -44,10 +44,19 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
     await expect(runBootstrap(options, dependencies)).rejects.toThrow('Bootstrap refused');
     expect(await db.prisma.organization.count()).toBe(1);
     expect(await db.prisma.user.count()).toBe(1);
-    expect(await db.prisma.rolePermission.count()).toBe(
-      permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
-    );
+    /*
+     * The catalog *less* what it marks `withheldFromBootstrap` — today `purge`
+     * and nothing else, per ADR-0017 amending ADR-0009. Asserted against
+     * `bootstrapGrantedPairs()` rather than a literal so the two cannot drift,
+     * and with the purge rows asserted absent so the amendment is explicit
+     * rather than implied by an arithmetic difference.
+     */
+    expect(await db.prisma.rolePermission.count()).toBe(bootstrapGrantedPairs().length);
     expect(await db.prisma.rolePermission.count({ where: { scope: 'ORGANIZATION' } })).toBe(
+      bootstrapGrantedPairs().length,
+    );
+    expect(await db.prisma.rolePermission.count({ where: { action: 'purge' } })).toBe(0);
+    expect(bootstrapGrantedPairs().length).toBeLessThan(
       permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
     );
     expect(consoleMessages).toHaveLength(1);

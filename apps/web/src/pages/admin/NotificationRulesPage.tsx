@@ -10,6 +10,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
+import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { adminApi, configApi, notificationsApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
@@ -130,6 +131,7 @@ export function NotificationRulesPage() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [purging, setPurging] = useState<NotificationRule | null>(null);
   // The draft as it was opened. Compared against, so opening a rule and
   // closing the tab is not reported as unsaved work.
   const [pristine, setPristine] = useState<RuleDraft | null>(null);
@@ -208,6 +210,13 @@ export function NotificationRulesPage() {
         })),
       }),
     onSuccess: invalidate,
+  });
+  const purge = useMutation({
+    mutationFn: (id: string) => adminApi.purgeNotificationRule(id),
+    onSuccess: async () => {
+      setPurging(null);
+      await invalidate();
+    },
   });
 
   const error =
@@ -292,11 +301,30 @@ export function NotificationRulesPage() {
                     </Button>
                   </>
                 ) : null}
+                {can('roles_permissions', 'purge') && !rule.active ? (
+                  <Button size="sm" variant="danger" onClick={() => setPurging(rule)}>
+                    Delete permanently
+                  </Button>
+                ) : null}
               </RowActions>
             </DataCell>
           </DataRow>
         ))}
       </AdminTable>
+      {purging ? (
+        <PurgeDialog
+          entityLabel="Notification rule"
+          entityKey={purging.key}
+          entityName={purging.name}
+          loading={purge.isPending}
+          error={purge.error}
+          onCancel={() => {
+            purge.reset();
+            setPurging(null);
+          }}
+          onConfirm={() => purge.mutate(purging.id)}
+        />
+      ) : null}
     </PageBody>
   );
 }

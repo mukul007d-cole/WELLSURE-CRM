@@ -15,6 +15,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerImportExportRoutes } from './routes/import.js';
 import { registerLeadRoutes } from './routes/leads.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
+import { registerPurgeRoutes } from './routes/purge.js';
 import { registerRoutingRoutes } from './routes/routing.js';
 import type { ServerDependencies } from './types.js';
 
@@ -37,6 +38,10 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     if (deps.adminRepository !== undefined)
       registerAdminRoutes(app, { ...deps, adminRepository: deps.adminRepository });
     registerConfigurationRoutes(app, deps);
+    // After the configuration routes: `/journeys/:id/purge` and
+    // `/journeys/:id/statuses` share a prefix, and Fastify prefers the static
+    // segment regardless of order — asserted by test rather than trusted.
+    registerPurgeRoutes(app, deps);
     registerLeadRoutes(app, deps);
     // `/leads/export` and `/leads/import/*` sit under the same prefix as
     // `/leads/:id`. Fastify's router prefers a static segment over a parametric

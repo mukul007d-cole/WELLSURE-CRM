@@ -9,7 +9,9 @@ seed/example data, never application logic.
 Every configuration object (Journey, Status, Field, Service, Role) carries an
 immutable `id` and `key`, editable `name`, `active` flag, `version`,
 `created_by`/`updated_by`, and timestamps. Configuration is deactivated or
-versioned, never hard-deleted. All tenant-owned tables carry `organization_id`,
+versioned, never hard-deleted (with one bounded exception: a deactivated
+configuration entity carrying zero blocking dependents may be purged, per
+ADR-0017). All tenant-owned tables carry `organization_id`,
 even though V1 deploys a single organization.
 
 The following is the reconciled logical schema. The concrete permission-engine

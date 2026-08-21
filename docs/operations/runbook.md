@@ -53,3 +53,37 @@ provider while ADR-0005 is open. Production backend bootstrap, RPO/RTO, and a
 real restore drill remain prerequisites before deployment. Phase 1 verifies only
 that the rollback SQL can rebuild a disposable empty development schema; this is
 not evidence of a production restore capability.
+
+## Bounded hard-delete (purge)
+
+`purge` permanently removes a configuration entity. It is the only irreversible
+operation in the product; a purged row exists nowhere except in a database
+backup. See ADR-0017.
+
+**Granting it.** `bootstrapFirstAdmin` deliberately does not grant `purge` — it
+is the one catalog action withheld — so the initial administrator gets `403` on
+every purge route until somebody grants it under Roles & Permissions. That is
+working as designed, and the bootstrap CLI prints it at first run. The grant
+itself is an ordinary permission change and appears in `system_audit_logs`.
+
+**What it can and cannot remove.** Journeys, Statuses, Fields, Services, Teams,
+Roles and Notification Rules, and only when the entity is already deactivated
+and nothing real still references it. Leads, Users and Departments have no purge
+route at all. A refusal returns `409 dependency_conflict` naming what is still
+in the way.
+
+**After a purge.** The `system_audit_logs` row with `action = 'purge'` is the
+only surviving record. Its `old_value` holds the entity's own columns plus every
+mapping row removed with it, which is enough to recreate the configuration by
+hand. That row is append-only and cannot itself be deleted.
+
+**Recovering a purge that should not have happened.** There is no undo. Restore
+from a backup, or recreate the entity from its audit snapshot — note that it
+will have a new id, so anything that referenced the old id by value (an export,
+a saved report) will not reconnect.
+
+**If a delete is failing with `configuration is deactivated/versioned, never
+deleted`.** That is the `*_no_delete` trigger doing its job. Only the purge
+transaction is exempt, via a transaction-scoped `SET LOCAL falcon.purge = 'on'`.
+Do not set that GUC by hand to force a delete: it bypasses the dependency checks
+and the audit row, which is the entire safety mechanism.

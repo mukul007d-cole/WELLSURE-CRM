@@ -502,3 +502,16 @@ export interface ImportRunResult {
   rejectedCount: number;
   rows: ImportRowOutcome[];
 }
+
+/**
+ * What a purge removed. `cascaded` counts the mapping rows that went with the
+ * entity — see ADR-0017 for why those are not blockers.
+ */
+export interface PurgeResult {
+  entity: string;
+  id: string;
+  key: string;
+  name: string;
+  cascaded: Record<string, number>;
+  auditLogId: string;
+}

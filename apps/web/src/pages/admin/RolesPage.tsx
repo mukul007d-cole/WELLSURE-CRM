@@ -9,6 +9,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Pagination } from '../../components/ui/Pagination';
 import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
+import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { AdminRole } from '../../types/domain';
@@ -26,6 +27,7 @@ export function RolesPage() {
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<RoleDraft | null>(null);
   const [deactivating, setDeactivating] = useState<AdminRole | null>(null);
+  const [purging, setPurging] = useState<AdminRole | null>(null);
   const [replacementRoleId, setReplacementRoleId] = useState('');
   const query = useQuery({
     queryKey: ['admin', 'roles', page, active],
@@ -57,6 +59,15 @@ export function RolesPage() {
       await qc.invalidateQueries({ queryKey: ['admin', 'roles'] });
     },
   });
+  const purge = useMutation({
+    mutationFn: (id: string) => adminApi.purgeRole(id),
+    onSuccess: async () => {
+      setPurging(null);
+      await qc.invalidateQueries({ queryKey: ['admin', 'roles'] });
+    },
+  });
+  // Kept out of the page banner: a purge refusal names what still holds the
+  // Role, and that belongs beside the Role being deleted.
   const error = query.error ?? save.error ?? deactivate.error;
   return (
     <PageBody>
@@ -175,6 +186,11 @@ export function RolesPage() {
                       Deactivate
                     </Button>
                   ) : null}
+                  {can('roles_permissions', 'purge') && !role.active ? (
+                    <Button size="sm" variant="danger" onClick={() => setPurging(role)}>
+                      Delete permanently
+                    </Button>
+                  ) : null}
                 </RowActions>
               </div>
             </DataCell>
@@ -187,6 +203,20 @@ export function RolesPage() {
           pageSize={query.data.pageSize || ADMIN_PAGE_SIZE}
           total={query.data.total}
           onPageChange={setPage}
+        />
+      ) : null}
+      {purging ? (
+        <PurgeDialog
+          entityLabel="Role"
+          entityKey={purging.key}
+          entityName={purging.name}
+          loading={purge.isPending}
+          error={purge.error}
+          onCancel={() => {
+            purge.reset();
+            setPurging(null);
+          }}
+          onConfirm={() => purge.mutate(purging.id)}
         />
       ) : null}
     </PageBody>
