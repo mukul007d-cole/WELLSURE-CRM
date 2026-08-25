@@ -2,8 +2,13 @@
 
 This document records the non-obvious decisions used to translate
 `docs/data-model/schema.md` and `docs/permissions/permission-engine-schema.md`
-into `packages/database/prisma/schema.prisma` and its initial PostgreSQL
-migration. It is a review aid, not application behavior.
+into `packages/database/prisma/schema.prisma` and its PostgreSQL migration. It is
+a review aid, not application behavior.
+
+Phase 17 squashed the nine historical migrations into one baseline,
+`prisma/migrations/00000000000000_baseline`. Statements this document once
+attributed to "the initial migration" now live there; nothing about the resulting
+schema changed, which was verified by diffing the two catalogs.
 
 ## Fixed concepts versus configuration
 
@@ -69,23 +74,71 @@ requires the ADR already called for by the logical schema.
 
 ## Prisma migration extensions
 
-Prisma cannot express all accepted PostgreSQL invariants. The checked-in initial
-migration adds:
+`schema.prisma` is the source of truth for what the Prisma Client can see.
+`prisma/migrations/00000000000000_baseline/migration.sql` is the source of truth
+for what the database actually enforces, and it is deliberately the larger of the
+two: Prisma's schema language cannot express most of this schema's correctness
+guarantees, so they exist only in the SQL.
 
-- a GIN index for `leads.field_values`;
-- partial unique indexes for one active Lead/Journey membership and one active
-  primary process per Lead;
-- a partial unique index for one current assignment per process/assignment type;
-- Lead-link self-link and canonical-order checks;
-- version and grant-expiry checks; and
-- database triggers that reject UPDATE or DELETE on `activity_logs` and
-  `system_audit_logs`, reject hard deletion of core configuration, and block
-  Status deactivation while active process instances still use it.
+Phase 17 measured the gap rather than estimating it, by diffing the catalog of a
+database built from the migration against one built from a from-empty
+`prisma migrate diff --from-empty --to-schema`. A Prisma-only baseline would
+omit:
+
+- **31 CHECK constraints** — every `version >= 1` and non-negative-count guard,
+  the date-ordering guards on sessions, reset tokens and grants, the Lead-link
+  self-link and canonical-order checks, and the shape constraints that keep a
+  campaign, a routing rule and an import row from being half-configured;
+- **8 triggers and 3 trigger functions** — the append-only rule on
+  `activity_logs` and `system_audit_logs`, the no-hard-delete rule on core
+  configuration (with ADR-0017's `falcon.purge` carve-out), and the block on
+  deactivating a Status that active process instances still use;
+- **the `pgcrypto` extension and 107 column defaults** — `gen_random_uuid()` on
+  every `id` and `now()` on every timestamp. Prisma's `@default(uuid())` and
+  `@updatedAt` are client-side, so a Prisma-generated schema has no database
+  default at all. Raw-SQL inserts (bulk import, the Postgres integration tests)
+  supply no id and depend on these;
+- **9 indexes Prisma has no syntax for** — the GIN index on
+  `leads.field_values`, the `lower(email)` expression index that makes
+  case-insensitive dedup possible, and the partial unique indexes for one active
+  Lead/Journey membership, one active primary process per Lead, one current
+  assignment per process/assignment type, one live share per (user, lead), and
+  one rule-generated notification per (rule, activity, recipient).
+
+### The GIN index is not optional and not declared
+
+`leads_field_values_gin_idx` exists only in migration SQL. It has never been in
+`schema.prisma`, because Prisma cannot declare a GIN index on a `Json` column
+here. That asymmetry is why an incremental `prisma migrate diff` against a live
+database proposes `DROP INDEX "leads_field_values_gin_idx"` with no matching
+recreation: the diff describes Prisma's model, and Prisma's model does not know
+the index exists. The drop is not version drift and must not be applied.
+`apps/api/src/__tests__/phase13b.postgres.integration.test.ts` asserts the
+planner chooses it by name — 1.1ms with it against 116.5ms without.
+
+### Residual divergence, and why it is expected
+
+Run against a correct database, `prisma migrate diff --to-schema` still reports
+roughly 230 statements. Every one falls into a known class, and none of them
+should be applied:
+
+| Class | Count | What it is |
+| --- | --- | --- |
+| FK drop + recreate | 113 | Adds Prisma's default `ON UPDATE CASCADE`. Inert — the referenced keys are UUIDs that are never updated. |
+| `ALTER COLUMN ... DROP DEFAULT` | 66 | Removes the `gen_random_uuid()` / `now()` defaults above. |
+| `ALTER INDEX ... RENAME` | 50 | Prisma's index naming convention versus the hand-written names. |
+| `DROP INDEX` / `CREATE INDEX` | 3 / 1 | The GIN index, `sessions_token_active_idx` (undeclared), and the `DESC` on `leads_organization_active_updated_idx`. |
+
+Notably the diff never mentions the CHECK constraints or the triggers: Prisma
+does not model them, so an *incremental* diff leaves them alone. Only a
+*from-empty* diff destroys them, by omission. That is the trap this table exists
+to document.
 
 Audit/activity corrections are written as new compensating rows; existing rows
-are never edited. The initial rollback drops the baseline in reverse dependency
-order and is intentionally destructive, suitable only for disposable Phase 1
-databases.
+are never edited. The baseline's `rollback.sql` drops the whole schema in reverse
+dependency order and is intentionally destructive — it is a from-scratch
+teardown for disposable databases, not an incremental rollback. For a populated
+environment the documented reversal is a point-in-time restore.
 
 ## Assignment representation
 

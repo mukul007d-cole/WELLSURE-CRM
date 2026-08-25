@@ -204,8 +204,7 @@ model User {
   @@unique([organizationId, email])
   // Referenced by the `team_members` foreign key that makes "a member belongs
   // to the team's Department" a database constraint rather than a check the
-  // application has to remember on every path. See ADR-0014 and the
-  // `00000000000005_teams` migration.
+  // application has to remember on every path. See ADR-0014.
   @@unique([organizationId, departmentId, id])
   @@index([organizationId, managerId])
   @@index([organizationId, departmentId])
@@ -527,14 +526,14 @@ model ProcessInstance {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  lead          Lead          @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
-  journey       Journey       @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
-  currentStatus Status        @relation(fields: [organizationId, journeyId, currentStatusId], references: [organizationId, journeyId, id], onDelete: Restrict)
-  assignments    Assignment[]
-  leadServices   LeadService[]
-  activities     ActivityLog[]
-  tasks          Task[]
-  importJobRows  ImportJobRow[]
+  lead          Lead           @relation(fields: [organizationId, leadId], references: [organizationId, id], onDelete: Restrict)
+  journey       Journey        @relation(fields: [organizationId, journeyId], references: [organizationId, id], onDelete: Restrict)
+  currentStatus Status         @relation(fields: [organizationId, journeyId, currentStatusId], references: [organizationId, journeyId, id], onDelete: Restrict)
+  assignments   Assignment[]
+  leadServices  LeadService[]
+  activities    ActivityLog[]
+  tasks         Task[]
+  importJobRows ImportJobRow[]
 
   @@id([organizationId, id])
   @@index([organizationId, journeyId, currentStatusId])
@@ -728,8 +727,8 @@ model ImportJob {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy    User            @relation(fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User           @relation(fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
   rows         ImportJobRow[]
 
   @@id([organizationId, id])

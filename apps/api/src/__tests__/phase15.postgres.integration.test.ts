@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -18,7 +17,11 @@ import { StatusRoutingService } from '../routing/service.js';
 import { defaultAuthConfig } from '../auth/config.js';
 import { buildServer } from '../http/build-server.js';
 import type { ServerDependencies } from '../http/types.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from './fixtures/synthetic-admin.js';
 
 /**
  * Phase 15 — bulk import and export, against real Postgres.
@@ -297,25 +300,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 15 bulk import and export', () => 
   beforeAll(async () => {
     db = await createAdminPostgres();
     prisma = db.prisma;
-    for (const file of [
-      '00000000000000_initial',
-      '00000000000001_custom_session_auth',
-      '00000000000002_lead_sharing_notifications',
-      '00000000000003_attachment_metadata',
-      '00000000000004_campaigns',
-      '00000000000005_teams',
-      '00000000000006_status_routing',
-      '00000000000007_bulk_import',
-    ])
-      await db.sql.unsafe(
-        await readFile(
-          new URL(
-            `../../../../packages/database/prisma/migrations/${file}/migration.sql`,
-            import.meta.url,
-          ),
-          'utf8',
-        ),
-      );
+    await applyMigrations(db.sql);
 
     await prisma.organization.createMany({
       data: [

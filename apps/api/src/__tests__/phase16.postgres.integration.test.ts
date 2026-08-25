@@ -1,4 +1,3 @@
-import { readdir, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,7 +14,11 @@ import { PrismaPermissionRepository } from '../permissions/prisma-permission-rep
 import { defaultAuthConfig } from '../auth/config.js';
 import { buildServer } from '../http/build-server.js';
 import type { ServerDependencies } from '../http/types.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from './fixtures/synthetic-admin.js';
 
 /**
  * Phase 16 — bounded hard-delete (purge), against real Postgres. See ADR-0017.
@@ -287,13 +290,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 16 bounded configuration purge', (
   beforeAll(async () => {
     db = await createAdminPostgres();
     prisma = db.prisma;
-    const directory = new URL('../../../../packages/database/prisma/migrations/', import.meta.url);
-    const migrations = (await readdir(directory, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-    for (const migration of migrations)
-      await db.sql.unsafe(await readFile(new URL(`${migration}/migration.sql`, directory), 'utf8'));
+    await applyMigrations(db.sql);
 
     await prisma.organization.createMany({
       data: [

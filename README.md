@@ -62,8 +62,20 @@ database is already current.
 `prisma:migrate` is the authoring command — it applies the checked-in baseline
 and creates a _new_ development migration when `schema.prisma` has changed. Reach
 for it only when you are the one changing the schema, because it can offer to
-reset the database. The initial rollback script is destructive and is intended
-solely for disposable Phase 1 databases.
+reset the database.
+
+`prisma/migrations/` holds a single squashed baseline,
+`00000000000000_baseline`, which describes the whole schema. Its `rollback.sql`
+is a full teardown, not an incremental one — it drops every table and is
+intended only for disposable local or CI databases.
+
+> **The baseline is hand-written SQL, and that is deliberate.** Prisma cannot
+> express CHECK constraints, triggers, GIN or expression indexes, partial unique
+> indexes, or database-side column defaults, all of which this schema depends on.
+> A `prisma migrate diff` will therefore always report differences against a
+> correct database — including a `DROP INDEX "leads_field_values_gin_idx"` that
+> must never be applied. See `docs/data-model/prisma-translation-notes.md` for
+> the full list of expected divergences before acting on any diff output.
 
 ### Pulling someone else's changes
 

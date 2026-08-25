@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +9,11 @@ import { PrismaPermissionRepository } from '../permissions/prisma-permission-rep
 import { buildSellerListQuery } from '../leads/filter-sql.js';
 import { parseFilter, resolveFilter } from '../leads/filter-validation.js';
 import { listSellers } from '../routes/leads.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from './fixtures/synthetic-admin.js';
 
 /**
  * Phase 13b — the Seller List filter engine against real Postgres.
@@ -84,21 +87,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
   beforeAll(async () => {
     db = await createAdminPostgres();
     prisma = db.prisma;
-    for (const file of [
-      '00000000000000_initial',
-      '00000000000001_custom_session_auth',
-      '00000000000002_lead_sharing_notifications',
-      '00000000000003_attachment_metadata',
-    ])
-      await db.sql.unsafe(
-        await readFile(
-          new URL(
-            `../../../../packages/database/prisma/migrations/${file}/migration.sql`,
-            import.meta.url,
-          ),
-          'utf8',
-        ),
-      );
+    await applyMigrations(db.sql);
     repository = new PrismaLeadRepository(prisma as never);
 
     await prisma.organization.create({ data: { id: org, name: 'Synthetic organization' } });
