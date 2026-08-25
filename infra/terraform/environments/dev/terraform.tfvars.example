@@ -1,4 +1,10 @@
-environment = "dev"
+# Dev has never been applied — local development runs on `docker compose`.
+# This file exists so the root's required variables are documented.
+environment     = "dev"
+aws_region      = "ap-south-1"
+public_base_url = "https://placeholder.invalid"
+email_from      = "Falcon CRM <no-reply@notify.example.com>"
+
 common_tags = {
   Owner = "platform"
 }

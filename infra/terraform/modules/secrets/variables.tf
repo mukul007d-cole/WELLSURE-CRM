@@ -14,13 +14,8 @@ variable "common_tags" {
   default     = {}
 }
 
-variable "cidr_block" {
-  description = "VPC address range. Must leave room for four /20 subnets."
+variable "database_url" {
+  description = "FALCON_DATABASE_URL, from the database module. Never entered by hand."
   type        = string
-  default     = "10.40.0.0/16"
-
-  validation {
-    condition     = can(cidrsubnet(var.cidr_block, 4, 3))
-    error_message = "cidr_block must be large enough to carve four subnets from (a /20 or larger)."
-  }
+  sensitive   = true
 }

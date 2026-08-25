@@ -14,7 +14,11 @@ export interface ApiRuntime {
 
 export function createRuntime(envInput: NodeJS.ProcessEnv): ApiRuntime {
   const env = parseEnv(envInput);
-  const emailSender = createEmailSender({ transport: env.emailTransport, httpPort: env.httpPort });
+  const emailSender = createEmailSender({
+    transport: env.emailTransport,
+    httpPort: env.httpPort,
+    ...(env.emailDelivery ? { delivery: env.emailDelivery } : {}),
+  });
 
   return {
     env,

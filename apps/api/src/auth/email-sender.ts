@@ -1,4 +1,5 @@
 import type { CampaignEmailSender, EmailSender } from './password-reset.js';
+import { createResendEmailSender } from './resend-email-sender.js';
 
 const deliveryNotConfigured = (transport: string): EmailSender & CampaignEmailSender => ({
   sendPasswordReset() {
@@ -17,12 +18,25 @@ const deliveryNotConfigured = (transport: string): EmailSender & CampaignEmailSe
 /**
  * Select password-reset delivery. The console transport exposes credentials and
  * is intended only for local development and first-run bootstrap.
+ *
+ * `console` stays the default (`parseEnv`), so local development is unchanged by
+ * the existence of a real provider. Anything selected but unimplemented still
+ * fails loudly rather than discarding mail.
  */
 export function createEmailSender(input: {
   transport: string;
   httpPort: number;
+  /** Required by every real transport; unused by `console`. */
+  delivery?: { apiKey: string; from: string; publicBaseUrl: string };
   write?: (message: string) => void;
 }): EmailSender & CampaignEmailSender {
+  if (input.transport === 'resend') {
+    // `parseEnv` refuses to start without these whenever the transport is not
+    // `console`, so this branch is unreachable with delivery absent. Failing the
+    // same way an unimplemented transport does beats a crash on the first send.
+    if (!input.delivery) return deliveryNotConfigured(input.transport);
+    return createResendEmailSender(input.delivery);
+  }
   if (input.transport !== 'console') return deliveryNotConfigured(input.transport);
 
   const write = input.write ?? console.info;
