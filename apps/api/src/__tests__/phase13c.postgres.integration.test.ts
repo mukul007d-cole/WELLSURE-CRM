@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { CampaignSendService } from '../campaigns/send-service.js';
@@ -9,6 +9,7 @@ import { CampaignTriggerService } from '../campaigns/trigger-service.js';
 import { PrismaLeadRepository } from '../leads/prisma-lead-repository.js';
 import { PrismaPermissionRepository } from '../permissions/prisma-permission-repository.js';
 import { NotificationService } from '../notifications/service.js';
+import { createResendEmailSender } from '../auth/resend-email-sender.js';
 import { editLead } from '../routes/leads.js';
 import { sendCampaign, setCampaignActive } from '../routes/campaigns.js';
 import {
@@ -335,6 +336,47 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13c campaigns', () => {
     expect(sends.filter((row) => row.status === 'sent')).toHaveLength(2);
     // Recorded, not dropped, so the counts add up to the recipient set.
     expect(sends.filter((row) => row.status === 'skipped_no_email')).toHaveLength(1);
+  }, 120_000);
+
+  it('uses the campaign sender for a persisted campaign send and the transactional sender separately', async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const fetchImpl = vi.fn<typeof fetch>((_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected a JSON request body');
+      payloads.push(JSON.parse(init.body) as Record<string, unknown>);
+      return Promise.resolve(new Response(null, { status: 202 }));
+    });
+    const email = createResendEmailSender({
+      apiKey: 'synthetic-provider-key',
+      from: 'Falcon Account <account@notify.example.test>',
+      campaignFrom: 'Falcon Campaigns <campaign@mail.example.test>',
+      publicBaseUrl: 'https://crm.example.test',
+      fetchImpl,
+    });
+    await prisma.campaignSend.updateMany({
+      where: { organizationId: org, status: 'pending' },
+      data: { status: 'failed', error: 'superseded by sender-isolation test' },
+    });
+    const campaign = await createCampaign({
+      type: 'triggered',
+      journeyId: journey,
+      statusId: targetStatus,
+    });
+    await moveTo('Alpha', otherStatus);
+    await moveTo('Alpha', targetStatus);
+    expect(await sendsFor(campaign.id)).toEqual([expect.objectContaining({ status: 'pending' })]);
+
+    await new CampaignSendService(prisma, email).drainPending(org);
+    expect(await sendsFor(campaign.id)).toEqual([expect.objectContaining({ status: 'sent' })]);
+    await email.sendPasswordReset({
+      to: 'account@example.test',
+      token: 'synthetic-token',
+      expiresAt: new Date('2030-01-02T03:04:05.000Z'),
+    });
+
+    expect(payloads.map((payload) => payload.from)).toEqual([
+      'Falcon Campaigns <campaign@mail.example.test>',
+      'Falcon Account <account@notify.example.test>',
+    ]);
   }, 120_000);
 
   it('honours the stored filter when choosing recipients', async () => {

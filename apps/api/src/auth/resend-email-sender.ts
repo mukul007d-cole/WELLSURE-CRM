@@ -13,6 +13,8 @@ export interface ResendConfig {
   apiKey: string;
   /** Verified sender, e.g. `Falcon CRM <no-reply@notify.example.com>`. */
   from: string;
+  /** Verified campaign sender, ideally on a reputation-isolated subdomain. */
+  campaignFrom: string;
   /** Public origin of the deployed web app, with no trailing slash. */
   publicBaseUrl: string;
   /** Injected in tests. Defaults to the global `fetch`. */
@@ -37,7 +39,7 @@ function escapeHtml(value: string): string {
 }
 
 export function createResendEmailSender(config: ResendConfig): EmailSender & CampaignEmailSender {
-  const send = async (message: EmailMessage): Promise<void> => {
+  const send = async (message: EmailMessage, from: string): Promise<void> => {
     const fetchImpl = config.fetchImpl ?? fetch;
     let response: Response;
     try {
@@ -48,7 +50,7 @@ export function createResendEmailSender(config: ResendConfig): EmailSender & Cam
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          from: config.from,
+          from,
           to: [message.to],
           subject: message.subject,
           html: message.html,
@@ -76,34 +78,26 @@ export function createResendEmailSender(config: ResendConfig): EmailSender & Cam
 
   return {
     sendPasswordReset({ to, token, expiresAt }) {
-      /*
-       * Points at the web application, not at the API: the completion endpoint
-       * is a POST with a JSON body, which a link in an email cannot invoke.
-       *
-       * NOTE: `/reset-password` does not exist in `apps/web` yet — `/login` is
-       * its only unauthenticated route. Until that page is added, this link
-       * resolves to the SPA's fallback rather than a password form. The first
-       * administrator is unaffected (the bootstrap CLI prints the token to the
-       * operator's terminal), but invited users cannot complete setup from the
-       * email alone. Adding the page is an application change, which phase 17
-       * placed out of scope — see `docs/planning/phase-17-deployment.md`.
-       */
+      // Points at the web form, not the JSON POST endpoint a link cannot invoke.
       const url = `${config.publicBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
-      return send({
-        to,
-        subject: 'Set your Falcon CRM password',
-        html: [
-          '<p>An administrator has created a Falcon CRM account for you.</p>',
-          `<p><a href="${escapeHtml(url)}">Set your password</a></p>`,
-          `<p>This link expires at ${escapeHtml(expiresAt.toISOString())}.</p>`,
-          '<p>If you were not expecting this, you can ignore this message.</p>',
-        ].join('\n'),
-      });
+      return send(
+        {
+          to,
+          subject: 'Set your Falcon CRM password',
+          html: [
+            '<p>An administrator has created a Falcon CRM account for you.</p>',
+            `<p><a href="${escapeHtml(url)}">Set your password</a></p>`,
+            `<p>This link expires at ${escapeHtml(expiresAt.toISOString())}.</p>`,
+            '<p>If you were not expecting this, you can ignore this message.</p>',
+          ].join('\n'),
+        },
+        config.from,
+      );
     },
     sendEmail(message) {
       // Campaign bodies are already rendered and escaped by the campaign
       // document renderer (ADR-0013); nothing is re-escaped here.
-      return send(message);
+      return send(message, config.campaignFrom);
     },
   };
 }

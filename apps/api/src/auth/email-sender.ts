@@ -27,7 +27,7 @@ export function createEmailSender(input: {
   transport: string;
   httpPort: number;
   /** Required by every real transport; unused by `console`. */
-  delivery?: { apiKey: string; from: string; publicBaseUrl: string };
+  delivery?: { apiKey: string; from: string; campaignFrom: string; publicBaseUrl: string };
   write?: (message: string) => void;
 }): EmailSender & CampaignEmailSender {
   if (input.transport === 'resend') {

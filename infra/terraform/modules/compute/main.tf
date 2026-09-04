@@ -103,11 +103,12 @@ resource "aws_apprunner_service" "this" {
         port = tostring(var.container_port)
 
         runtime_environment_variables = {
-          FALCON_HTTP_PORT       = tostring(var.container_port)
-          FALCON_LOG_LEVEL       = var.log_level
-          FALCON_EMAIL_TRANSPORT = var.email_transport
-          FALCON_EMAIL_FROM      = var.email_from
-          FALCON_PUBLIC_BASE_URL = var.public_base_url
+          FALCON_HTTP_PORT           = tostring(var.container_port)
+          FALCON_LOG_LEVEL           = var.log_level
+          FALCON_EMAIL_TRANSPORT     = var.email_transport
+          FALCON_EMAIL_FROM          = var.email_from
+          FALCON_CAMPAIGN_EMAIL_FROM = coalesce(var.campaign_email_from, var.email_from)
+          FALCON_PUBLIC_BASE_URL     = var.public_base_url
           # Same origin, so the browser never issues a cross-origin request.
           # Set anyway because parseEnv requires it.
           FALCON_CORS_ORIGIN           = var.public_base_url

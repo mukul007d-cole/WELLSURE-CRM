@@ -70,6 +70,13 @@ variable "email_from" {
   type        = string
 }
 
+variable "campaign_email_from" {
+  description = "Optional campaign sender; defaults to email_from for backwards compatibility."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "image_tag" {
   description = "Image tag for the first deploy. Later deploys move this outside Terraform; see the lifecycle block."
   type        = string

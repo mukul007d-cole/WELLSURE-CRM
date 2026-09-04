@@ -79,6 +79,47 @@ describe('settings', () => {
     expect(loggedOut).toBe(true);
   });
 
+  it('changes the password and reports that other sessions ended', async () => {
+    let body: unknown;
+    server.use(
+      http.post('/api/v1/auth/password/change', async ({ request }) => {
+        body = await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderSettings();
+    fireEvent.change(await screen.findByLabelText(/^Current password/), {
+      target: { value: 'Current-password-123!' },
+    });
+    fireEvent.change(screen.getByLabelText(/^New password/), {
+      target: { value: 'Changed-password-123!' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Confirm new password/), {
+      target: { value: 'Changed-password-123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    expect(await screen.findByText(/other signed-in sessions were ended/i)).toBeInTheDocument();
+    expect(body).toEqual({
+      currentPassword: 'Current-password-123!',
+      newPassword: 'Changed-password-123!',
+    });
+  });
+
+  it('does not submit mismatched password confirmation', async () => {
+    let called = false;
+    server.use(http.post('/api/v1/auth/password/change', () => void (called = true)));
+    renderSettings();
+    fireEvent.change(await screen.findByLabelText(/^New password/), {
+      target: { value: 'Changed-password-123!' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Confirm new password/), {
+      target: { value: 'Different-password-123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    expect(await screen.findByText(/confirmation does not match/i)).toBeInTheDocument();
+    expect(called).toBe(false);
+  });
+
   it('says plainly which settings have no backing', async () => {
     renderSettings();
 

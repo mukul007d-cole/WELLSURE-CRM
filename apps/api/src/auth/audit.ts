@@ -3,6 +3,7 @@ export type SecurityAuditAction =
   | 'auth.lockout_created'
   | 'auth.password_reset_requested'
   | 'auth.password_reset_completed'
+  | 'auth.password_changed'
   | 'auth.session_revoked';
 
 export interface SecurityAuditInput {

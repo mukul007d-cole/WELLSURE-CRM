@@ -2,9 +2,11 @@ import { defaultAuthConfig, type AuthConfig } from '../auth/config.js';
 import { serializeClearedSessionCookie, serializeSessionCookie } from '../auth/cookies.js';
 import { login, type LoginRepository } from '../auth/login.js';
 import {
+  changeAuthenticatedPassword,
   completePasswordReset,
   requestPasswordReset,
   type EmailSender,
+  type PasswordChangeRepository,
   type PasswordResetRepository,
 } from '../auth/password-reset.js';
 import { revokeSession, type SessionRepository } from '../auth/session.js';
@@ -147,7 +149,10 @@ export async function completePasswordResetRoute(input: {
   audit: SecurityAuditWriter;
   body: { token: string; newPassword: string };
   now?: Date | undefined;
-}): Promise<{ status: 204 | 400; body: null | { error: string } }> {
+}): Promise<{
+  status: 204 | 400;
+  body: null | { error: string; details?: { reasons: string[] } };
+}> {
   const result = await completePasswordReset({
     repository: input.repository,
     audit: input.audit,
@@ -155,7 +160,34 @@ export async function completePasswordResetRoute(input: {
     newPassword: input.body.newPassword,
     now: input.now,
   });
-  return result.ok
-    ? { status: 204, body: null }
-    : { status: 400, body: { error: 'invalid_or_expired_token' } };
+  if (result.ok) return { status: 204, body: null };
+  return {
+    status: 400,
+    body: {
+      error: result.reason,
+      ...(result.details ? { details: { reasons: result.details } } : {}),
+    },
+  };
+}
+
+export async function changePasswordRoute(input: {
+  repository: PasswordChangeRepository;
+  auth: AuthenticatedContext;
+  body: { currentPassword: string; newPassword: string };
+}) {
+  const result = await changeAuthenticatedPassword({
+    repository: input.repository,
+    userId: input.auth.user.id,
+    organizationId: input.auth.user.organizationId,
+    currentSessionId: input.auth.session.id,
+    ...input.body,
+  });
+  if (result.ok) return { status: 204 as const, body: null };
+  return {
+    status: 400 as const,
+    body: {
+      error: result.reason,
+      ...(result.details ? { details: { reasons: result.details } } : {}),
+    },
+  };
 }

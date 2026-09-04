@@ -111,10 +111,14 @@ it adds no dependency at all.
 
 **A risk this decision accepts:** the application sends password resets and
 marketing campaigns through one transport. A high complaint rate on campaigns can
-degrade deliverability of resets — marketing could stop people logging in. The
-mitigation is splitting the sending subdomains (`notify.` for transactional,
-`mail.` for campaigns), which is configuration rather than code, and it is the
-main argument for moving transactional mail to Postmark later.
+degrade deliverability of resets — marketing could stop people logging in.
+Falcon therefore supports separate sender identities on that transport:
+`FALCON_EMAIL_FROM` for transactional mail and
+`FALCON_CAMPAIGN_EMAIL_FROM` for campaigns. The campaign setting falls back to
+the transactional one for backwards compatibility, so operators obtain actual
+reputation isolation only after verifying and configuring separate `notify.` and
+`mail.` sending subdomains. Moving transactional mail to Postmark remains a
+future option.
 
 ### Secrets live in the platform's store, injected as environment variables
 

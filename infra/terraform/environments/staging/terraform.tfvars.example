@@ -10,6 +10,7 @@ public_base_url = "https://placeholder.invalid"
 # Must be a sender on a domain verified with the email provider. Password resets
 # and marketing campaigns should not share a sending subdomain — see ADR-0018.
 email_from = "Falcon CRM <no-reply@notify.example.com>"
+campaign_email_from = "Falcon Campaigns <news@mail.example.com>"
 
 common_tags = {
   Owner = "platform"

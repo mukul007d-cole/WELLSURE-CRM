@@ -58,6 +58,17 @@ export class AdminService {
   deactivateUser(ctx: AdminContext, id: string) {
     return this.repository.deactivateUser(ctx.organizationId, ctx.actorUserId, id);
   }
+  async resendInvite(ctx: AdminContext, id: string) {
+    const issuedAt = new Date();
+    const { token, tokenHash, expiresAt } = preparePasswordReset(this.authConfig, issuedAt);
+    const result = await this.repository.resendInvite(ctx.organizationId, ctx.actorUserId, id, {
+      tokenHash,
+      expiresAt,
+      issuedAt,
+    });
+    await this.email.sendPasswordReset({ to: result.user.email, token, expiresAt });
+    return { sent: true, resetTokenId: result.resetTokenId };
+  }
   listRoles(ctx: AdminContext, q: Record<string, unknown>) {
     return this.repository.listRoles(
       ctx.organizationId,

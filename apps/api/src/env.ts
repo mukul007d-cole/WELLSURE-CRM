@@ -10,6 +10,8 @@ export interface EmailDeliveryEnv {
   apiKey: string;
   /** Verified sender, e.g. `Falcon CRM <no-reply@notify.example.com>`. */
   from: string;
+  /** Optional campaign sender; defaults to the transactional sender. */
+  campaignFrom: string;
   /** Public origin of the deployed web app, no trailing slash. */
   publicBaseUrl: string;
 }
@@ -131,6 +133,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
           emailDelivery: {
             apiKey: deliveryValues[0]!,
             from: deliveryValues[1]!,
+            campaignFrom: env.FALCON_CAMPAIGN_EMAIL_FROM?.trim() || deliveryValues[1]!,
             publicBaseUrl: deliveryValues[2]!,
           },
         }

@@ -10,6 +10,8 @@ export function loggingOptions(level: string): Pick<FastifyServerOptions, 'logge
         'req.headers.cookie',
         'res.headers.set-cookie',
         'req.body.password',
+        'req.body.currentPassword',
+        'req.body.newPassword',
         'req.body.newPassword',
         'req.body.token',
         'req.body.email',

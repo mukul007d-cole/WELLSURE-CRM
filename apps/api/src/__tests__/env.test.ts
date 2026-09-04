@@ -86,9 +86,21 @@ describe('parseEnv', () => {
       emailDelivery: {
         apiKey: 're_test_key',
         from: 'Falcon CRM <no-reply@notify.example.test>',
+        campaignFrom: 'Falcon CRM <no-reply@notify.example.test>',
         publicBaseUrl: 'https://crm.example.test',
       },
     });
+  });
+
+  it('uses a separately configured campaign sender', () => {
+    expect(
+      parseEnv({
+        ...base,
+        FALCON_EMAIL_TRANSPORT: 'resend',
+        ...delivery,
+        FALCON_CAMPAIGN_EMAIL_FROM: 'Falcon Campaigns <news@mail.example.test>',
+      }).emailDelivery?.campaignFrom,
+    ).toBe('Falcon Campaigns <news@mail.example.test>');
   });
 
   it('rejects a public base URL that is not a bare origin', () => {

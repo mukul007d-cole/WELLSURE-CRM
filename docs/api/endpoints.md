@@ -10,6 +10,7 @@ GET    /auth/me
 GET    /auth/capabilities              -- caller's own effective grants; authenticated without role-config view permission
 POST   /auth/password-reset/request
 POST   /auth/password-reset/complete
+POST   /auth/password/change
 ```
 These are the currently bound Phase 6 routes. `/auth/refresh` remains a
 documented target without a backing route function and is not exposed by the
@@ -19,6 +20,7 @@ HTTP transport.
 ```
 GET    /users
 POST   /users
+POST   /users/:id/resend-invite
 GET    /users/:id
 PUT    /users/:id
 POST   /users/:id/deactivate            -- deactivate and revoke sessions

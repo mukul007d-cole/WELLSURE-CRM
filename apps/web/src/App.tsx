@@ -7,6 +7,7 @@ import { queryClient } from './app/queryClient';
 import { AppShell } from './components/layout/AppShell';
 import { LeadFormPage } from './pages/lead-form/LeadFormPage';
 import { LoginPage } from './pages/login/LoginPage';
+import { ResetPasswordPage } from './pages/login/ResetPasswordPage';
 import { Seller360Page } from './pages/seller-detail/Seller360Page';
 import { SellerListPage } from './pages/sellers/SellerListPage';
 import { JourneysPage } from './pages/admin/JourneysPage';
@@ -35,6 +36,7 @@ export function App() {
           <PreferencesProvider>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell title="Wellsure CRM" />}>
                   <Route path="/dashboard" element={<DashboardPage />} />

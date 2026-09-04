@@ -44,10 +44,14 @@ export class PrismaAdminRepository implements AdminRepository {
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({ where, ...pageArgs(page), orderBy, select: userSelect }),
     ]);
-    return { ...page, total, items };
+    return { ...page, total, items: items.map(userView) };
   }
   async getUser(org: string, id: string): Promise<unknown> {
-    return this.prisma.user.findFirst({ where: { organizationId: org, id }, select: userSelect });
+    const user = await this.prisma.user.findFirst({
+      where: { organizationId: org, id },
+      select: userSelect,
+    });
+    return user && userView(user);
   }
 
   createUser(
@@ -71,10 +75,10 @@ export class PrismaAdminRepository implements AdminRepository {
         },
       });
       await audit(tx as Tx, org, actor, 'user', user.id, 'create', null, {
-        ...user,
+        ...userView(user),
         initialPasswordTokenId: token.id,
       });
-      return { user, resetTokenId: token.id };
+      return { user: userView(user), resetTokenId: token.id };
     });
   }
   updateUser(org: string, actor: string, id: string, input: UserWriteInput) {
@@ -100,8 +104,8 @@ export class PrismaAdminRepository implements AdminRepository {
         data: input,
         select: userSelect,
       });
-      await audit(tx as Tx, org, actor, 'user', id, 'edit', old, row);
-      return row;
+      await audit(tx as Tx, org, actor, 'user', id, 'edit', userView(old), userView(row));
+      return userView(row);
     });
   }
   deactivateUser(org: string, actor: string, id: string) {
@@ -111,7 +115,7 @@ export class PrismaAdminRepository implements AdminRepository {
         select: userSelect,
       });
       if (!old) throw new AdminError('not_found', 'user not found');
-      if (!old.active) return old;
+      if (!old.active) return userView(old);
       const manages = await tx.rolePermission.findFirst({
         where: {
           organizationId: org,
@@ -144,11 +148,52 @@ export class PrismaAdminRepository implements AdminRepository {
         where: { organizationId: org, userId: id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      await audit(tx as Tx, org, actor, 'user', id, 'deactivate', old, {
-        ...row,
+      await audit(tx as Tx, org, actor, 'user', id, 'deactivate', userView(old), {
+        ...userView(row),
         revokedSessions: revoked.count,
       });
-      return row;
+      return userView(row);
+    });
+  }
+
+  resendInvite(
+    org: string,
+    actor: string,
+    id: string,
+    reset: { tokenHash: string; expiresAt: Date; issuedAt: Date },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM users WHERE organization_id = $1::uuid AND id = $2::uuid FOR UPDATE',
+        org,
+        id,
+      );
+      const user = await tx.user.findFirst({
+        where: { organizationId: org, id },
+        select: userSelect,
+      });
+      if (!user) throw new AdminError('not_found', 'user not found');
+      if (!user.active) throw new AdminError('conflict', 'cannot invite an inactive user');
+      if (user.passwordHash !== null)
+        throw new AdminError('conflict', 'user has already established a password');
+      const invalidated = await tx.passwordResetToken.updateMany({
+        where: { organizationId: org, userId: id, usedAt: null },
+        data: { usedAt: reset.issuedAt },
+      });
+      const token = await tx.passwordResetToken.create({
+        data: {
+          organizationId: org,
+          userId: id,
+          tokenHash: reset.tokenHash,
+          expiresAt: reset.expiresAt,
+        },
+      });
+      await audit(tx as Tx, org, actor, 'user', id, 'resend_invite', null, {
+        resetTokenId: token.id,
+        expiresAt: reset.expiresAt,
+        invalidatedTokens: invalidated.count,
+      });
+      return { user: { email: user.email }, resetTokenId: token.id };
     });
   }
 
@@ -585,9 +630,14 @@ const userSelect = {
   departmentId: true,
   managerId: true,
   active: true,
+  passwordHash: true,
   createdAt: true,
   updatedAt: true,
 } as const;
+function userView<T extends { passwordHash: string | null }>(user: T) {
+  const { passwordHash, ...safe } = user;
+  return { ...safe, hasPassword: passwordHash !== null };
+}
 const permissionSelect = { module: true, action: true, scope: true } as const;
 const memberSelect = { userId: true, isLeader: true } as const;
 const teamInclude = {

@@ -23,6 +23,12 @@ export interface AdminRepository {
   ): Promise<{ user: unknown; resetTokenId: string }>;
   updateUser(org: string, actor: string, id: string, input: UserWriteInput): Promise<unknown>;
   deactivateUser(org: string, actor: string, id: string): Promise<unknown>;
+  resendInvite(
+    org: string,
+    actor: string,
+    id: string,
+    reset: { tokenHash: string; expiresAt: Date; issuedAt: Date },
+  ): Promise<{ user: { email: string }; resetTokenId: string }>;
   listRoles(org: string, page: PageRequest, active?: boolean): Promise<Page<unknown>>;
   getRole(org: string, id: string): Promise<unknown>;
   createRole(org: string, actor: string, key: string, name: string): Promise<unknown>;

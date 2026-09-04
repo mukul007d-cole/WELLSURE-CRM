@@ -19,6 +19,10 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
   not_found: 'That record couldn’t be found — it may have been moved or deactivated.',
   dependency_conflict: 'This action conflicts with something else in the system.',
   forbidden: 'You don’t have permission to do that.',
+  invalid_token: 'This password link is invalid or has already been used.',
+  expired_token: 'This password link has expired. Request a new one to continue.',
+  weak_password: 'Choose a stronger password.',
+  invalid_current_password: 'The current password is incorrect.',
 };
 
 export function friendlyErrorMessage(error: unknown): string {
@@ -29,4 +33,22 @@ export function friendlyErrorMessage(error: unknown): string {
     return error.message;
   }
   return 'Something unexpected happened.';
+}
+
+const PASSWORD_POLICY_MESSAGES: Record<string, string> = {
+  minimum_12_characters: 'Use at least 12 characters.',
+  uppercase_required: 'Include an uppercase letter.',
+  lowercase_required: 'Include a lowercase letter.',
+  number_required: 'Include a number.',
+  symbol_required: 'Include a symbol.',
+};
+
+export function passwordPolicyErrorMessage(error: ApiError): string {
+  const reasons = Array.isArray(error.details?.reasons) ? error.details.reasons : [];
+  return (
+    reasons
+      .map(String)
+      .map((reason) => PASSWORD_POLICY_MESSAGES[reason] ?? reason)
+      .join(' ') || friendlyErrorMessage(error)
+  );
 }

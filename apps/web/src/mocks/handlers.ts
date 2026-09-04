@@ -264,8 +264,9 @@ const MOCK_ADMIN_USERS = [
     departmentId: null as string | null,
     managerId: null as string | null,
     active: true,
+    hasPassword: user.id !== USERS[0]?.id,
   })),
-  ...DIRECTORY_USERS,
+  ...DIRECTORY_USERS.map((user) => ({ ...user, hasPassword: true })),
 ];
 const mockMember = (userId: string, isLeader: boolean): TeamMember => {
   const user = MOCK_ADMIN_USERS.find((row) => row.id === userId);
@@ -802,7 +803,7 @@ export const handlers = [
     const body = (await request.json()) as Omit<(typeof MOCK_ADMIN_USERS)[number], 'id' | 'active'>;
     if ('password' in body)
       return HttpResponse.json(errorBody('validation_error'), { status: 400 });
-    const row = { ...body, id: `user-${Date.now()}`, active: true };
+    const row = { ...body, id: `user-${Date.now()}`, active: true, hasPassword: false };
     MOCK_ADMIN_USERS.push(row);
     return HttpResponse.json(row, { status: 201 });
   }),
@@ -818,6 +819,12 @@ export const handlers = [
     if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
     row.active = false;
     return HttpResponse.json(row);
+  }),
+  http.post(`${API_BASE}/users/:id/resend-invite`, ({ params }) => {
+    const row = MOCK_ADMIN_USERS.find((user) => user.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    if (row.hasPassword) return HttpResponse.json(errorBody('conflict'), { status: 409 });
+    return HttpResponse.json({ sent: true, resetTokenId: 'synthetic-reset-token-id' });
   }),
   http.get(`${API_BASE}/departments`, ({ request }) =>
     HttpResponse.json(pageResponse(request, MOCK_DEPARTMENTS)),

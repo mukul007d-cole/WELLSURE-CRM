@@ -7,6 +7,11 @@ import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { RingAvatar } from '../../components/ui/RingAvatar';
 import { Select } from '../../components/ui/Select';
+import { Field } from '../../components/ui/Field';
+import { Input } from '../../components/ui/Input';
+import { Banner } from '../../components/ui/Banner';
+import { authApi } from '../../lib/api-client';
+import { ApiError, friendlyErrorMessage, passwordPolicyErrorMessage } from '../../lib/api-error';
 import { PageBody, PageHeader, SectionCard } from '../../components/layout/PageFrame';
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
@@ -23,6 +28,14 @@ export function SettingsPage() {
   const { sidebarCollapsed, setSidebarCollapsed, tableDensity, setTableDensity } = usePreferences();
   const signOut = useSignOut();
   const [signingOut, setSigningOut] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState<{
+    tone: 'error' | 'success';
+    text: string;
+  } | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Nothing on this page is fetched, so there is nothing for refresh to reload.
   usePageChrome('Settings', []);
@@ -38,6 +51,36 @@ export function SettingsPage() {
       await signOut();
     } finally {
       setSigningOut(false);
+    }
+  }
+
+  async function handlePasswordChange(event: React.FormEvent) {
+    event.preventDefault();
+    if (newPassword !== confirmation) {
+      setPasswordMessage({ tone: 'error', text: 'The password confirmation does not match.' });
+      return;
+    }
+    setChangingPassword(true);
+    setPasswordMessage(null);
+    try {
+      await authApi.changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmation('');
+      setPasswordMessage({
+        tone: 'success',
+        text: 'Password changed. Your other signed-in sessions were ended.',
+      });
+    } catch (error) {
+      setPasswordMessage({
+        tone: 'error',
+        text:
+          error instanceof ApiError && error.code === 'weak_password'
+            ? passwordPolicyErrorMessage(error)
+            : friendlyErrorMessage(error),
+      });
+    } finally {
+      setChangingPassword(false);
     }
   }
 
@@ -134,6 +177,53 @@ export function SettingsPage() {
           >
             Sign out
           </Button>
+        </SectionCard>
+
+        <SectionCard
+          title="Change password"
+          description="Confirm your current password. Other signed-in devices will be signed out."
+        >
+          <form className="space-y-3" onSubmit={(event) => void handlePasswordChange(event)}>
+            {passwordMessage ? (
+              <Banner tone={passwordMessage.tone}>{passwordMessage.text}</Banner>
+            ) : null}
+            <Field label="Current password" required>
+              {({ inputId }) => (
+                <Input
+                  id={inputId}
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                />
+              )}
+            </Field>
+            <Field label="New password" required>
+              {({ inputId }) => (
+                <Input
+                  id={inputId}
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                />
+              )}
+            </Field>
+            <Field label="Confirm new password" required>
+              {({ inputId }) => (
+                <Input
+                  id={inputId}
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                />
+              )}
+            </Field>
+            <Button type="submit" loading={changingPassword}>
+              Change password
+            </Button>
+          </form>
         </SectionCard>
       </div>
 
