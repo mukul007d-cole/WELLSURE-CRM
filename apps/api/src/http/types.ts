@@ -8,6 +8,7 @@ import type { FalconPrismaClient } from '@falcon/database';
 import type {
   CampaignEmailSender,
   EmailSender,
+  PasswordChangeRepository,
   PasswordResetRepository,
 } from '../auth/password-reset.js';
 import type { LoginRepository } from '../auth/login.js';
@@ -24,7 +25,10 @@ import type { ImportService } from '../import/service.js';
 import type { ExportAuditWriter, ExportFieldRepository } from '../routes/export.js';
 
 export interface ServerDependencies {
-  authRepository: LoginRepository & SessionRepository & PasswordResetRepository;
+  authRepository: LoginRepository &
+    SessionRepository &
+    PasswordResetRepository &
+    PasswordChangeRepository;
   audit: SecurityAuditWriter;
   emailSender: EmailSender & CampaignEmailSender;
   /**

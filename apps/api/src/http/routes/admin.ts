@@ -79,6 +79,9 @@ export function registerAdminRoutes(
   bind('POST', '/api/v1/users/:userId/deactivate', 'users', 'deactivate', (s, c, _b, p, q) =>
     s.deactivateUser(c, String(p.userId)),
   );
+  bind('POST', '/api/v1/users/:userId/resend-invite', 'users', 'edit', (s, c, _b, p) =>
+    s.resendInvite(c, String(p.userId)),
+  );
   bind('GET', '/api/v1/roles', 'roles_permissions', 'view', (s, c, _b, _p, q) => s.listRoles(c, q));
   bind('GET', '/api/v1/roles/:roleId', 'roles_permissions', 'view', (s, c, _b, p, q) =>
     s.getRole(c, String(p.roleId)),

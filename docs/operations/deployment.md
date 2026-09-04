@@ -76,7 +76,7 @@ is reversible for free.
 ```bash
 cp infra/terraform/environments/staging/terraform.tfvars.example \
    infra/terraform/environments/staging/terraform.tfvars
-# edit: aws_region, email_from. Leave public_base_url as the placeholder.
+# edit: aws_region, email_from, and campaign_email_from. Leave public_base_url as the placeholder.
 terraform -chdir=infra/terraform/environments/staging plan -out=staging.plan
 # read the plan; then
 terraform -chdir=infra/terraform/environments/staging apply staging.plan
@@ -272,18 +272,17 @@ tracing are a follow-up.
 
 Real, and better stated here than discovered later.
 
-**There is no password-reset page in the web app.** `/login` is its only
-unauthenticated route, so the link in a password-setup email
-(`<base>/reset-password?token=…`) currently resolves to the SPA fallback rather
-than a password form. The first administrator is unaffected — the bootstrap CLI
-prints the token to the operator. But **invited users cannot complete setup from
-the email alone**, and inviting real users should wait for that page. Adding it
-is an application change, which phase 17 held out of scope.
+**Password setup is implemented.** `/reset-password` is a public web route that
+consumes the opaque token from invitation mail and directs the user to sign in
+after success. Invalid, used, expired, and weak-password responses are presented
+without reproducing password policy in the browser.
 
-**The email domain is shared between transactional and campaign mail.** Both go
-through one transport. A high complaint rate on campaigns can degrade
-deliverability of password resets — i.e. marketing could stop people logging in.
-The mitigation is a subdomain split; see ADR-0018.
+**Email reputation isolation is configurable, not automatic.** Password resets
+use `FALCON_EMAIL_FROM`; campaigns use `FALCON_CAMPAIGN_EMAIL_FROM`. When the
+campaign value is unset it deliberately falls back to the transactional sender
+for backwards compatibility, so operators must configure and provider-verify
+separate `notify.` and `mail.` subdomains to obtain the isolation described in
+ADR-0018.
 
 **A single NAT gateway.** An AZ outage takes the service's egress with it. Fine
 for staging, not for production.

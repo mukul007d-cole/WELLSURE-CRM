@@ -75,6 +75,7 @@ module "compute" {
   email_api_key_secret_arn      = module.secrets.email_api_key_arn
   public_base_url               = var.public_base_url
   email_from                    = var.email_from
+  campaign_email_from           = var.campaign_email_from
 }
 
 # Interface-only, as they have been since phase 1. Kept wired so the environment

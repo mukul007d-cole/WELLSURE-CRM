@@ -134,6 +134,16 @@ export const authApi = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   me: () => request<SessionUser>('/auth/me'),
   capabilities: () => request<CapabilitySet>('/auth/capabilities'),
+  completePasswordReset: (token: string, newPassword: string) =>
+    request<void>('/auth/password-reset/complete', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('/auth/password/change', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 };
 
 const json = (method: string, body?: unknown): RequestInit => ({
@@ -222,6 +232,8 @@ export const adminApi = {
   createUser: (body: object) => request<AdminUser>('/users', json('POST', body)),
   editUser: (id: string, body: object) => request<AdminUser>(`/users/${id}`, json('PUT', body)),
   deactivateUser: (id: string) => request<AdminUser>(`/users/${id}/deactivate`, json('POST')),
+  resendInvite: (id: string) =>
+    request<{ sent: true; resetTokenId: string }>(`/users/${id}/resend-invite`, json('POST', {})),
   roles: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
     request<Page<AdminRole>>(
       `/roles${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import {
+  changePasswordRoute,
   completePasswordResetRoute,
   capabilitiesRoute,
   type CapabilityReader,
@@ -152,6 +153,7 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
             newPassword: { type: 'string' },
           },
         },
+        response: { 400: errorSchema },
       },
     },
     async (request, reply) =>
@@ -161,6 +163,33 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
           repository: deps.authRepository,
           audit: deps.audit,
           body: request.body as { token: string; newPassword: string },
+        }),
+      ),
+  );
+  server.post(
+    '/api/v1/auth/password/change',
+    {
+      preHandler: authenticate(deps),
+      schema: {
+        tags: ['auth'],
+        body: {
+          ...objectBody,
+          required: ['currentPassword', 'newPassword'],
+          properties: {
+            currentPassword: { type: 'string' },
+            newPassword: { type: 'string' },
+          },
+        },
+        response: { 400: errorSchema, 401: errorSchema },
+      },
+    },
+    async (request, reply) =>
+      sendRouteResult(
+        reply,
+        await changePasswordRoute({
+          repository: deps.authRepository,
+          auth: request.auth,
+          body: request.body as { currentPassword: string; newPassword: string },
         }),
       ),
   );

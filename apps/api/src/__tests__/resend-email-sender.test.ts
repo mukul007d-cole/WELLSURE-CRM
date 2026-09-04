@@ -5,6 +5,7 @@ import { createResendEmailSender } from '../auth/resend-email-sender.js';
 const config = {
   apiKey: 're_test_key',
   from: 'Falcon CRM <no-reply@notify.example.test>',
+  campaignFrom: 'Falcon Campaigns <news@mail.example.test>',
   publicBaseUrl: 'https://crm.example.test',
 };
 
@@ -74,6 +75,7 @@ describe('createResendEmailSender', () => {
     });
 
     expect(bodyOf(fetchImpl)).toMatchObject({
+      from: config.campaignFrom,
       subject: 'Your renewal',
       html: '<p>Hello <strong>there</strong></p>',
     });

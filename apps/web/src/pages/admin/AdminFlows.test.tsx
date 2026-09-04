@@ -378,6 +378,9 @@ describe('administration resource flows', () => {
     // The page heading now belongs to the User management shell this view is
     // nested in, so wait on a control the directory itself renders.
     await screen.findByLabelText('Search users');
+    const resend = await screen.findByRole('button', { name: 'Resend invite' });
+    fireEvent.click(resend);
+    expect(await screen.findByText(/fresh invitation was sent/i)).toBeInTheDocument();
     expect(await screen.findByText(/Page 1 of/)).toBeInTheDocument();
     change('Search users', 'Aman');
     change('Filter by role', 'role-admin');

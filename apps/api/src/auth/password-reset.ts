@@ -1,5 +1,5 @@
 import type { AuthConfig } from './config.js';
-import { hashPassword, normalizeEmail } from './password.js';
+import { hashPassword, normalizeEmail, passwordPolicyReasons, verifyPassword } from './password.js';
 import { createOpaqueToken, hashOpaqueToken } from './tokens.js';
 import type { SecurityAuditWriter } from './audit.js';
 
@@ -34,6 +34,18 @@ export interface PasswordResetRepository {
   markPasswordResetTokenUsed(id: string, organizationId: string, usedAt: Date): Promise<void>;
   setUserPasswordHash(userId: string, organizationId: string, passwordHash: string): Promise<void>;
   revokeUserSessions(userId: string, organizationId: string, revokedAt: Date): Promise<number>;
+}
+
+export interface PasswordChangeRepository {
+  findPasswordHashForUser(userId: string, organizationId: string): Promise<string | null>;
+  replacePasswordAndRevokeOtherSessions(input: {
+    userId: string;
+    organizationId: string;
+    currentSessionId: string;
+    expectedPasswordHash: string;
+    newPasswordHash: string;
+    changedAt: Date;
+  }): Promise<{ changed: boolean; revokedSessions: number }>;
 }
 
 export interface EmailSender {
@@ -148,12 +160,16 @@ export async function completePasswordReset(input: {
   token: string;
   newPassword: string;
   now?: Date | undefined;
-}): Promise<{ ok: boolean }> {
+}): Promise<
+  | { ok: true }
+  | { ok: false; reason: 'invalid_token' | 'expired_token' | 'weak_password'; details?: string[] }
+> {
   const now = input.now ?? new Date();
   const record = await input.repository.findPasswordResetToken(hashOpaqueToken(input.token));
-  if (record === null || record.usedAt !== null || record.expiresAt <= now) {
-    return { ok: false };
-  }
+  if (record === null || record.usedAt !== null) return { ok: false, reason: 'invalid_token' };
+  if (record.expiresAt <= now) return { ok: false, reason: 'expired_token' };
+  const policyReasons = passwordPolicyReasons(input.newPassword);
+  if (policyReasons.length) return { ok: false, reason: 'weak_password', details: policyReasons };
   const passwordHash = await hashPassword(input.newPassword);
   await input.repository.setUserPasswordHash(record.userId, record.organizationId, passwordHash);
   await input.repository.markPasswordResetTokenUsed(record.id, record.organizationId, now);
@@ -172,4 +188,38 @@ export async function completePasswordReset(input: {
     newValue: { passwordHashSet: true, resetTokenUsedAt: now.toISOString(), revokedSessions },
   });
   return { ok: true };
+}
+
+export async function changeAuthenticatedPassword(input: {
+  repository: PasswordChangeRepository;
+  userId: string;
+  organizationId: string;
+  currentSessionId: string;
+  currentPassword: string;
+  newPassword: string;
+  now?: Date;
+}): Promise<
+  | { ok: true; revokedSessions: number }
+  | { ok: false; reason: 'invalid_current_password' | 'weak_password'; details?: string[] }
+> {
+  const policyReasons = passwordPolicyReasons(input.newPassword);
+  if (policyReasons.length) return { ok: false, reason: 'weak_password', details: policyReasons };
+  const currentHash = await input.repository.findPasswordHashForUser(
+    input.userId,
+    input.organizationId,
+  );
+  if (!(await verifyPassword(input.currentPassword, currentHash))) {
+    return { ok: false, reason: 'invalid_current_password' };
+  }
+  const result = await input.repository.replacePasswordAndRevokeOtherSessions({
+    userId: input.userId,
+    organizationId: input.organizationId,
+    currentSessionId: input.currentSessionId,
+    expectedPasswordHash: currentHash!,
+    newPasswordHash: await hashPassword(input.newPassword),
+    changedAt: input.now ?? new Date(),
+  });
+  return result.changed
+    ? { ok: true, revokedSessions: result.revokedSessions }
+    : { ok: false, reason: 'invalid_current_password' };
 }

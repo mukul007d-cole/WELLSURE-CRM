@@ -361,6 +361,7 @@ export interface AdminUser {
   departmentId: string | null;
   managerId: string | null;
   active: boolean;
+  hasPassword?: boolean;
 }
 export interface AdminRole {
   id: string;

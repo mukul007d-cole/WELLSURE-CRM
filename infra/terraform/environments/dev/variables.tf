@@ -36,3 +36,10 @@ variable "email_from" {
   description = "Verified sender address for outgoing mail, e.g. `Falcon CRM <no-reply@notify.example.com>`."
   type        = string
 }
+
+variable "campaign_email_from" {
+  description = "Optional verified campaign sender on a reputation-isolated subdomain. Defaults to email_from."
+  type        = string
+  default     = null
+  nullable    = true
+}

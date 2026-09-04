@@ -187,7 +187,7 @@ describe('password reset', () => {
         repository: repo,
         audit: repo,
         token: sent[0] ?? '',
-        newPassword: 'new-password',
+        newPassword: 'New-password-123!',
         now,
       }),
     ).resolves.toEqual({ ok: true });
@@ -196,10 +196,10 @@ describe('password reset', () => {
         repository: repo,
         audit: repo,
         token: sent[0] ?? '',
-        newPassword: 'new-password',
+        newPassword: 'New-password-123!',
         now,
       }),
-    ).resolves.toEqual({ ok: false });
+    ).resolves.toEqual({ ok: false, reason: 'invalid_token' });
     expect(repo.audits.map((audit) => audit.action)).toEqual(
       expect.arrayContaining(['auth.password_reset_requested', 'auth.password_reset_completed']),
     );
@@ -223,10 +223,47 @@ describe('password reset', () => {
         repository: expiredRepo,
         audit: expiredRepo,
         token: expiredTokens[0] ?? '',
-        newPassword: 'new-password',
+        newPassword: 'New-password-123!',
         now: new Date('2026-01-01T00:31:00.000Z'),
       }),
-    ).resolves.toEqual({ ok: false });
+    ).resolves.toEqual({ ok: false, reason: 'expired_token' });
+  });
+
+  it('returns the canonical policy reasons without consuming the token', async () => {
+    const repo = new MemoryAuthRepository();
+    const sent: string[] = [];
+    await requestPasswordReset({
+      repository: repo,
+      audit: repo,
+      emailSender: {
+        sendPasswordReset: async ({ token }) => {
+          sent.push(token);
+        },
+      },
+      config: defaultAuthConfig,
+      organizationId: repo.user.organizationId,
+      email: repo.loginUser.email,
+      now,
+    });
+    await expect(
+      completePasswordReset({
+        repository: repo,
+        audit: repo,
+        token: sent[0] ?? '',
+        newPassword: 'short',
+        now,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'weak_password',
+      details: [
+        'minimum_12_characters',
+        'uppercase_required',
+        'number_required',
+        'symbol_required',
+      ],
+    });
+    expect([...repo.resets.values()][0]?.usedAt).toBeNull();
   });
 });
 

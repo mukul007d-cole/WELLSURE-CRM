@@ -39,11 +39,14 @@ all of the problems at once rather than the first.
 | --- | --- | --- | --- |
 | `FALCON_EMAIL_TRANSPORT` | Delivery mechanism. `console` prints the reset token and a copy-pasteable `curl` to stdout. `resend` sends through Resend. Anything else is accepted but fails loudly on the first send rather than discarding mail. | `console` (the default when unset) | `resend`. **Never `console`** — stdout in a deployed environment is the log stream, so it would write live credentials into your logs. Terraform rejects `console` for this reason. |
 | `FALCON_EMAIL_API_KEY` | Provider API key. | Leave blank. | From the secret store. Filled in by hand once; Terraform creates the secret but never holds the value. |
-| `FALCON_EMAIL_FROM` | Sender, e.g. `Falcon CRM <no-reply@notify.example.com>`. Must be on a domain verified with the provider. | Leave blank. | A verified sender. See ADR-0018 on splitting transactional and campaign mail across subdomains. |
+| `FALCON_EMAIL_FROM` | Transactional sender, e.g. `Falcon CRM <no-reply@notify.example.com>`. Must be on a domain verified with the provider. | Leave blank. | A verified sender on the transactional subdomain. |
+| `FALCON_CAMPAIGN_EMAIL_FROM` | Campaign sender. When blank it falls back to `FALCON_EMAIL_FROM`, which preserves compatibility but shares sender reputation. | Leave blank. | A verified sender on a separate campaign subdomain, e.g. `Falcon Campaigns <news@mail.example.com>`. |
 | `FALCON_PUBLIC_BASE_URL` | Public origin of the deployed app, no trailing slash. The password-reset link in outgoing mail is built from it. | Leave blank. | `https://crm.example.com` |
 
-The last three are **required whenever `FALCON_EMAIL_TRANSPORT` is not
-`console`**, and the API refuses to boot without them. Discovering a missing key
+The API key, transactional sender, and public base URL are **required whenever
+`FALCON_EMAIL_TRANSPORT` is not `console`**, and the API refuses to boot without
+them. The campaign sender is optional only for backwards compatibility.
+Discovering a missing key
 on the first password reset — after a user has been invited and is waiting for
 mail that will never arrive — is much worse than failing at startup.
 

@@ -7,13 +7,16 @@ import type {
   PasswordResetTokenRecord,
   PasswordResetUserRecord,
 } from './password-reset.js';
+import type { PasswordChangeRepository } from './password-reset.js';
 import type { SessionRecord, SessionRepository } from './session.js';
 
 interface PrismaAuthClient {
+  $transaction<T>(work: (tx: PrismaAuthClient) => Promise<T>): Promise<T>;
   user: {
     findUnique(args: unknown): Promise<UserRow | null>;
     findFirst(args: unknown): Promise<UserRow | null>;
     update(args: unknown): Promise<unknown>;
+    updateMany(args: unknown): Promise<{ count: number }>;
   };
   session: {
     create(args: unknown): Promise<SessionRow>;
@@ -55,7 +58,12 @@ interface LoginAttemptRow extends LoginAttemptRecord {
 type PrismaUserSnapshot = UserSnapshot & { name?: string; email: string; roleName?: string };
 
 export class PrismaAuthRepository
-  implements LoginRepository, SessionRepository, PasswordResetRepository, SecurityAuditWriter
+  implements
+    LoginRepository,
+    SessionRepository,
+    PasswordResetRepository,
+    PasswordChangeRepository,
+    SecurityAuditWriter
 {
   constructor(private readonly prisma: PrismaAuthClient) {}
 
@@ -219,6 +227,57 @@ export class PrismaAuthRepository
       data: { revokedAt },
     });
     return result.count;
+  }
+
+  async findPasswordHashForUser(userId: string, organizationId: string): Promise<string | null> {
+    const row = await this.prisma.user.findUnique({
+      where: { organizationId_id: { organizationId, id: userId } },
+      select: { passwordHash: true },
+    });
+    return row?.passwordHash ?? null;
+  }
+
+  replacePasswordAndRevokeOtherSessions(input: {
+    userId: string;
+    organizationId: string;
+    currentSessionId: string;
+    expectedPasswordHash: string;
+    newPasswordHash: string;
+    changedAt: Date;
+  }): Promise<{ changed: boolean; revokedSessions: number }> {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: {
+          id: input.userId,
+          organizationId: input.organizationId,
+          passwordHash: input.expectedPasswordHash,
+          active: true,
+        },
+        data: { passwordHash: input.newPasswordHash },
+      });
+      if (updated.count === 0) return { changed: false, revokedSessions: 0 };
+      const revoked = await tx.session.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          userId: input.userId,
+          id: { not: input.currentSessionId },
+          revokedAt: null,
+        },
+        data: { revokedAt: input.changedAt },
+      });
+      await tx.systemAuditLog.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.userId,
+          entityType: 'user',
+          entityId: input.userId,
+          action: 'auth.password_changed',
+          oldValue: { passwordHashSet: true },
+          newValue: { passwordHashSet: true, revokedSessions: revoked.count },
+        },
+      });
+      return { changed: true, revokedSessions: revoked.count };
+    });
   }
 
   async writeSystemAudit(input: SecurityAuditInput): Promise<void> {

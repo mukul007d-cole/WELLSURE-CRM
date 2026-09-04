@@ -98,10 +98,16 @@ export function UsersPage() {
     mutationFn: adminApi.deactivateUser,
     onSuccess: async () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
-  const error = query.error ?? save.error ?? deactivate.error;
+  const resendInvite = useMutation({
+    mutationFn: adminApi.resendInvite,
+    onSuccess: async () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+  const [notice, setNotice] = useState<string | null>(null);
+  const error = query.error ?? save.error ?? deactivate.error ?? resendInvite.error;
   return (
     <div className="space-y-4">
       {error ? <Banner tone="error">{friendlyErrorMessage(error)}</Banner> : null}
+      {notice ? <Banner tone="success">{notice}</Banner> : null}
       {draft ? (
         <UserEditor
           draft={draft}
@@ -203,6 +209,21 @@ export function UsersPage() {
                 {can('users', 'deactivate') && user.active ? (
                   <Button size="sm" variant="danger" onClick={() => deactivate.mutate(user.id)}>
                     Deactivate
+                  </Button>
+                ) : null}
+                {can('users', 'edit') && user.active && user.hasPassword === false ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={resendInvite.isPending}
+                    onClick={() => {
+                      setNotice(null);
+                      resendInvite.mutate(user.id, {
+                        onSuccess: () => setNotice(`A fresh invitation was sent to ${user.email}.`),
+                      });
+                    }}
+                  >
+                    Resend invite
                   </Button>
                 ) : null}
               </RowActions>
