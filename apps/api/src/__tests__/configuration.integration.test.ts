@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises';
-
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { applyMigrations } from './fixtures/synthetic-admin.js';
 import { createPostgresDatabase, shouldRunPostgresIntegration } from './fixtures/synthetic-auth.js';
 
 let cleanup: (() => Promise<void>) | undefined;
@@ -13,14 +12,7 @@ describe.runIf(shouldRunPostgresIntegration)('configuration safety against real 
   it('uses the database trigger to block active Status deactivation, then permits reassignment with both logs', async () => {
     const database = await createPostgresDatabase();
     cleanup = database.cleanup;
-    const migration = await readFile(
-      new URL(
-        '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
-        import.meta.url,
-      ),
-      'utf8',
-    );
-    await database.sql.unsafe(migration);
+    await applyMigrations(database.sql);
 
     const orgId = '11111111-1111-1111-1111-111111111111';
     const roleId = '22222222-2222-2222-2222-222222222222';

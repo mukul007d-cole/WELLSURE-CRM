@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
 import { bootstrapGrantedPairs, permissionCatalog } from '@falcon/permission-engine';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -7,7 +5,11 @@ import { bootstrapFirstAdmin } from '../admin/bootstrap.js';
 import { defaultAuthConfig } from '../auth/config.js';
 import { createEmailSender } from '../auth/email-sender.js';
 import { runBootstrap } from '../bootstrap-cli.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from './fixtures/synthetic-admin.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterAll(async () => Promise.all(cleanups.map((cleanup) => cleanup())));
@@ -16,12 +18,7 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
   it('runs the CLI operation once and refuses a second run without duplicates', async () => {
     const db = await createAdminPostgres();
     cleanups.push(db.cleanup);
-    for (const path of [
-      '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
-      '../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
-    ]) {
-      await db.sql.unsafe(await readFile(new URL(path, import.meta.url), 'utf8'));
-    }
+    await applyMigrations(db.sql);
     const consoleMessages: string[] = [];
     const dependencies = {
       prisma: db.prisma,
@@ -69,22 +66,7 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
   it('serializes bootstrap and provisions the canonical four authorization axes once', async () => {
     const db = await createAdminPostgres();
     cleanups.push(db.cleanup);
-    const migration = await readFile(
-      new URL(
-        '../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
-        import.meta.url,
-      ),
-      'utf8',
-    );
-    await db.sql.unsafe(migration);
-    const authMigration = await readFile(
-      new URL(
-        '../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
-        import.meta.url,
-      ),
-      'utf8',
-    );
-    await db.sql.unsafe(authMigration);
+    await applyMigrations(db.sql);
     const organization = await db.prisma.organization.create({
       data: { name: 'Synthetic Organization' },
     });

@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { PrismaAdminRepository } from '../../admin/prisma-admin-repository.js';
@@ -10,7 +8,11 @@ import { PrismaConfigurationRepository } from '../../configuration/prisma-config
 import { buildServer } from '../../http/build-server.js';
 import { PrismaLeadRepository } from '../../leads/prisma-lead-repository.js';
 import { PrismaPermissionRepository } from '../../permissions/prisma-permission-repository.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from '../fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from '../fixtures/synthetic-admin.js';
 
 let cleanup: (() => Promise<void>) | undefined;
 afterAll(async () => cleanup?.());
@@ -21,22 +23,7 @@ describe.runIf(shouldRunAdminPostgres)(
     it('denies, grants, and revokes leads:view through the same role_permissions rows', async () => {
       const db = await createAdminPostgres();
       cleanup = db.cleanup;
-      for (const file of [
-        new URL(
-          '../../../../../packages/database/prisma/migrations/00000000000000_initial/migration.sql',
-          import.meta.url,
-        ),
-        new URL(
-          '../../../../../packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
-          import.meta.url,
-        ),
-        new URL(
-          '../../../../../packages/database/prisma/migrations/00000000000002_lead_sharing_notifications/migration.sql',
-          import.meta.url,
-        ),
-      ]) {
-        await db.sql.unsafe(await readFile(file, 'utf8'));
-      }
+      await applyMigrations(db.sql);
 
       const organization = await db.prisma.organization.create({
         data: { name: 'Synthetic Enforcement Organization' },

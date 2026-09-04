@@ -27,9 +27,17 @@ function required(value: string | undefined, label: string): string {
 
 export function parseBootstrapOptions(argv: string[], env: NodeJS.ProcessEnv): BootstrapOptions {
   const values = new Map<string, string>();
-  for (let index = 0; index < argv.length; index += 2) {
-    const flag = argv[index];
-    const value = argv[index + 1];
+  // `pnpm --filter @falcon/api bootstrap -- --organization-name …` — the form
+  // README and the deployment runbook both document — forwards the `--`
+  // separator itself as the first argument. Reading pairs from index 0 then made
+  // `--` the first flag and rejected the whole invocation, so the documented
+  // command never worked. Drop leading separators rather than document a
+  // different command than the one people will type.
+  const args = [...argv];
+  while (args[0] === '--') args.shift();
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
     if (!flag?.startsWith('--') || value === undefined || value.startsWith('--'))
       throw new Error(`Expected --organization-name, --admin-name, and --admin-email arguments`);
     values.set(flag, value);

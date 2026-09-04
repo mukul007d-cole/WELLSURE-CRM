@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,6 +11,7 @@ import { editLead } from '../routes/leads.js';
 import { buildServer } from '../http/build-server.js';
 import { defaultAuthConfig } from '../auth/config.js';
 import type { ServerDependencies } from '../http/types.js';
+import { applyMigrations } from './fixtures/synthetic-admin.js';
 
 const url = process.env.FALCON_POSTGRES_URL;
 describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
@@ -38,12 +38,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       `${url}${separator}options=${encodeURIComponent(`-c search_path=${schema}`)}`,
       { max: 1 },
     );
-    for (const file of [
-      'packages/database/prisma/migrations/00000000000000_initial/migration.sql',
-      'packages/database/prisma/migrations/00000000000001_custom_session_auth/migration.sql',
-      'packages/database/prisma/migrations/00000000000002_lead_sharing_notifications/migration.sql',
-    ])
-      await scoped.unsafe(await readFile(new URL(`../../../../${file}`, import.meta.url), 'utf8'));
+    await applyMigrations(scoped);
     await scoped.end();
     /*
      * The connection itself must point at the test schema, not just Prisma's

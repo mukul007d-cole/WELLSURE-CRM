@@ -1,4 +1,10 @@
-environment = "production"
+# Production has never been applied and is not ready to be — see the header in
+# main.tf for what must be answered first. Phase 17 provisioned staging only.
+environment     = "production"
+aws_region      = "ap-south-1"
+public_base_url = "https://placeholder.invalid"
+email_from      = "Falcon CRM <no-reply@notify.example.com>"
+
 common_tags = {
   Owner = "platform"
 }

@@ -6,6 +6,14 @@ export interface StorageEnv {
   secretKey: string;
 }
 
+export interface EmailDeliveryEnv {
+  apiKey: string;
+  /** Verified sender, e.g. `Falcon CRM <no-reply@notify.example.com>`. */
+  from: string;
+  /** Public origin of the deployed web app, no trailing slash. */
+  publicBaseUrl: string;
+}
+
 export interface ApiEnv {
   databaseUrl: string;
   httpPort: number;
@@ -14,11 +22,23 @@ export interface ApiEnv {
   logLevel: string;
   sessionCookieSecure: boolean;
   /**
+   * Present exactly when `emailTransport` is not `console`. A real transport
+   * cannot work without all three, and finding that out on the first password
+   * reset — after a user has been invited — is far worse than refusing to boot.
+   */
+  emailDelivery?: EmailDeliveryEnv;
+  /**
    * Object storage for attachments. Optional on purpose: the API must boot
    * without a bucket, so a developer who hasn't run `pnpm infra:up` gets a
    * disabled document locker rather than a server that won't start.
    */
   storage?: StorageEnv;
+  /**
+   * Directory holding the built web bundle, served same-origin with the API.
+   * Set only in a deployed environment; locally Vite serves the app and proxies
+   * `/api` here, so setting it would shadow the dev server for no reason.
+   */
+  webRoot?: string;
 }
 
 export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
@@ -62,6 +82,30 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
   } catch {
     if (databaseUrl) errors.push('FALCON_DATABASE_URL must be a PostgreSQL URL');
   }
+  // A real transport needs a key, a verified sender, and somewhere for the reset
+  // link to point. The console transport needs none of them, so this is required
+  // only once one is selected — local development is unaffected.
+  const deliveryKeys = ['FALCON_EMAIL_API_KEY', 'FALCON_EMAIL_FROM', 'FALCON_PUBLIC_BASE_URL'];
+  const deliveryValues = deliveryKeys.map((key) => env[key]?.trim() ?? '');
+  const deliveryConfigured = deliveryValues.every((value) => value !== '');
+  if (emailTransport !== 'console') {
+    const missing = deliveryKeys.filter((_, index) => deliveryValues[index] === '');
+    if (missing.length) {
+      errors.push(`FALCON_EMAIL_TRANSPORT="${emailTransport}" also needs ${missing.join(', ')}`);
+    }
+  }
+  const publicBaseUrl = deliveryValues[2]!;
+  if (publicBaseUrl) {
+    try {
+      const url = new URL(publicBaseUrl);
+      if (!['http:', 'https:'].includes(url.protocol) || url.origin !== publicBaseUrl) {
+        throw new Error();
+      }
+    } catch {
+      errors.push('FALCON_PUBLIC_BASE_URL must be an origin such as https://crm.example.com');
+    }
+  }
+
   // All five or none — a half-configured bucket fails at upload time with a
   // credentials error, which is a worse signal than "not configured".
   const storageKeys = ['S3_ENDPOINT', 'S3_REGION', 'S3_BUCKET', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'];
@@ -71,14 +115,26 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
     errors.push(`Object storage needs all of ${storageKeys.join(', ')} or none of them`);
   }
 
+  const webRoot = env.FALCON_WEB_ROOT?.trim() ?? '';
+
   if (errors.length) throw new Error(`Invalid Falcon API environment:\n- ${errors.join('\n- ')}`);
   return {
+    ...(webRoot ? { webRoot } : {}),
     databaseUrl,
     httpPort,
     corsOrigins,
     emailTransport,
     logLevel,
     sessionCookieSecure: secureText === 'true',
+    ...(emailTransport !== 'console' && deliveryConfigured
+      ? {
+          emailDelivery: {
+            apiKey: deliveryValues[0]!,
+            from: deliveryValues[1]!,
+            publicBaseUrl: deliveryValues[2]!,
+          },
+        }
+      : {}),
     ...(storageConfigured
       ? {
           storage: {

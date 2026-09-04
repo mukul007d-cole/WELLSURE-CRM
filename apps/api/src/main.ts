@@ -69,6 +69,7 @@ const server = buildServer({
   authConfig,
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,
+  ...(env.webRoot ? { webRoot: env.webRoot } : {}),
 });
 
 let shuttingDown = false;

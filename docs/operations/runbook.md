@@ -47,12 +47,21 @@ volumes; `pnpm infra:down` preserves data and `pnpm infra:reset` is explicitly
 destructive. The MinIO initialization job creates a private bucket idempotently.
 Local example credentials are never suitable for shared or deployed environments.
 
-The Terraform environment/module structure is validation-only in Phase 1. It
-creates no AWS resources, configures no remote state, and includes no identity
-provider while ADR-0005 is open. Production backend bootstrap, RPO/RTO, and a
-real restore drill remain prerequisites before deployment. Phase 1 verifies only
-that the rollback SQL can rebuild a disposable empty development schema; this is
-not evidence of a production restore capability.
+The Terraform now describes a real staging environment — `network`, `database`,
+`secrets` and `compute` are filled in — but **it has never been applied**, and
+no AWS resources exist. `terraform validate` passing means the HCL is internally
+consistent and nothing more; the seven empty module stubs it replaced validated
+cleanly for sixteen phases. `cache`, `object-storage`, `observability` and
+`backup` remain interface-only, each for a reason recorded in the environment
+root. See `docs/operations/deployment.md` and ADR-0018.
+
+Production backend bootstrap, RPO/RTO, and a real restore drill remain
+prerequisites before any production cutover, and the restore drill in particular
+has not been performed. The baseline's `rollback.sql` is verified only to rebuild
+a disposable empty development schema; it is a from-scratch teardown that
+destroys data, so it is not a production recovery tool and not evidence of a
+restore capability. For a populated environment the documented reversal is a
+point-in-time restore.
 
 ## Bounded hard-delete (purge)
 

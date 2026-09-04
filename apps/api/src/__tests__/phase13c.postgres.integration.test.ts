@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,7 +11,11 @@ import { PrismaPermissionRepository } from '../permissions/prisma-permission-rep
 import { NotificationService } from '../notifications/service.js';
 import { editLead } from '../routes/leads.js';
 import { sendCampaign, setCampaignActive } from '../routes/campaigns.js';
-import { createAdminPostgres, shouldRunAdminPostgres } from './fixtures/synthetic-admin.js';
+import {
+  applyMigrations,
+  createAdminPostgres,
+  shouldRunAdminPostgres,
+} from './fixtures/synthetic-admin.js';
 
 /**
  * Phase 13c — campaigns against real Postgres.
@@ -96,22 +99,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13c campaigns', () => {
   beforeAll(async () => {
     db = await createAdminPostgres();
     prisma = db.prisma;
-    for (const file of [
-      '00000000000000_initial',
-      '00000000000001_custom_session_auth',
-      '00000000000002_lead_sharing_notifications',
-      '00000000000003_attachment_metadata',
-      '00000000000004_campaigns',
-    ])
-      await db.sql.unsafe(
-        await readFile(
-          new URL(
-            `../../../../packages/database/prisma/migrations/${file}/migration.sql`,
-            import.meta.url,
-          ),
-          'utf8',
-        ),
-      );
+    await applyMigrations(db.sql);
 
     await prisma.organization.create({ data: { id: org, name: 'Synthetic organization' } });
     await prisma.role.create({
