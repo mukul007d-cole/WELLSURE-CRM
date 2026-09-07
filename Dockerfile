@@ -56,7 +56,7 @@ RUN pnpm build
 
 # Drop dev dependencies before they are copied into the runtime image.
 FROM build AS pruned
-RUN pnpm prune --prod
+RUN CI=true pnpm prune --prod
 
 # ---------------------------------------------------------------------------
 # Runtime
