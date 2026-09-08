@@ -38,7 +38,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(false),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_journey_b',
       name: 'Test Journey B',
     });
     expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
@@ -50,7 +49,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_b',
       name: 'Test Journey B',
     });
     expect(response.status).toBe(201);
@@ -78,7 +76,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_c',
       name: 'Test Journey C',
     });
 
@@ -106,7 +103,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_d',
       name: 'Test Journey D',
     });
 
@@ -175,7 +171,6 @@ describe('configuration engine API', () => {
     const field = await service.createField({
       organizationId: orgA,
       actorUserId: actorId,
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'manual',
@@ -209,7 +204,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'invalid',
@@ -238,7 +232,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_select',
       name: 'Test Select',
       fieldType: 'select',
       validationRule: { options: ['One', 'One'] },
@@ -299,7 +292,6 @@ describe('configuration catalog visibility without journey access', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'manual',
@@ -414,7 +406,6 @@ describe('configuration deactivation permission actions', () => {
             auth: auth(),
             permissionRepository,
             configurationRepository: repository,
-            key: 'test_service_a',
             name: 'Test Service A',
           }),
         );
@@ -437,7 +428,6 @@ describe('configuration deactivation permission actions', () => {
             auth: auth(),
             permissionRepository,
             configurationRepository: repository,
-            key: 'test_field_b',
             name: 'Test Field B',
             fieldType: 'text',
             editMode: 'manual',

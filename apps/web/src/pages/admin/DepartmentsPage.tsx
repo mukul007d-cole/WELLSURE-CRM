@@ -15,7 +15,7 @@ import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
 import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE } from './shared';
 
-type DepartmentDraft = { id?: string; key: string; name: string };
+type DepartmentDraft = { id?: string; key?: string; name: string };
 export function DepartmentsPage() {
   usePageChrome('Departments', [['admin', 'departments']]);
   const { can } = useAuth();
@@ -31,7 +31,7 @@ export function DepartmentsPage() {
     mutationFn: () =>
       draft?.id
         ? adminApi.editDepartment(draft.id, { name: draft.name })
-        : adminApi.createDepartment({ key: draft?.key ?? '', name: draft?.name ?? '' }),
+        : adminApi.createDepartment({ name: draft?.name ?? '' }),
     onSuccess: async () => {
       setDraft(null);
       await qc.invalidateQueries({ queryKey: ['admin', 'departments'] });
@@ -45,23 +45,21 @@ export function DepartmentsPage() {
         description="Manage organization units used by User assignment and data scope."
         actions={
           can('users', 'create') ? (
-            <Button onClick={() => setDraft({ key: '', name: '' })}>Create Department</Button>
+            <Button onClick={() => setDraft({ name: '' })}>Create Department</Button>
           ) : undefined
         }
       />
       {error ? <Banner tone="error">{friendlyErrorMessage(error)}</Banner> : null}
       {draft ? (
         <Card className="grid gap-3 p-4 sm:grid-cols-2">
-          <Field label="Stable key" required>
-            {({ inputId }) => (
-              <Input
-                id={inputId}
-                disabled={Boolean(draft.id)}
-                value={draft.key}
-                onChange={(event) => setDraft({ ...draft, key: event.target.value })}
-              />
-            )}
-          </Field>
+          {draft.id ? (
+            // The key is computed from the name at creation and never changes
+            // afterward — shown here read-only, for API/URL reference, not as
+            // an editable field.
+            <Field label="Stable key">
+              {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+            </Field>
+          ) : null}
           <Field label="Name" required>
             {({ inputId }) => (
               <Input
@@ -72,11 +70,7 @@ export function DepartmentsPage() {
             )}
           </Field>
           <div className="flex gap-2 sm:col-span-2">
-            <Button
-              loading={save.isPending}
-              disabled={!draft.name || (!draft.id && !draft.key)}
-              onClick={() => save.mutate()}
-            >
+            <Button loading={save.isPending} disabled={!draft.name} onClick={() => save.mutate()}>
               Save Department
             </Button>
             <Button variant="ghost" onClick={() => setDraft(null)}>

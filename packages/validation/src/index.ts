@@ -12,3 +12,5 @@ export {
   toCsvRow,
 } from './csv.js';
 export type { CsvErrorCode, CsvParseOptions, CsvRow, CsvTable } from './csv.js';
+
+export { nextAvailableKey, slugify } from './slug.js';

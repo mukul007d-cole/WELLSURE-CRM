@@ -211,7 +211,6 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13c campaigns', () => {
       actorUserId: sender,
       visibleFieldIds: new Set([field]),
       campaign: {
-        key: `campaign_${randomUUID().replaceAll('-', '').slice(0, 12)}`,
         name: 'Synthetic campaign',
         subject: 'Synthetic subject',
         bodyDocument: {
@@ -441,7 +440,6 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13c campaigns', () => {
         actorUserId: sender,
         visibleFieldIds: new Set(),
         campaign: {
-          key: 'campaign_denied_variable',
           name: 'Synthetic',
           subject: 'Synthetic',
           bodyDocument: {

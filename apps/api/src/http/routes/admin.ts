@@ -91,7 +91,7 @@ export function registerAdminRoutes(
     '/api/v1/roles',
     'roles_permissions',
     'create',
-    (s, c, b, _p, q) => s.createRole(c, b.key, b.name),
+    (s, c, b, _p, q) => s.createRole(c, b.name),
     true,
   );
   bind('PUT', '/api/v1/roles/:roleId', 'roles_permissions', 'edit', (s, c, b, p, q) =>
@@ -162,7 +162,7 @@ export function registerAdminRoutes(
     '/api/v1/departments',
     'users',
     'create',
-    (s, c, b, _p, q) => s.createDepartment(c, b.key, b.name),
+    (s, c, b, _p, q) => s.createDepartment(c, b.name),
     true,
   );
   bind('PUT', '/api/v1/departments/:departmentId', 'users', 'edit', (s, c, b, p, q) =>

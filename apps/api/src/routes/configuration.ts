@@ -100,7 +100,6 @@ export async function createJourney(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
@@ -113,7 +112,6 @@ export async function createJourney(input: {
       service.createJourney({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
       }),
     201,
@@ -244,7 +242,6 @@ export async function createStatus(input: {
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
   journeyId: string;
-  key: string;
   name: string;
   outcomeType: string;
   behaviorType: string;
@@ -261,7 +258,6 @@ export async function createStatus(input: {
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
         journeyId: input.journeyId,
-        key: input.key,
         name: input.name,
         outcomeType: input.outcomeType,
         behaviorType: input.behaviorType,
@@ -274,7 +270,6 @@ export async function createService(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   description?: string | null;
   now?: Date;
@@ -288,7 +283,6 @@ export async function createService(input: {
       service.createService({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
         ...(input.description === undefined ? {} : { description: input.description }),
       }),
@@ -327,7 +321,6 @@ export async function createField(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   fieldType: string;
   validationRule?: unknown;
@@ -345,7 +338,6 @@ export async function createField(input: {
       service.createField({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
         fieldType: input.fieldType,
         ...(input.validationRule === undefined ? {} : { validationRule: input.validationRule }),

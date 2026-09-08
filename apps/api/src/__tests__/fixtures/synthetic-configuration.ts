@@ -119,6 +119,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async writeActivity(input: LeadActivityInput) {
     this.activities.push(input);
   }
+  async journeyKeyExists(org: string, key: string) {
+    return [...this.rows.journeys.values()].some((r) => r.organizationId === org && r.key === key);
+  }
   async createJourney(input: Record<string, unknown>) {
     return put(this.rows.journeys, input);
   }
@@ -131,6 +134,11 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async countActiveProcessInstancesForJourney(org: string, id: string) {
     return this.processInstances.filter((p) => p.organizationId === org && p.journeyId === id)
       .length;
+  }
+  async statusKeyExists(org: string, journeyId: string, key: string) {
+    return [...this.rows.statuses.values()].some(
+      (r) => r.organizationId === org && r.journeyId === journeyId && r.key === key,
+    );
   }
   async createStatus(input: Record<string, unknown>) {
     return put(this.rows.statuses, input);
@@ -159,6 +167,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
       }
     return count;
   }
+  async serviceKeyExists(org: string, key: string) {
+    return [...this.rows.services.values()].some((r) => r.organizationId === org && r.key === key);
+  }
   async createService(input: Record<string, unknown>) {
     return put(this.rows.services, input);
   }
@@ -170,6 +181,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   }
   async countActiveLeadServicesForService(_org: string, id: string) {
     return this.leadServices.filter((s) => s.serviceId === id && s.active).length;
+  }
+  async fieldKeyExists(org: string, key: string) {
+    return [...this.rows.fields.values()].some((r) => r.organizationId === org && r.key === key);
   }
   async createField(input: Record<string, unknown>) {
     return put(this.rows.fields, input);

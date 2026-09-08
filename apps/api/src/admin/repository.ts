@@ -31,7 +31,7 @@ export interface AdminRepository {
   ): Promise<{ user: { email: string }; resetTokenId: string }>;
   listRoles(org: string, page: PageRequest, active?: boolean): Promise<Page<unknown>>;
   getRole(org: string, id: string): Promise<unknown>;
-  createRole(org: string, actor: string, key: string, name: string): Promise<unknown>;
+  createRole(org: string, actor: string, name: string): Promise<unknown>;
   updateRole(org: string, actor: string, id: string, name: string): Promise<unknown>;
   deactivateRole(
     org: string,
@@ -67,7 +67,7 @@ export interface AdminRepository {
   ): Promise<unknown>;
   listDepartments(org: string, page: PageRequest, active?: boolean): Promise<Page<unknown>>;
   getDepartment(org: string, id: string): Promise<unknown>;
-  createDepartment(org: string, actor: string, key: string, name: string): Promise<unknown>;
+  createDepartment(org: string, actor: string, name: string): Promise<unknown>;
   updateDepartment(org: string, actor: string, id: string, name: string): Promise<unknown>;
   /** Null when the department is not in the organization, so the route 404s. */
   listTeams(
@@ -81,7 +81,6 @@ export interface AdminRepository {
     org: string,
     actor: string,
     departmentId: string,
-    key: string,
     name: string,
     members: TeamMemberInput[],
   ): Promise<unknown>;

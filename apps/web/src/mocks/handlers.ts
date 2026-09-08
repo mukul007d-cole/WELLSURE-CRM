@@ -24,6 +24,30 @@ import type { NotificationItem, NotificationRule } from '../types/domain';
 
 const API_BASE = '/api/v1';
 
+/**
+ * Mirrors the server's auto-generated `key` (see `@falcon/validation`'s
+ * `slugify`/`nextAvailableKey`) closely enough for admin-flow tests: lowercase,
+ * non-alphanumeric runs collapsed to one underscore, `k_` prefix if that would
+ * not start with a letter, then `_2`, `_3`, … on collision. `apps/web` carries
+ * no `@falcon/*` package dependency, so this is a small deliberate duplicate
+ * rather than a new cross-boundary import just for mocks.
+ */
+function mockSlugify(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (base === '') return 'k';
+  return /^[a-z]/.test(base) ? base : `k_${base}`;
+}
+function mockNextKey(name: string, existingKeys: readonly string[]): string {
+  const base = mockSlugify(name);
+  const taken = new Set(existingKeys);
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) candidate = `${base}_${suffix}`;
+  return candidate;
+}
+
 const MOCK_SHARES: Array<{
   id: string;
   leadId: string;
@@ -179,7 +203,6 @@ const MOCK_NOTIFICATION_RULES: NotificationRule[] = [
   },
 ];
 interface RuleWriteBody {
-  key?: string;
   name: string;
   triggerType: string;
   active?: boolean;
@@ -551,8 +574,12 @@ export const handlers = [
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
   http.post(`${API_BASE}/journeys`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
-    const row = { id: `journey-${Date.now()}`, key: body.key, name: body.name, isActive: true };
+    const body = (await request.json()) as { name: string };
+    const key = mockNextKey(
+      body.name,
+      JOURNEYS.map((journey) => journey.key),
+    );
+    const row = { id: `journey-${Date.now()}`, key, name: body.name, isActive: true };
     JOURNEYS.push(row);
     return HttpResponse.json({ ...row, active: true, statuses: [] }, { status: 201 });
   }),
@@ -600,12 +627,20 @@ export const handlers = [
   http.post(`${API_BASE}/journeys/:id/statuses`, async ({ params, request }) => {
     const body = (await request.json()) as Omit<
       (typeof STATUSES)[number],
-      'id' | 'journeyId' | 'isActive'
+      'id' | 'journeyId' | 'isActive' | 'key'
     >;
+    const journeyId = String(params.id);
+    // Status `key` is unique per Journey, not per organization — see the
+    // schema's `@@unique` — so only this Journey's existing keys count.
+    const key = mockNextKey(
+      body.name,
+      STATUSES.filter((status) => status.journeyId === journeyId).map((status) => status.key),
+    );
     const row = {
       ...body,
+      key,
       id: `status-${Date.now()}`,
-      journeyId: String(params.id),
+      journeyId,
       isActive: true,
     };
     STATUSES.push(row);
@@ -685,9 +720,13 @@ export const handlers = [
   http.post(`${API_BASE}/fields`, async ({ request }) => {
     const body = (await request.json()) as Omit<
       (typeof MOCK_ADMIN_FIELDS)[number],
-      'id' | 'active'
+      'id' | 'active' | 'key'
     >;
-    const row = { ...body, id: `field-${Date.now()}`, active: true };
+    const key = mockNextKey(
+      body.name,
+      MOCK_ADMIN_FIELDS.map((field) => field.key),
+    );
+    const row = { ...body, key, id: `field-${Date.now()}`, active: true };
     MOCK_ADMIN_FIELDS.push(row);
     return HttpResponse.json(row, { status: 201 });
   }),
@@ -748,10 +787,13 @@ export const handlers = [
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
   http.post(`${API_BASE}/roles`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
+    const body = (await request.json()) as { name: string };
     const row = {
       id: `role-${Date.now()}`,
-      key: body.key,
+      key: mockNextKey(
+        body.name,
+        MOCK_ROLES.map((role) => role.key),
+      ),
       name: body.name,
       active: true,
       version: 1,
@@ -830,10 +872,13 @@ export const handlers = [
     HttpResponse.json(pageResponse(request, MOCK_DEPARTMENTS)),
   ),
   http.post(`${API_BASE}/departments`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
+    const body = (await request.json()) as { name: string };
     const row = {
       id: `department-${Date.now()}`,
-      key: body.key,
+      key: mockNextKey(
+        body.name,
+        MOCK_DEPARTMENTS.map((department) => department.key),
+      ),
       name: body.name,
       active: true,
       version: 1,
@@ -865,16 +910,22 @@ export const handlers = [
   }),
   http.post(`${API_BASE}/departments/:id/teams`, async ({ params, request }) => {
     const body = (await request.json()) as {
-      key: string;
       name: string;
       members: Array<{ userId: string; isLeader: boolean }>;
     };
     if (!body.members.some((member) => member.isLeader))
       return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    const departmentId = String(params.id);
+    // Team `key` is unique per Department, not per organization — see the
+    // schema's `@@unique` — so only this Department's existing keys count.
+    const key = mockNextKey(
+      body.name,
+      MOCK_TEAMS.filter((team) => team.departmentId === departmentId).map((team) => team.key),
+    );
     const row = {
       id: `team-${Date.now()}`,
-      departmentId: String(params.id),
-      key: body.key,
+      departmentId,
+      key,
       name: body.name,
       active: true,
       version: 1,
@@ -1051,6 +1102,10 @@ export const handlers = [
       journeyId: null,
       statusId: null,
       ...body,
+      key: mockNextKey(
+        String(body.name),
+        MOCK_CAMPAIGNS.map((campaign) => campaign.key),
+      ),
       stats: { sent: 0, failed: 0, pending: 0, skippedNoEmail: 0 },
     };
     MOCK_CAMPAIGNS.push(row as (typeof MOCK_CAMPAIGNS)[number]);
@@ -1428,7 +1483,10 @@ export const handlers = [
     const body = (await request.json()) as RuleWriteBody;
     const row: NotificationRule = {
       id: `rule-${MOCK_NOTIFICATION_RULES.length + 1}-${Date.now()}`,
-      key: body.key ?? '',
+      key: mockNextKey(
+        body.name,
+        MOCK_NOTIFICATION_RULES.map((rule) => rule.key),
+      ),
       name: body.name,
       triggerType: body.triggerType,
       scope: null,

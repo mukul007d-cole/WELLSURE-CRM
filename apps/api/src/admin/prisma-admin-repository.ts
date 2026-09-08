@@ -1,3 +1,4 @@
+import { nextAvailableKey } from '@falcon/validation';
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { AdminError } from './errors.js';
@@ -11,6 +12,7 @@ import type {
   TeamMemberInput,
   UserWriteInput,
 } from './types.js';
+import { configKey } from './validation.js';
 
 type Tx = FalconPrismaClient;
 const orderBy = [{ createdAt: 'asc' as const }, { id: 'asc' as const }];
@@ -215,8 +217,11 @@ export class PrismaAdminRepository implements AdminRepository {
       },
     });
   }
-  createRole(org: string, actor: string, key: string, name: string) {
+  createRole(org: string, actor: string, name: string) {
     return this.prisma.$transaction(async (tx) => {
+      const key = await generateKey(name, (candidate) =>
+        tx.role.findFirst({ where: { organizationId: org, key: candidate } }),
+      );
       const row = await tx.role.create({
         data: { organizationId: org, key, name, createdById: actor, updatedById: actor },
       });
@@ -467,8 +472,11 @@ export class PrismaAdminRepository implements AdminRepository {
   async getDepartment(org: string, id: string): Promise<unknown> {
     return this.prisma.department.findFirst({ where: { organizationId: org, id } });
   }
-  createDepartment(org: string, actor: string, key: string, name: string) {
+  createDepartment(org: string, actor: string, name: string) {
     return this.prisma.$transaction(async (tx) => {
+      const key = await generateKey(name, (candidate) =>
+        tx.department.findFirst({ where: { organizationId: org, key: candidate } }),
+      );
       const row = await tx.department.create({
         data: { organizationId: org, key, name, createdById: actor, updatedById: actor },
       });
@@ -525,7 +533,6 @@ export class PrismaAdminRepository implements AdminRepository {
     org: string,
     actor: string,
     departmentId: string,
-    key: string,
     name: string,
     members: TeamMemberInput[],
   ) {
@@ -537,6 +544,10 @@ export class PrismaAdminRepository implements AdminRepository {
       if (!department.active)
         throw new AdminError('conflict', 'cannot add a Team to an inactive Department');
       await validateTeamMembers(tx as Tx, org, departmentId, members);
+      // Team `key` is unique per Department, not per organization — see the schema's `@@unique`.
+      const key = await generateKey(name, (candidate) =>
+        tx.team.findFirst({ where: { organizationId: org, departmentId, key: candidate } }),
+      );
       const row = await tx.team.create({
         data: {
           organizationId: org,
@@ -650,6 +661,20 @@ const teamInclude = {
     orderBy: [{ isLeader: 'desc' as const }, { userId: 'asc' as const }],
   },
 };
+/**
+ * The auto-generated replacement for the key an admin used to type: slugify
+ * the name, then probe `exists` (a scoped `findFirst` — organization-wide for
+ * Role and Department, per-Department for Team) until a candidate is free.
+ * `configKey` re-validates the result defensively — a generated key should
+ * always match, but a create path is the wrong place to find out it doesn't.
+ */
+async function generateKey(
+  name: string,
+  exists: (candidate: string) => Promise<unknown>,
+): Promise<string> {
+  const key = await nextAvailableKey(name, async (candidate) => (await exists(candidate)) !== null);
+  return configKey(key);
+}
 async function audit(
   tx: Tx,
   organizationId: string,

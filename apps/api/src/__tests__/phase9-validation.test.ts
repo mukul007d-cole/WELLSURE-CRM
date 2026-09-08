@@ -44,7 +44,6 @@ describe('Phase 9 closed catalogs and validation', () => {
       service.createRule({
         organizationId: 'org',
         actorUserId: 'actor',
-        key: 'synthetic_rule',
         name: 'Synthetic',
         triggerType: 'unknown',
         recipients: [{ resolverType: 'assignment_holder' }],

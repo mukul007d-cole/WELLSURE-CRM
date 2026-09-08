@@ -22,7 +22,7 @@ import { documentPreview, emptyDocument } from './campaign-document';
 
 type Draft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   subject: string;
   bodyDocument: CampaignDocument;
@@ -33,7 +33,6 @@ type Draft = {
 };
 
 const emptyDraft = (): Draft => ({
-  key: '',
   name: '',
   subject: '',
   bodyDocument: emptyDocument(),
@@ -82,7 +81,6 @@ export function CampaignsPage() {
     mutationFn: () => {
       const current = draft ?? emptyDraft();
       const body = {
-        key: current.key,
         name: current.name,
         subject: current.subject,
         bodyDocument: current.bodyDocument,
@@ -244,16 +242,14 @@ function CampaignEditor({
   return (
     <Card className="grid gap-3 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Stable key" required>
-          {({ inputId }) => (
-            <Input
-              id={inputId}
-              disabled={Boolean(draft.id)}
-              value={draft.key}
-              onChange={(event) => update('key', event.target.value)}
-            />
-          )}
-        </Field>
+        {draft.id ? (
+          // The key is computed from the name at creation and never changes
+          // afterward — shown here read-only, for API/URL reference, not as
+          // an editable field.
+          <Field label="Stable key">
+            {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+          </Field>
+        ) : null}
         <Field label="Name" required>
           {({ inputId }) => (
             <Input
@@ -357,7 +353,6 @@ function CampaignEditor({
         <Button
           loading={loading}
           disabled={
-            !draft.key ||
             !draft.name ||
             !draft.subject ||
             (draft.type === 'triggered' && (!draft.journeyId || !draft.statusId))

@@ -23,7 +23,7 @@ export function JourneysPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [active, setActive] = useState('true');
-  const [draft, setDraft] = useState<{ id?: string; key: string; name: string } | null>(null);
+  const [draft, setDraft] = useState<{ id?: string; key?: string; name: string } | null>(null);
   const [purging, setPurging] = useState<AdminJourney | null>(null);
   const query = useQuery({
     queryKey: ['admin', 'journeys', page, active],
@@ -33,7 +33,7 @@ export function JourneysPage() {
     mutationFn: () =>
       draft?.id
         ? adminApi.editJourney(draft.id, { name: draft.name })
-        : adminApi.createJourney({ key: draft?.key ?? '', name: draft?.name ?? '' }),
+        : adminApi.createJourney({ name: draft?.name ?? '' }),
     onSuccess: async () => {
       setDraft(null);
       await qc.invalidateQueries({ queryKey: ['admin', 'journeys'] });
@@ -60,7 +60,7 @@ export function JourneysPage() {
         description="Create pipelines and manage their Status and Field configuration."
         actions={
           can('journeys_statuses', 'create') ? (
-            <Button onClick={() => setDraft({ key: '', name: '' })}>Create Journey</Button>
+            <Button onClick={() => setDraft({ name: '' })}>Create Journey</Button>
           ) : undefined
         }
       />
@@ -169,24 +169,22 @@ function JourneyForm({
   cancel,
   loading,
 }: {
-  draft: { id?: string; key: string; name: string };
-  setDraft: (value: { id?: string; key: string; name: string }) => void;
+  draft: { id?: string; key?: string; name: string };
+  setDraft: (value: { id?: string; key?: string; name: string }) => void;
   save: () => void;
   cancel: () => void;
   loading: boolean;
 }) {
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2">
-      <Field label="Stable key" required>
-        {({ inputId }) => (
-          <Input
-            id={inputId}
-            disabled={Boolean(draft.id)}
-            value={draft.key}
-            onChange={(event) => setDraft({ ...draft, key: event.target.value })}
-          />
-        )}
-      </Field>
+      {draft.id ? (
+        // The key is computed from the name at creation and never changes
+        // afterward — shown here read-only, for API/URL reference, not as an
+        // editable field.
+        <Field label="Stable key">
+          {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+        </Field>
+      ) : null}
       <Field label="Name" required>
         {({ inputId }) => (
           <Input
@@ -197,11 +195,7 @@ function JourneyForm({
         )}
       </Field>
       <div className="flex gap-2 sm:col-span-2">
-        <Button
-          loading={loading}
-          disabled={!draft.name || (!draft.id && !draft.key)}
-          onClick={save}
-        >
+        <Button loading={loading} disabled={!draft.name} onClick={save}>
           Save Journey
         </Button>
         <Button variant="ghost" onClick={cancel}>

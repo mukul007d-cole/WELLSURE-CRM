@@ -84,9 +84,6 @@ const RESOLVER_LABELS = new Map(RESOLVERS.map((resolver) => [resolver.value, res
 const parametersFor = (resolverType: string): ParameterKind =>
   RESOLVERS.find((resolver) => resolver.value === resolverType)?.parameters ?? 'none';
 
-/** Mirrors the server's key rule in `validateRule`; the server 400s otherwise. */
-const KEY_PATTERN = /^[a-z][a-z0-9_]{1,62}$/;
-
 /**
  * One recipient row.
  *
@@ -103,7 +100,7 @@ type RecipientDraft = {
 };
 type RuleDraft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   triggerType: string;
   active: boolean;
@@ -117,7 +114,6 @@ const emptyRecipient = (): RecipientDraft => ({
   action: '',
 });
 const emptyRule = (): RuleDraft => ({
-  key: '',
   name: '',
   triggerType: 'field_edited',
   active: true,
@@ -185,7 +181,7 @@ export function NotificationRulesPage() {
        */
       return current.id
         ? notificationsApi.updateRule(current.id, { ...body, active: current.active })
-        : notificationsApi.createRule({ ...body, key: current.key });
+        : notificationsApi.createRule(body);
     },
     onSuccess: async () => {
       closeDraft();
@@ -431,33 +427,19 @@ function RuleEditor({
         position === index ? { ...recipient, ...next } : recipient,
       ),
     });
-  const keyValid = KEY_PATTERN.test(draft.key);
   const recipientsComplete = draft.recipients.every(recipientComplete);
 
   return (
     <Card className="grid gap-3 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field
-          label="Key"
-          required
-          hint="Lowercase letters, numbers and underscores — e.g. lead_reassigned_notice."
-          {...(draft.key && !keyValid
-            ? { error: 'Start with a letter, then lowercase letters, numbers or underscores.' }
-            : {})}
-        >
-          {({ inputId, describedBy }) => (
-            <Input
-              id={inputId}
-              aria-describedby={describedBy}
-              // The key identifies the rule for its lifetime; `updateRule`
-              // takes no key at all.
-              disabled={Boolean(draft.id)}
-              value={draft.key}
-              placeholder="lead_reassigned_notice"
-              onChange={(event) => update('key', event.target.value)}
-            />
-          )}
-        </Field>
+        {draft.id ? (
+          // The key is computed from the name at creation and never changes
+          // afterward — shown here read-only, for API/URL reference, not as
+          // an editable field.
+          <Field label="Key">
+            {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+          </Field>
+        ) : null}
         <Field label="Name" required>
           {({ inputId }) => (
             <Input
@@ -656,7 +638,6 @@ function RuleEditor({
           loading={loading}
           disabled={
             !draft.name.trim() ||
-            (!draft.id && !keyValid) ||
             !recipientsComplete ||
             // An untouched rule has nothing to save, and saving it anyway
             // would bump its version for no change.

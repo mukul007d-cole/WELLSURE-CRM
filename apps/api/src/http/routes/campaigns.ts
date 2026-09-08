@@ -92,7 +92,6 @@ const text = (value: unknown): string => (typeof value === 'string' ? value : ''
 
 function campaignBody(body: Json) {
   return {
-    ...(typeof body.key === 'string' ? { key: body.key } : {}),
     name: text(body.name),
     subject: text(body.subject),
     bodyDocument: body.bodyDocument,

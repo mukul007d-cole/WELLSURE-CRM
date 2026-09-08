@@ -77,9 +77,7 @@ export function registerConfigurationRoutes(
   read('/api/v1/services/:serviceId', 'services');
   read('/api/v1/fields', 'fields');
   read('/api/v1/fields/:fieldId', 'fields');
-  bind('POST', '/api/v1/journeys', (r, b) =>
-    createJourney({ ...base(r), key: String(b.key), name: String(b.name) }),
-  );
+  bind('POST', '/api/v1/journeys', (r, b) => createJourney({ ...base(r), name: String(b.name) }));
   bind('PATCH', '/api/v1/journeys/:journeyId', (r, b, p) =>
     updateJourney({ ...base(r), journeyId: String(p.journeyId), name: String(b.name) }),
   );
@@ -90,7 +88,6 @@ export function registerConfigurationRoutes(
     createStatus({
       ...base(r),
       journeyId: String(p.journeyId),
-      key: String(b.key),
       name: String(b.name),
       outcomeType: String(b.outcomeType),
       behaviorType: String(b.behaviorType),
@@ -128,7 +125,6 @@ export function registerConfigurationRoutes(
   bind('POST', '/api/v1/services', (r, b) =>
     createService({
       ...base(r),
-      key: String(b.key),
       name: String(b.name),
       ...(b.description === null || typeof b.description === 'string'
         ? { description: b.description }
@@ -141,7 +137,6 @@ export function registerConfigurationRoutes(
   bind('POST', '/api/v1/fields', (r, b) =>
     createField({
       ...base(r),
-      key: String(b.key),
       name: String(b.name),
       fieldType: String(b.fieldType),
       editMode: String(b.editMode),

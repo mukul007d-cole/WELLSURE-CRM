@@ -175,7 +175,7 @@ export const adminApi = {
       `/journeys${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
     ),
   journey: (id: string) => request<AdminJourney>(`/journeys/${id}`),
-  createJourney: (body: { key: string; name: string }) =>
+  createJourney: (body: { name: string }) =>
     request<AdminJourney>('/journeys', json('POST', body)),
   editJourney: (id: string, body: { name: string }) =>
     request<AdminJourney>(`/journeys/${id}`, json('PATCH', body)),

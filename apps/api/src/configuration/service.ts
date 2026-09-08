@@ -1,3 +1,5 @@
+import { nextAvailableKey } from '@falcon/validation';
+
 import type { ConfigurationAuditWriter, LeadActivityWriter } from './audit.js';
 import { ConfigurationError } from './errors.js';
 import {
@@ -41,6 +43,14 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
   getJourneyDetail(organizationId: string, id: string, active?: boolean): Promise<ConfigRow | null>;
   listJourneyAssignmentTypes(organizationId: string, journeyId: string): Promise<string[]>;
   grantJourneyAccessToConfigRoles(organizationId: string, journeyId: string): Promise<string[]>;
+  /** Journey `key` is unique per organization. */
+  journeyKeyExists(organizationId: string, key: string): Promise<boolean>;
+  /** Status `key` is unique per Journey, not per organization — see the schema's `@@unique`. */
+  statusKeyExists(organizationId: string, journeyId: string, key: string): Promise<boolean>;
+  /** Service `key` is unique per organization. */
+  serviceKeyExists(organizationId: string, key: string): Promise<boolean>;
+  /** Field `key` is unique per organization. */
+  fieldKeyExists(organizationId: string, key: string): Promise<boolean>;
   listServices(
     organizationId: string,
     active: boolean | undefined,
@@ -190,17 +200,18 @@ export class ConfigurationService {
     return this.repository.getFieldDetail(input.organizationId, input.fieldId, input.active);
   }
 
-  async createJourney(input: {
-    organizationId: string;
-    actorUserId: string;
-    key: string;
-    name: string;
-  }) {
+  async createJourney(input: { organizationId: string; actorUserId: string; name: string }) {
     return this.repository.transaction(async (tx) => {
+      const name = requireNonBlank(input.name, 'journey name');
+      const key = requireConfigKey(
+        await nextAvailableKey(name, (candidate) =>
+          tx.journeyKeyExists(input.organizationId, candidate),
+        ),
+      );
       const row = await tx.createJourney({
         organizationId: input.organizationId,
-        key: requireConfigKey(input.key),
-        name: requireNonBlank(input.name, 'journey name'),
+        key,
+        name,
         createdById: input.actorUserId,
         updatedById: input.actorUserId,
       });
@@ -271,7 +282,6 @@ export class ConfigurationService {
     organizationId: string;
     actorUserId: string;
     journeyId: string;
-    key: string;
     name: string;
     outcomeType: string;
     behaviorType: string;
@@ -279,11 +289,17 @@ export class ConfigurationService {
   }) {
     return this.repository.transaction(async (tx) => {
       await requireFound(tx.findJourney(input.organizationId, input.journeyId));
+      const name = requireNonBlank(input.name, 'status name');
+      const key = requireConfigKey(
+        await nextAvailableKey(name, (candidate) =>
+          tx.statusKeyExists(input.organizationId, input.journeyId, candidate),
+        ),
+      );
       const row = await tx.createStatus({
         organizationId: input.organizationId,
         journeyId: input.journeyId,
-        key: requireConfigKey(input.key),
-        name: requireNonBlank(input.name, 'status name'),
+        key,
+        name,
         outcomeType: requireOneOf(input.outcomeType, statusOutcomeTypes, 'outcome type'),
         behaviorType: requireOneOf(input.behaviorType, statusBehaviorTypes, 'behavior type'),
         sortOrder: requireNonNegativeInteger(input.sortOrder, 'sort order'),
@@ -423,15 +439,20 @@ export class ConfigurationService {
   async createService(input: {
     organizationId: string;
     actorUserId: string;
-    key: string;
     name: string;
     description?: string | null;
   }) {
     return this.repository.transaction(async (tx) => {
+      const name = requireNonBlank(input.name, 'service name');
+      const key = requireConfigKey(
+        await nextAvailableKey(name, (candidate) =>
+          tx.serviceKeyExists(input.organizationId, candidate),
+        ),
+      );
       const row = await tx.createService({
         organizationId: input.organizationId,
-        key: requireConfigKey(input.key),
-        name: requireNonBlank(input.name, 'service name'),
+        key,
+        name,
         description: input.description ?? null,
         createdById: input.actorUserId,
         updatedById: input.actorUserId,
@@ -472,7 +493,6 @@ export class ConfigurationService {
   async createField(input: {
     organizationId: string;
     actorUserId: string;
-    key: string;
     name: string;
     fieldType: string;
     validationRule?: unknown;
@@ -481,10 +501,16 @@ export class ConfigurationService {
     source: string;
   }) {
     return this.repository.transaction(async (tx) => {
+      const name = requireNonBlank(input.name, 'field name');
+      const key = requireConfigKey(
+        await nextAvailableKey(name, (candidate) =>
+          tx.fieldKeyExists(input.organizationId, candidate),
+        ),
+      );
       const row = await tx.createField({
         organizationId: input.organizationId,
-        key: requireConfigKey(input.key),
-        name: requireNonBlank(input.name, 'field name'),
+        key,
+        name,
         fieldType: requireNonBlank(input.fieldType, 'field type'),
         validationRule: requireFieldValidationRule(input.fieldType, input.validationRule),
         section: input.section ?? null,

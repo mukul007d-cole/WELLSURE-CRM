@@ -45,7 +45,6 @@ describe('administration resource flows', () => {
   it('creates, edits, paginates, and deactivates Journeys', async () => {
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_journey');
     change('Name', 'Synthetic Journey');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Journey')).toBeInTheDocument();
@@ -68,7 +67,6 @@ describe('administration resource flows', () => {
   it('purges a deactivated Journey only after its key is typed', async () => {
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_purgeable');
     change('Name', 'Synthetic Purgeable');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Purgeable')).toBeInTheDocument();
@@ -110,7 +108,6 @@ describe('administration resource flows', () => {
     );
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_blocked');
     change('Name', 'Synthetic Blocked');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Blocked')).toBeInTheDocument();
@@ -164,7 +161,6 @@ describe('administration resource flows', () => {
     );
     await screen.findByRole('heading', { level: 2 });
     fireEvent.click(await screen.findByRole('button', { name: 'Create Status' }));
-    change('Stable key', 'synthetic_status');
     change('Name', 'Synthetic Status');
     change('Order', '7');
     fireEvent.click(screen.getByRole('button', { name: 'Save Status' }));
@@ -207,7 +203,6 @@ describe('administration resource flows', () => {
   it('creates a select Field with options, edits it, and deactivates it', async () => {
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    change('Stable key', 'synthetic_select');
     change('Name', 'Synthetic Select');
     change('Type', 'select');
     change('Options', 'One\nTwo');
@@ -235,7 +230,6 @@ describe('administration resource flows', () => {
     );
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    change('Stable key', 'synthetic_granted');
     change('Name', 'Synthetic Granted');
 
     // Nothing is pre-ticked: a new Field is hidden from every role until an
@@ -361,7 +355,7 @@ describe('administration resource flows', () => {
     );
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    await screen.findByLabelText(/^Stable key/i);
+    await screen.findByLabelText(/^Name/i);
     expect(screen.queryByText('Role visibility')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Synthetic role A view')).not.toBeInTheDocument();
   });
@@ -411,7 +405,6 @@ describe('administration resource flows', () => {
   it('creates and edits Departments and creates, edits, deactivates Roles with replacement selection', async () => {
     const { unmount } = renderPage(<DepartmentsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Department' }));
-    change('Stable key', 'synthetic_department');
     change('Name', 'Synthetic Department');
     fireEvent.click(screen.getByRole('button', { name: 'Save Department' }));
     expect(await screen.findByText('Synthetic Department')).toBeInTheDocument();
@@ -424,7 +417,6 @@ describe('administration resource flows', () => {
     cleanup();
     renderPage(<RolesPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Role' }));
-    change('Stable key', 'synthetic_role');
     change('Name', 'Synthetic Role');
     fireEvent.click(screen.getByRole('button', { name: 'Save Role' }));
     expect(await screen.findByText('Synthetic Role')).toBeInTheDocument();
@@ -457,7 +449,6 @@ describe('administration resource flows', () => {
     expect(screen.getByText(/led by Alba Fenn/)).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Create Team' }));
-    change('Stable key', 'synthetic_new_team');
     change('Name', 'Synthetic new team');
 
     // Save stays disabled until somebody leads the Team — the same rule the

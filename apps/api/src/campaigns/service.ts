@@ -1,3 +1,4 @@
+import { nextAvailableKey } from '@falcon/validation';
 import { Prisma, type FalconPrismaClient } from '@falcon/database';
 
 import { parseDocument, type CampaignDocument } from './document.js';
@@ -20,7 +21,6 @@ export const campaignTypes = ['manual', 'triggered'] as const;
 export type CampaignType = (typeof campaignTypes)[number];
 
 export interface CampaignWriteInput {
-  key?: string;
   name: string;
   subject: string;
   bodyDocument: unknown;
@@ -78,10 +78,15 @@ export class CampaignService {
     campaign: CampaignWriteInput;
   }) {
     const data = await this.validate(input.organizationId, input.campaign, input.visibleFieldIds);
-    const key = input.campaign.key ?? '';
-    if (!keyPattern.test(key))
-      throw new CampaignError('validation_error', 'key must be a stable lowercase identifier');
     return this.prisma.$transaction(async (tx) => {
+      const key = await nextAvailableKey(data.name, async (candidate) => {
+        const existing = await tx.campaign.findFirst({
+          where: { organizationId: input.organizationId, key: candidate },
+        });
+        return existing !== null;
+      });
+      if (!keyPattern.test(key))
+        throw new CampaignError('validation_error', 'key must be a stable lowercase identifier');
       const row = await tx.campaign.create({
         data: {
           organizationId: input.organizationId,

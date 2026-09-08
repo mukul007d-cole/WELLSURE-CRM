@@ -18,7 +18,7 @@ import { StatusRoutingPanel } from './StatusRoutingPanel';
 
 type StatusDraft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   outcomeType: string;
   behaviorType: string;
@@ -166,7 +166,6 @@ export function JourneyDetailPage() {
               size="sm"
               onClick={() =>
                 setStatusDraft({
-                  key: '',
                   name: '',
                   outcomeType: 'open',
                   behaviorType: 'default',
@@ -403,16 +402,14 @@ function StatusEditor({
     setDraft({ ...draft, [key]: value });
   return (
     <div className="grid gap-3 rounded-control border bg-paper p-3 sm:grid-cols-3">
-      <Field label="Stable key" required>
-        {({ inputId }) => (
-          <Input
-            id={inputId}
-            disabled={Boolean(draft.id)}
-            value={draft.key}
-            onChange={(event) => update('key', event.target.value)}
-          />
-        )}
-      </Field>
+      {draft.id ? (
+        // The key is computed from the name at creation and never changes
+        // afterward — shown here read-only, for API/URL reference, not as an
+        // editable field.
+        <Field label="Stable key">
+          {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+        </Field>
+      ) : null}
       <Field label="Name" required>
         {({ inputId }) => (
           <Input
@@ -460,7 +457,7 @@ function StatusEditor({
         )}
       </Field>
       <div className="flex items-end gap-2">
-        <Button loading={loading} disabled={!draft.key || !draft.name} onClick={save}>
+        <Button loading={loading} disabled={!draft.name} onClick={save}>
           Save Status
         </Button>
         <Button variant="ghost" onClick={cancel}>

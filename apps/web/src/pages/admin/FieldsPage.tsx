@@ -21,7 +21,7 @@ import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE, loadAllPages } 
 
 type FieldDraft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   fieldType: string;
   options: string;
@@ -32,7 +32,6 @@ type FieldDraft = {
   visibility: FieldRoleVisibility[];
 };
 const emptyField = (): FieldDraft => ({
-  key: '',
   name: '',
   fieldType: 'text',
   options: '',
@@ -247,7 +246,6 @@ export function FieldsPage() {
 }
 function fieldBody(draft: FieldDraft) {
   return {
-    key: draft.key,
     name: draft.name,
     fieldType: draft.fieldType,
     validationRule:
@@ -354,16 +352,14 @@ function FieldEditor({
     });
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2">
-      <Field label="Stable key" required>
-        {({ inputId }) => (
-          <Input
-            id={inputId}
-            disabled={Boolean(draft.id)}
-            value={draft.key}
-            onChange={(event) => update('key', event.target.value)}
-          />
-        )}
-      </Field>
+      {draft.id ? (
+        // The key is computed from the name at creation and never changes
+        // afterward — shown here read-only, for API/URL reference, not as an
+        // editable field.
+        <Field label="Stable key">
+          {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+        </Field>
+      ) : null}
       <Field label="Name" required>
         {({ inputId }) => (
           <Input
@@ -498,9 +494,7 @@ function FieldEditor({
       <div className="flex items-end gap-2">
         <Button
           loading={loading}
-          disabled={
-            !draft.key || !draft.name || (draft.fieldType === 'select' && !draft.options.trim())
-          }
+          disabled={!draft.name || (draft.fieldType === 'select' && !draft.options.trim())}
           onClick={save}
         >
           Save Field

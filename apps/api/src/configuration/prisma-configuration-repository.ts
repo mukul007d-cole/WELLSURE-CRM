@@ -126,6 +126,11 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       include: { field: true },
     }) as Promise<ConfigRow[]>;
   }
+  async journeyKeyExists(org: string, key: string): Promise<boolean> {
+    return (
+      (await this.prisma.journey.findFirst({ where: { organizationId: org, key } })) !== null
+    );
+  }
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
   }
@@ -170,6 +175,12 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     return this.prisma.processInstance.count({
       where: { organizationId: org, journeyId: id, active: true },
     });
+  }
+  async statusKeyExists(org: string, journeyId: string, key: string): Promise<boolean> {
+    return (
+      (await this.prisma.status.findFirst({ where: { organizationId: org, journeyId, key } })) !==
+      null
+    );
   }
   createStatus(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.status.create({ data: input as never }) as Promise<ConfigRow>;
@@ -216,6 +227,11 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     });
     return result.count;
   }
+  async serviceKeyExists(org: string, key: string): Promise<boolean> {
+    return (
+      (await this.prisma.service.findFirst({ where: { organizationId: org, key } })) !== null
+    );
+  }
   createService(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.service.create({ data: input as never }) as Promise<ConfigRow>;
   }
@@ -235,6 +251,9 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     return this.prisma.leadService.count({
       where: { organizationId: org, serviceId: id, active: true },
     });
+  }
+  async fieldKeyExists(org: string, key: string): Promise<boolean> {
+    return (await this.prisma.field.findFirst({ where: { organizationId: org, key } })) !== null;
   }
   createField(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.field.create({ data: input as never }) as Promise<ConfigRow>;
