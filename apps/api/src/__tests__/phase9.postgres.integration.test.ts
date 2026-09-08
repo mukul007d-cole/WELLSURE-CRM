@@ -245,6 +245,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
         journeyIds: [journey],
         includeDirectGrantsForUserId: actor,
         directGrantAction: 'view',
+        roleId: role,
       },
     });
     expect(listed.total).toBe(1);

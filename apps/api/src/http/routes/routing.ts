@@ -35,6 +35,7 @@ export function registerRoutingRoutes(server: FastifyInstance, deps: ServerDepen
     permissionRepository: deps.permissionRepository,
     ruleService: new RoutingRuleService(deps.prisma!),
     routingService: new StatusRoutingService(deps.prisma!),
+    leadRepository: deps.leadRepository,
   });
   const statusId = (request: FastifyRequest) => String((request.params as Json).statusId);
   const tags = { schema: { tags: ['routing'] } };

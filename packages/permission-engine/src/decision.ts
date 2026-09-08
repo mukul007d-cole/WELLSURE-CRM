@@ -92,6 +92,18 @@ export async function resolveAuthorization(input: {
     deniedReasons.push('JOURNEY_DENIED');
   }
 
+  const statusVisible =
+    input.request.statusId === undefined
+      ? true
+      : await input.repository.hasStatusVisibility({
+          roleId: role.id,
+          organizationId: input.request.organizationId,
+          statusId: input.request.statusId,
+        });
+  if (!statusVisible) {
+    deniedReasons.push('STATUS_VISIBILITY_DENIED');
+  }
+
   const fieldVisibility = await input.repository.getFieldVisibility({
     roleId: role.id,
     organizationId: input.request.organizationId,
@@ -129,6 +141,7 @@ export async function resolveAuthorization(input: {
       journeyIds: predicateJourneyIds,
       userId: user.id,
       action: input.request.action,
+      roleId: role.id,
     });
 
     if (input.request.leadId !== undefined) {

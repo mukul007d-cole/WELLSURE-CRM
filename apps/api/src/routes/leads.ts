@@ -29,7 +29,7 @@ export interface LeadDetailRecord {
   phone: string | null;
   email: string | null;
   fieldValues: Record<string, unknown>;
-  processInstances: Array<{ journeyId: string; active: boolean }>;
+  processInstances: Array<{ journeyId: string; active: boolean; statusId: string }>;
 }
 
 export interface Seller360Record extends LeadCoreRecord {
@@ -146,6 +146,22 @@ export async function createLead(input: {
   now?: Date;
 }): Promise<LeadRouteResult> {
   const assignmentTypes = input.assignments.map((assignment) => assignment.assignmentType);
+  // The Status this lead is about to land in — resolved the same way
+  // `LeadService.createLead` resolves it, so a Role that could never see a
+  // lead there is refused at creation rather than handed one it immediately
+  // cannot find. An unresolvable Status is left unchecked here: the service
+  // still rejects it with its own `validation_error`, unchanged by this axis.
+  const landingStatus =
+    input.statusId === undefined
+      ? await input.leadRepository.findDefaultStatus(
+          input.auth.user.organizationId,
+          input.journeyId,
+        )
+      : await input.leadRepository.findStatus(
+          input.auth.user.organizationId,
+          input.journeyId,
+          input.statusId,
+        );
   const decision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -154,6 +170,7 @@ export async function createLead(input: {
       module: leadsModule,
       action: createAction,
       journeyId: input.journeyId,
+      ...(landingStatus === null ? {} : { statusId: landingStatus.id }),
       requestedEditFieldIds: Object.keys(input.fieldValues),
       assignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
@@ -202,9 +219,32 @@ export async function moveLeadJourney(input: {
   statusId?: string;
   now?: Date;
 }): Promise<LeadRouteResult> {
-  for (const [journeyId, action] of [
-    [input.journeyId, editAction],
-    [input.targetJourneyId, createAction],
+  // Source: the process instance's real current Status, looked up server-side
+  // — never the client-claimed `journeyId` — same reasoning as `editLead`.
+  const source = await input.leadRepository.findProcessInstance(
+    input.auth.user.organizationId,
+    input.processInstanceId,
+  );
+  if (source === null || source.leadId !== input.leadId) {
+    return { status: 404, body: { error: 'not_found' } };
+  }
+  // Target: the Status this move will land the lead in, resolved the same
+  // way `LeadService.moveJourney` resolves it. Unresolvable is left
+  // unchecked here; the service still rejects it with its own error.
+  const landingStatus =
+    input.statusId === undefined
+      ? await input.leadRepository.findDefaultStatus(
+          input.auth.user.organizationId,
+          input.targetJourneyId,
+        )
+      : await input.leadRepository.findStatus(
+          input.auth.user.organizationId,
+          input.targetJourneyId,
+          input.statusId,
+        );
+  for (const [journeyId, action, statusId] of [
+    [input.journeyId, editAction, source.currentStatusId],
+    [input.targetJourneyId, createAction, landingStatus?.id],
   ] as const) {
     const decision = await resolveAuthorization({
       repository: input.permissionRepository,
@@ -215,6 +255,7 @@ export async function moveLeadJourney(input: {
         action,
         journeyId,
         leadId: input.leadId,
+        ...(statusId === undefined ? {} : { statusId }),
         assignmentTypes: input.assignmentTypes,
         ...(input.now === undefined ? {} : { now: input.now }),
       },
@@ -251,6 +292,20 @@ export async function editLead(input: {
   statusId?: string;
   now?: Date;
 }): Promise<LeadRouteResult> {
+  // The Status this axis gates is the record's *real, current* one — looked
+  // up server-side, never the client-claimed `journeyId`/`processInstanceId`
+  // pairing. Unlike `journeyId` alone (a wrong claim there only self-limits,
+  // because `assignmentScopeAllowsLead` cross-validates against real
+  // assignment rows), Status Visibility defaults to permissive when
+  // `statusId` is absent — so a client that simply omitted it would bypass a
+  // real restriction, not just get a spurious denial.
+  const process = await input.leadRepository.findProcessInstance(
+    input.auth.user.organizationId,
+    input.processInstanceId,
+  );
+  if (process === null || process.leadId !== input.leadId) {
+    return { status: 404, body: { error: 'not_found' } };
+  }
   const decision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -260,6 +315,7 @@ export async function editLead(input: {
       action: editAction,
       journeyId: input.journeyId,
       leadId: input.leadId,
+      statusId: process.currentStatusId,
       requestedEditFieldIds: Object.keys(input.fieldValues ?? {}),
       assignmentTypes: input.assignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
@@ -313,6 +369,7 @@ export async function getLeadById(input: {
       action: viewAction,
       journeyId: process.journeyId,
       leadId: lead.id,
+      statusId: process.statusId,
       requestedFieldIds: input.requestedFieldIds,
       assignmentTypes: input.assignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
@@ -353,6 +410,12 @@ export async function listSellers(input: {
       module: leadsModule,
       action: viewAction,
       ...(input.list.journeyId === undefined ? {} : { journeyId: input.list.journeyId }),
+      // Filtering the list to one specific Status this Role cannot see 403s
+      // cleanly here rather than silently returning zero rows — the actual
+      // per-row enforcement is the `roleId`-bound clause `listSellers` below
+      // applies through `recordPredicate`, unconditionally, regardless of
+      // this filter.
+      ...(input.list.statusId === undefined ? {} : { statusId: input.list.statusId }),
       // The filter's Fields are requested too, so the engine decides on them
       // rather than the client deciding by omission.
       requestedFieldIds: [...new Set([...input.list.requestedFieldIds, ...filteredFieldIds])],
@@ -518,6 +581,7 @@ async function resolveLeadAccess(input: {
         action: viewAction,
         journeyId: process.journeyId,
         leadId: lead.id,
+        statusId: process.currentStatus.id,
         requestedFieldIds: input.requestedFieldIds,
         assignmentTypes: input.assignmentTypes,
         ...(input.now === undefined ? {} : { now: input.now }),

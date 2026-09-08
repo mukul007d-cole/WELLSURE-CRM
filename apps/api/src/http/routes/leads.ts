@@ -179,9 +179,28 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
   );
   if (deps.leadSharingService) {
     const sharing = deps.leadSharingService;
-    const allowed = async (request: FastifyRequest, leadId: string, action: string, body: Json) =>
-      (
-        await resolveAuthorization({
+    /**
+     * Can this caller take `action` on this lead, through *any* of its active
+     * process instances? The same per-process union `resolveLeadAccess` uses
+     * for the record and the timeline (`routes/leads.ts`) — looked up
+     * server-side rather than trusting a client-claimed `journeyId`.
+     *
+     * That trust shift is required, not cosmetic, for Status Visibility
+     * specifically: unlike Journey access, this axis defaults to permissive
+     * when `statusId` is absent, so a client that simply omitted it (every
+     * caller of the old, journeyId-trusting shape did, since nothing ever
+     * asked for one) would silently bypass a real restriction rather than
+     * just get a spurious denial the way a wrong Journey claim would.
+     */
+    const allowed = async (request: FastifyRequest, leadId: string, action: string, body: Json) => {
+      const lead = await deps.leadRepository.findSeller360(
+        request.auth.user.organizationId,
+        leadId,
+      );
+      if (lead === null) return false;
+      const assignmentTypes = strings(body.assignmentTypes);
+      for (const process of lead.processInstances.filter((row) => row.active)) {
+        const decision = await resolveAuthorization({
           repository: deps.permissionRepository,
           request: {
             organizationId: request.auth.user.organizationId,
@@ -189,11 +208,15 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
             module: 'leads',
             action,
             leadId,
-            journeyId: requiredString(body.journeyId),
-            assignmentTypes: strings(body.assignmentTypes),
+            journeyId: process.journeyId,
+            statusId: process.currentStatus.id,
+            assignmentTypes,
           },
-        })
-      ).allowed;
+        });
+        if (decision.allowed) return true;
+      }
+      return false;
+    };
     server.get('/api/v1/leads/:id/shares', { preHandler }, async (request, reply) => {
       const id = (request.params as { id: string }).id,
         q = request.query as Json;

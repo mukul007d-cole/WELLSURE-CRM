@@ -1,6 +1,7 @@
 import { resolveAuthorization, type PermissionRepository } from '@falcon/permission-engine';
 
 import type { AuthenticatedContext } from '../auth/middleware.js';
+import type { LeadRepository } from '../leads/service.js';
 import { isRoutingError } from '../routing/errors.js';
 import type { RoutingRuleService } from '../routing/rule-service.js';
 import type { StatusRoutingService } from '../routing/service.js';
@@ -17,6 +18,7 @@ export interface RoutingRouteDeps {
   permissionRepository: PermissionRepository;
   ruleService: RoutingRuleService;
   routingService: StatusRoutingService;
+  leadRepository: Pick<LeadRepository, 'findProcessInstance'>;
 }
 
 const forbidden: RoutingRouteResult = { status: 403, body: { error: 'forbidden' } };
@@ -168,6 +170,17 @@ export async function routingAssign(
     userId?: string;
   },
 ): Promise<RoutingRouteResult> {
+  // The Status Visibility check below needs the process instance's *real*
+  // current Status, looked up server-side — `input.statusId` is the client's
+  // claim of which Status's rule to fire (unchanged, existing trust level for
+  // that purpose) and must not double as a trusted value for a different,
+  // permissive-by-default check.
+  const process = await input.leadRepository.findProcessInstance(
+    input.auth.user.organizationId,
+    input.processInstanceId,
+  );
+  if (process === null || process.leadId !== input.leadId) return notFound;
+
   const leadDecision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -176,6 +189,7 @@ export async function routingAssign(
       module: 'leads',
       action: 'edit',
       leadId: input.leadId,
+      statusId: process.currentStatusId,
       assignmentTypes: input.assignmentTypes,
     },
   });

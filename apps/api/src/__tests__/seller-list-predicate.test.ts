@@ -6,6 +6,7 @@ import { processWhere } from '../leads/prisma-lead-repository.js';
 const organizationId = '11111111-1111-1111-1111-111111111111';
 const journeyId = '22222222-2222-2222-2222-222222222222';
 const userId = '33333333-3333-3333-3333-333333333333';
+const roleId = '44444444-4444-4444-4444-444444444444';
 
 function predicate(overrides: Partial<RecordPredicate> = {}): RecordPredicate {
   return {
@@ -16,6 +17,7 @@ function predicate(overrides: Partial<RecordPredicate> = {}): RecordPredicate {
     journeyIds: [journeyId],
     includeDirectGrantsForUserId: userId,
     directGrantAction: 'view',
+    roleId,
     ...overrides,
   };
 }

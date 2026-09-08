@@ -226,6 +226,17 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
           await tx.statusRoutingPermission.deleteMany({ where: { organizationId, statusId } });
         },
       },
+      {
+        // Phase 19. A bare allow-list mapping, same shape as
+        // `statusRoutingPermissions` above — cascades rather than blocks.
+        name: 'statusVisibility',
+        table: 'status_visibility',
+        list: (tx, organizationId, statusId) =>
+          tx.statusVisibility.findMany({ where: { organizationId, statusId } }),
+        remove: async (tx, organizationId, statusId) => {
+          await tx.statusVisibility.deleteMany({ where: { organizationId, statusId } });
+        },
+      },
     ],
     remove: async (tx, organizationId, id) => {
       await tx.status.delete({ where: { organizationId_id: { organizationId, id } } });
@@ -431,6 +442,16 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
           tx.statusRoutingPermission.findMany({ where: { organizationId, roleId } }),
         remove: async (tx, organizationId, roleId) => {
           await tx.statusRoutingPermission.deleteMany({ where: { organizationId, roleId } });
+        },
+      },
+      {
+        // Phase 19. Same shape as `statusRoutingPermissions` above.
+        name: 'statusVisibility',
+        table: 'status_visibility',
+        list: (tx, organizationId, roleId) =>
+          tx.statusVisibility.findMany({ where: { organizationId, roleId } }),
+        remove: async (tx, organizationId, roleId) => {
+          await tx.statusVisibility.deleteMany({ where: { organizationId, roleId } });
         },
       },
     ],

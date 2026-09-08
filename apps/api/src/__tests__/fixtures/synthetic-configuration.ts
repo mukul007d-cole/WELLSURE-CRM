@@ -337,6 +337,11 @@ export function permissionRepository(
     async hasJourneyAccess(input: { roleId: string; organizationId: string; journeyId: string }) {
       return journeyAccess && input.journeyId === journeyId;
     },
+    async hasStatusVisibility() {
+      // These fixtures never write a `status_visibility` row, so every
+      // Status is unrestricted, per the default this feature ships with.
+      return true;
+    },
     async listAccessibleJourneyIds() {
       return journeyAccess ? [journeyId] : [];
     },

@@ -233,7 +233,10 @@ export class PrismaLeadRepository
     const row = await this.prisma.lead.findUnique({
       where: { organizationId_id: { organizationId, id: leadId } },
       include: {
-        processInstances: { where: { active: true }, select: { journeyId: true, active: true } },
+        processInstances: {
+          where: { active: true },
+          select: { journeyId: true, active: true, currentStatusId: true },
+        },
       },
     });
     return row === null
@@ -243,6 +246,7 @@ export class PrismaLeadRepository
           processInstances: (row.processInstances ?? []).map((process) => ({
             journeyId: process.journeyId,
             active: process.active,
+            statusId: process.currentStatusId,
           })),
         };
   }
@@ -691,6 +695,19 @@ export function processWhere(
       in: input.journeyId === undefined ? [...input.recordPredicate.journeyIds] : [input.journeyId],
     },
     ...(input.statusId === undefined ? {} : { currentStatusId: input.statusId }),
+    /*
+     * Status Visibility (Phase 19), the Prisma-oracle transpose of
+     * `filter-sql.ts`'s `statusVisibilityClause`: a Status with no
+     * `status_visibility` rows at all is unrestricted (`none: {}` — no row
+     * anywhere names *this* current Status); one with rows narrows to the
+     * Roles listed (`some: { roleId }`). Both branches must stay in lockstep
+     * with the SQL form or `phase13b.postgres.integration.test.ts`'s
+     * scope-parity test catches the drift.
+     */
+    OR: [
+      { currentStatus: { visibilityRoles: { none: {} } } },
+      { currentStatus: { visibilityRoles: { some: { roleId: input.recordPredicate.roleId } } } },
+    ],
     assignments: {
       some: {
         organizationId: input.organizationId,

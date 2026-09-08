@@ -26,6 +26,7 @@ interface PrismaPermissionClient {
     findUnique(args: unknown): Promise<JourneyAccessRow | null>;
     findMany(args: unknown): Promise<JourneyAccessRow[]>;
   };
+  statusVisibility: { findMany(args: unknown): Promise<StatusVisibilityRow[]> };
   fieldVisibility: { findMany(args: unknown): Promise<FieldVisibilityRow[]> };
   lead: { findUnique(args: unknown): Promise<LeadScopeRow | null> };
   assignment: { findMany(args: unknown): Promise<AssignmentRow[]> };
@@ -53,6 +54,9 @@ interface RolePermissionRow {
 }
 interface JourneyAccessRow {
   journeyId: string;
+}
+interface StatusVisibilityRow {
+  roleId: string;
 }
 interface FieldVisibilityRow {
   fieldId: string;
@@ -127,6 +131,26 @@ export class PrismaPermissionRepository implements PermissionRepository {
       where: { organizationId_roleId_journeyId: input },
     });
     return row !== null;
+  }
+
+  /**
+   * Phase 19's one consequential default, encoded in exactly one place: a
+   * Status with zero rows here denies nobody; once it has any row, only a
+   * Role a row names passes. Every caller of this method — the single-record
+   * decision here and the SQL/Prisma list predicates in
+   * `apps/api/src/leads/{filter-sql,prisma-lead-repository}.ts` — must agree
+   * with this same rule or the surfaces would disagree about one lead.
+   */
+  async hasStatusVisibility(input: {
+    roleId: string;
+    organizationId: string;
+    statusId: string;
+  }): Promise<boolean> {
+    const rows = await this.prisma.statusVisibility.findMany({
+      where: { organizationId: input.organizationId, statusId: input.statusId },
+      select: { roleId: true },
+    });
+    return rows.length === 0 || rows.some((row) => row.roleId === input.roleId);
   }
 
   async listAccessibleJourneyIds(input: {

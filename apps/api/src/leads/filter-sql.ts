@@ -141,6 +141,16 @@ function processExists(input: SellerListQueryInput, params: Params): string {
     'p.lead_id = l.id',
     'p.active',
     `p.journey_id = ANY(${journeyIds})`,
+    // Status Visibility (Phase 19) — *inside* this per-process EXISTS, not a
+    // sibling clause on `leads`. A lead with two process instances, one in a
+    // Status denied to the caller's Role and one in an open or allowed one,
+    // must stay visible through the surviving process, exactly as Journey
+    // access already works across multiple Journeys. Moving this clause
+    // outside the per-process EXISTS would instead require *every* process
+    // instance to pass, silently inverting that rule — see
+    // `phase19.postgres.integration.test.ts`'s multi-Journey test, which
+    // pins this placement directly.
+    statusVisibilityClause(input, params),
   ];
   if (input.statusId !== undefined)
     parts.push(`p.current_status_id = ${params.bind(input.statusId, '::uuid')}`);
@@ -169,6 +179,20 @@ function processExists(input: SellerListQueryInput, params: Params): string {
     );
 
   return `EXISTS (SELECT 1 FROM process_instances p WHERE ${parts.join(' AND ')} AND EXISTS (SELECT 1 FROM assignments a WHERE ${assignment.join(' AND ')}))`;
+}
+
+/**
+ * Status Visibility (Phase 19): `NOT EXISTS (any row for this Status) OR
+ * EXISTS (a row for this Status naming the caller's Role)` — a Status with
+ * no `status_visibility` rows at all imposes no restriction (the default,
+ * unconfigured state); one with any rows narrows visibility to the Roles
+ * listed. `p.current_status_id`/`p.organization_id` are correlated to the
+ * enclosing per-process EXISTS this is spliced into, so this only ever asks
+ * the question for the one process instance the outer EXISTS is testing.
+ */
+function statusVisibilityClause(input: SellerListQueryInput, params: Params): string {
+  const roleId = params.bind(input.predicate.roleId, '::uuid');
+  return `(NOT EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = p.organization_id AND v.status_id = p.current_status_id) OR EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = p.organization_id AND v.status_id = p.current_status_id AND v.role_id = ${roleId}))`;
 }
 
 function grantExists(input: SellerListQueryInput, params: Params, action: string): string {

@@ -744,3 +744,70 @@ them with no data migration in either direction. The one non-additive touch —
 `RecordPredicate.roleId` — is a new field, not a renamed or removed one, so
 reverting is a plain `git revert` with no consumer left in an inconsistent
 state.
+
+### Staging: how this migration reaches it, and why migrate-then-deploy is safe
+
+Staging's schema is managed by a one-off ECS Fargate task, not a deploy hook —
+the migration reaches it the same way every prior hand-authored migration in
+`packages/database/prisma/migrations/` has: the Fargate task runs, applies
+every migration folder it hasn't yet seen (this one included) in directory
+order, and exits; the API deployment that follows is a separate step with no
+schema work of its own.
+
+That ordering is safe to run migration-then-deploy with no window where
+behavior changes, by direct consequence of decision 1 above: `CREATE TABLE
+status_visibility` produces a table with zero rows, and zero rows is defined
+to be the fully-unrestricted state — identical to the table not existing at
+all, as far as every read this feature touches is concerned (`hasStatusVisibility`,
+`statusVisibilityClause`, `processWhere`'s `OR` branch, and the routing
+candidate filter all treat "no rows for this Status" as "impose nothing").
+So the moment between the Fargate task finishing and the new API code
+deploying — during which staging's schema has the table but its old API
+binary is still running and has never heard of `status_visibility` — is
+inert: the old binary never queries a table it doesn't know about, and the
+new binary, if it started early against the old schema, would find the table
+present with nothing in it and behave exactly as the old binary did. There is
+no ordering between the migration and the deploy that produces a visible
+behavior change, which is the property decision 1 was chosen for.
+
+### Amendments found during implementation
+
+- **Scope grew by one folded-in fix, with the user's explicit sign-off.**
+  While auditing every `resolveAuthorization`/`recordPredicate` call site
+  carrying a `leadId` (Risk 4/7's required checklist), the lead-sharing routes
+  (`http/routes/leads.ts`'s shares/comment/reassign/deactivate endpoints) and
+  `http/routes/attachments.ts` were found trusting a client-supplied
+  `journeyId` the same way `editLead`/`routingAssign` originally did — but
+  worse for this specific axis: because Status Visibility defaults to
+  permissive when `statusId` is absent, a client that simply omitted it (every
+  existing caller of that shape) would silently bypass a real restriction
+  rather than receive a spurious denial the way a wrong Journey claim would.
+  This is a narrower, purely mechanical version of the same fix already
+  planned for `getLeadById` (look the real process instance up server-side
+  instead of trusting the client), so it was folded into this phase rather
+  than deferred, per explicit approval. `attachments.ts` received the same
+  fix; it was not covered by a Postgres integration test in this phase (no
+  object storage is configured in the test environment) — the mechanical
+  change is identical to the covered sharing routes', reviewed but not
+  independently proven by an integration test, and flagged here rather than
+  silently claimed as tested.
+- **`docs/permissions/permission-engine-schema.md` was deliberately left
+  untouched.** That document is a frozen Phase 0 baseline design artifact —
+  confirmed by checking that Phase 14b's own `status_routing_permissions`
+  table, the closest precedent to this one, was never added to it either.
+  Following that precedent rather than breaking it, `StatusVisibility` is
+  documented in `access-model.md` (item E), in the model's own Prisma
+  doc-comment, and in this plan, but not retrofitted into the Phase 0 file.
+- **Risk 5 (clause placement) was checked for vacuity as directed.** The
+  multi-Journey union test in `phase19.postgres.integration.test.ts` was
+  written first, then `filter-sql.ts`'s clause was deliberately placed as a
+  sibling `NOT EXISTS` anti-join at the `leads` level (requiring *every*
+  active process instance to pass Status Visibility, rather than the
+  per-process `EXISTS` it now lives inside) — compiled cleanly and every other
+  test still passed, but the multi-Journey test failed exactly as predicted
+  (the lead disappeared from the list and its detail 403'd, because the one
+  denied process instance now vetoed the whole lead). Restoring the clause to
+  its correct position inside `processExists()`'s per-process `EXISTS` made
+  the same test pass. Not left in the history as a separate commit — verified
+  locally and reverted, with this note as the record `AGENTS.md`/prior
+  phases' practice asks for.
