@@ -72,6 +72,23 @@ resource "aws_iam_role" "instance" {
   tags = var.common_tags
 }
 
+# App Runner resolves runtime_environment_secrets using the *instance* role, not
+# the access role in the secrets module — the access role covers the image pull.
+# Without this the container never starts: ResourceInitializationError, and the
+# service lands in CREATE_FAILED.
+data "aws_iam_policy_document" "instance_secrets" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.database_url_secret_arn, var.email_api_key_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "instance_secrets" {
+  name   = "read-secrets"
+  role   = aws_iam_role.instance.id
+  policy = data.aws_iam_policy_document.instance_secrets.json
+}
+
 # All egress leaves through the VPC so the private database is reachable. See the
 # NAT gateway comment in the network module for why that forces a NAT.
 resource "aws_apprunner_vpc_connector" "this" {
