@@ -154,6 +154,13 @@ export interface SellerListInput {
   accessMode?: 'mine' | 'shared_with_me' | 'all';
   /** JSON-encoded filter, per the Seller List filter model. */
   filter?: string | undefined;
+  /**
+   * Field ids the caller wants back on each row's `fieldValues`. The API
+   * returns a value only for a Field id explicitly requested here — same rule
+   * `sellersApi.detail`/`activity` follow — so a list view that wants
+   * Field columns has to name them, not just rely on role visibility.
+   */
+  requestedFieldIds?: readonly string[] | undefined;
 }
 
 /**

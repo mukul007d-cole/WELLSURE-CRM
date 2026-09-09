@@ -135,6 +135,70 @@ describe('seller record workspace', () => {
     expect(screen.queryByText(new RegExp(VISIBLE_FIELD.id))).not.toBeInTheDocument();
   });
 
+  describe('details tab', () => {
+    /**
+     * The real API (unlike this suite's other handlers) only ever returns a
+     * value for a Field id the caller's query string explicitly named — see
+     * `resolveFieldDecision` in the permission engine. A client that forgets
+     * to ask gets back an empty `fieldValues`, which is indistinguishable
+     * from "this seller has no data" — exactly what made the Details tab look
+     * empty. This handler enforces that same contract so the test fails the
+     * way the real API would if `sellersApi.detail` ever stopped sending
+     * `requestedFieldIds`.
+     */
+    function stubDetailHonoringRequestedFieldIds(fieldValues: Record<string, unknown>) {
+      server.use(
+        http.get('/api/v1/leads/:id', ({ request }) => {
+          const requested = new Set(
+            (new URL(request.url).searchParams.get('requestedFieldIds') ?? '')
+              .split(',')
+              .filter(Boolean),
+          );
+          return HttpResponse.json({
+            id: LEAD.id,
+            name: LEAD.name,
+            phone: LEAD.phone,
+            email: LEAD.email,
+            fieldValues: Object.fromEntries(
+              Object.entries(fieldValues).filter(([id]) => requested.has(id)),
+            ),
+            processInstances: [
+              {
+                processInstanceId: 'pi-details-test',
+                journeyId: JOURNEYS[0]!.id,
+                active: true,
+                assignments: [],
+                journey: {
+                  id: JOURNEYS[0]!.id,
+                  key: JOURNEYS[0]!.key,
+                  name: JOURNEYS[0]!.name,
+                },
+                currentStatus: {
+                  id: 'status-details-test',
+                  key: 'new',
+                  name: 'New',
+                  outcomeType: 'open',
+                  behaviorType: 'default',
+                },
+              },
+            ],
+          });
+        }),
+      );
+    }
+
+    it('shows a filled-in field once the tab is open', async () => {
+      grantLeads(['view']);
+      stubActivity([]);
+      stubDetailHonoringRequestedFieldIds({ [VISIBLE_FIELD.id]: 'Synthetic Category Value' });
+      renderRecord();
+
+      fireEvent.click(await screen.findByRole('tab', { name: 'Details' }));
+
+      expect(await screen.findByText('Synthetic Category Value')).toBeInTheDocument();
+    });
+  });
+
   it('names the actor as System on rows with no author', async () => {
     grantLeads(['view']);
     stubActivity([entry({ actorUserId: null, actorName: null, actionType: 'status_change' })]);

@@ -344,9 +344,21 @@ export const sellersApi = {
         pageSize: input.pageSize,
         accessMode: input.accessMode,
         filter: input.filter,
+        requestedFieldIds: input.requestedFieldIds?.join(','),
       })}`,
     ),
-  detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
+  /**
+   * `requestedFieldIds` is optional here only so callers that never touch
+   * field values (the board's drag prefetch) don't have to invent an empty
+   * list — omitting it is identical to passing one. A caller that wants
+   * `fieldValues` populated must name every Field id it wants back: the API
+   * returns a value only for ids explicitly requested, intersected with what
+   * the caller's role can see, same as `activity` below.
+   */
+  detail: (id: string, context?: { requestedFieldIds: readonly string[] }) =>
+    request<Seller360Record>(
+      `/leads/${id}${toQuery({ requestedFieldIds: context?.requestedFieldIds.join(',') })}`,
+    ),
   // These return { lead, process } — the raw rows — not a Seller360Record.
   // Typing them as the latter meant `created.id` was silently undefined, which
   // navigated to /sellers/undefined and 500ed on a non-UUID lookup.

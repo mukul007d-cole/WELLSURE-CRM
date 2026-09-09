@@ -329,6 +329,57 @@ describe('lead form assignment types', () => {
     expect(lead.fieldValues).not.toHaveProperty('company_name');
   });
 
+  /**
+   * The real API returns a value for a Field id only when the caller's query
+   * string names it (see `resolveFieldDecision` in the permission engine) —
+   * this suite's mock GET handler doesn't enforce that rule, so it can't
+   * catch a client that forgets to ask. This test enforces the real rule
+   * directly: if `sellersApi.detail` ever stopped sending
+   * `requestedFieldIds`, every Additional field would reopen blank, looking
+   * exactly like the earlier save never took — the bug this closes.
+   */
+  it('prefills a saved Additional field when the edit form reopens', async () => {
+    server.use(
+      http.get('/api/v1/leads/:id', ({ request }) => {
+        const requested = new Set(
+          (new URL(request.url).searchParams.get('requestedFieldIds') ?? '')
+            .split(',')
+            .filter(Boolean),
+        );
+        const allValues: Record<string, unknown> = { 'field-company': 'Existing Company Value' };
+        return HttpResponse.json({
+          id: 'lead-1',
+          name: 'Vantage Retail Co',
+          phone: null,
+          email: null,
+          fieldValues: Object.fromEntries(
+            Object.entries(allValues).filter(([id]) => requested.has(id)),
+          ),
+          processInstances: [
+            {
+              processInstanceId: 'pi-lead-1',
+              journeyId: JOURNEY.id,
+              active: true,
+              assignments: [],
+              journey: { id: JOURNEY.id, key: JOURNEY.key, name: JOURNEY.name },
+              currentStatus: {
+                id: 'status-1',
+                key: 'new',
+                name: 'New',
+                outcomeType: 'open',
+                behaviorType: 'default',
+              },
+            },
+          ],
+        });
+      }),
+    );
+    renderEdit('user-admin', 'lead-1');
+    await waitForFormReady();
+
+    expect(screen.getByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
+  });
+
   it('lets an ORGANIZATION-scoped user edit regardless, matching the engine', async () => {
     // ORGANIZATION scope short-circuits the record check, so the same omission
     // is harmless there — which is why this defect stayed hidden.

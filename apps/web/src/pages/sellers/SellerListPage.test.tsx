@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
 import { PreferencesProvider } from '../../app/preferences';
-import { FIELDS, JOURNEYS } from '../../mocks/fixtures';
+import { FIELDS, JOURNEYS, LEADS } from '../../mocks/fixtures';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { SellerListPage } from './SellerListPage';
@@ -219,6 +219,45 @@ describe('seller list export', () => {
   });
 });
 
+describe('seller list journey tabs', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  /**
+   * The handler used to call `updateParam` twice — once for `journeyId`, once
+   * to clear `statusId`. Each call builds its `next` params from the same
+   * pre-click snapshot, so the second call didn't merge with the first, it
+   * replaced it: the journey change was computed and then immediately
+   * discarded. On screen that read as "the tab is clickable but has no
+   * effect" — this is the direct regression test for that report.
+   */
+  it('actually switches to the journey that was clicked', async () => {
+    const sentJourneyIds: Array<string | null> = [];
+    server.use(
+      http.get('/api/v1/leads', ({ request }) => {
+        sentJourneyIds.push(new URL(request.url).searchParams.get('journeyId'));
+        return HttpResponse.json({ total: 0, rows: [] });
+      }),
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('tab', { name: JOURNEYS[0]!.name }));
+
+    await waitFor(() => expect(sentJourneyIds.at(-1)).toBe(JOURNEYS[0]!.id));
+    expect(screen.getByRole('tab', { name: JOURNEYS[0]!.name })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: 'All journeys' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+  });
+});
+
 describe('seller list sorting', () => {
   beforeEach(() => {
     sessionStorage.clear();
@@ -298,5 +337,57 @@ describe('seller list columns', () => {
     // One left: it is disabled, so the rule is visible rather than a dead click.
     expect(panel().getByLabelText('Journey')).toBeDisabled();
     expect(screen.getByRole('columnheader', { name: 'Journey' })).toBeInTheDocument();
+  });
+});
+
+describe('seller list data-heavy columns', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  it('adds a column per Field once a specific journey is selected, and drops them for All journeys', async () => {
+    const revenueField = FIELDS.find((field) => field.key === 'monthly_revenue')!;
+    const journeyId = LEADS[0]!.processInstances[0]!.journeyId;
+    // `sortBy=name` sidesteps the fixture's seeded-random `updatedAt` values —
+    // this replicates the mock's own sort so the target lead is guaranteed to
+    // land on page 1, deterministically.
+    const [lead] = [...LEADS]
+      .filter((candidate) => candidate.processInstances[0]?.journeyId === journeyId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const expectedValue = (lead!.fieldValues['field-monthly-revenue'] as number).toLocaleString(
+      'en-IN',
+    );
+
+    renderPage(`/sellers?journeyId=${journeyId}&sortBy=name&sortDirection=asc`);
+
+    // Picking a journey is the "data heavy" view: every organization Field
+    // gets a column, not just the fixed Journey/Status/Owner set.
+    expect(
+      await screen.findByRole('columnheader', { name: revenueField.label }),
+    ).toBeInTheDocument();
+    // Scoped to the desktop table specifically: the Field's own value (e.g.
+    // Company Name) can otherwise collide with the seller's own name, and the
+    // mobile card list — present in jsdom regardless of the `sm:hidden` class
+    // that only hides it in a real browser — repeats it again.
+    const table = screen.getByRole('table', { name: 'Sellers' });
+    const dataRow = await waitFor(() => {
+      const found = within(table)
+        .getAllByRole('row')
+        .find((candidate) => candidate.textContent?.includes(lead!.name));
+      if (!found) throw new Error('row not rendered yet');
+      return found;
+    });
+    expect(within(dataRow).getByText(expectedValue)).toBeInTheDocument();
+
+    // "All journeys" stays the summary view — the Field columns disappear
+    // rather than accumulate across every journey in the org.
+    fireEvent.click(screen.getByRole('tab', { name: 'All journeys' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('columnheader', { name: revenueField.label }),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

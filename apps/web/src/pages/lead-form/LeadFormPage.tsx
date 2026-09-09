@@ -14,6 +14,7 @@ import { Select } from '../../components/ui/Select';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { configApi, sellersApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
+import { qk } from '../../lib/query-keys';
 import { DynamicFieldControl } from './DynamicFieldControl';
 import { defaultFieldValues, leadFormSchema, toFieldValues } from './schema';
 import type { LeadFormValues } from './schema';
@@ -31,9 +32,18 @@ export function LeadFormPage() {
   const journeysQuery = useQuery({ queryKey: ['journeys'], queryFn: configApi.journeys });
   const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
   const sellerQuery = useQuery({
-    queryKey: ['seller', sellerId],
-    queryFn: () => sellersApi.detail(sellerId as string),
-    enabled: isEditMode,
+    queryKey: qk.sellerDetail(sellerId as string),
+    queryFn: () =>
+      sellersApi.detail(sellerId as string, {
+        requestedFieldIds: (fieldsQuery.data ?? []).map((field) => field.id),
+      }),
+    // Waits on the Field catalogue to settle (succeed or fail) so the fetch
+    // already names every Field id it wants back — otherwise the API hands
+    // back no field values at all (its rule, not a bug) and every Additional
+    // field reopens blank, looking like the earlier edit never saved. Gating
+    // on success alone would hang the form forever for a viewer whose role
+    // can't list Fields.
+    enabled: isEditMode && !fieldsQuery.isPending,
   });
 
   const fields = fieldsQuery.data ?? [];
@@ -108,7 +118,7 @@ export function LeadFormPage() {
           // than ORGANIZATION — a silent 403 on save.
           assignmentTypes: [...new Set(existingProcess.assignments.map((a) => a.assignmentType))],
         });
-        await queryClient.invalidateQueries({ queryKey: ['seller', sellerId] });
+        await queryClient.invalidateQueries({ queryKey: qk.seller(sellerId) });
         void navigate(`/sellers/${sellerId}`);
       } else {
         if (!user) return;
