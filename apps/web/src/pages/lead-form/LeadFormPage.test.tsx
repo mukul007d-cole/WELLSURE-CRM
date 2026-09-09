@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
-import { JOURNEYS } from '../../mocks/fixtures';
+import { JOURNEYS, LEADS } from '../../mocks/fixtures';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { LeadFormPage } from './LeadFormPage';
@@ -300,6 +300,33 @@ describe('lead form assignment types', () => {
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'forbidden' });
+  });
+
+  /**
+   * The actual defect. `toFieldValues` keyed its output by `field.key`
+   * ("company_name") rather than `field.id`, and the real API's
+   * `field_values` column is addressed by id everywhere — so this request
+   * would have thrown a 500 against the real backend (Postgres rejecting a
+   * non-uuid id) and, even here against the more forgiving mock, would have
+   * left the lead's real `field-company` value untouched while adding a
+   * dead `company_name` key beside it. This exercises the real mock handler
+   * (no stub) end to end, so it catches drift on either side of that
+   * boundary, not just a client-side crash.
+   */
+  it('saves an Additional field edit keyed by the Field’s id, not its key', async () => {
+    renderEdit('user-admin', 'lead-1');
+    await waitForFormReady();
+
+    const companyField = screen.getByLabelText(/Company Name/);
+    fireEvent.change(companyField, { target: { value: 'Renamed via Additional field' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(screen.getByText(/^Seller detail: lead-1$/)).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    const lead = LEADS.find((row) => row.id === 'lead-1')!;
+    expect(lead.fieldValues['field-company']).toBe('Renamed via Additional field');
+    expect(lead.fieldValues).not.toHaveProperty('company_name');
   });
 
   it('lets an ORGANIZATION-scoped user edit regardless, matching the engine', async () => {

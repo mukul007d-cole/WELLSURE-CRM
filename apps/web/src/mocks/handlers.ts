@@ -130,7 +130,10 @@ function activityFor(leadId: string): MockActivityEntry[] {
       actionType: 'field_edit',
       source: 'lead_api',
       commentText: null,
-      oldValue: { name: lead.name, fieldValues: { ...lead.fieldValues, category: 'Unassigned' } },
+      oldValue: {
+        name: lead.name,
+        fieldValues: { ...lead.fieldValues, 'field-category': 'Unassigned' },
+      },
       newValue: { name: lead.name, fieldValues: lead.fieldValues },
     },
     {

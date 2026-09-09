@@ -238,17 +238,19 @@ export const LEADS: MockLead[] = COMPANY_NAMES.flatMap((company, index) => {
     name: company,
     phone: `+91 9${Math.floor(100000000 + rand() * 899999999)}`,
     email: `contact@${company.toLowerCase().replace(/[^a-z]+/g, '')}.com`,
+    // Keyed by Field id, matching the real API's field_values contract — see
+    // mocks/permissions.ts's header comment.
     fieldValues: {
-      company_name: company,
-      marketplace: pick(MARKETPLACES),
-      category: pick(CATEGORIES),
-      monthly_revenue: Math.floor(50_000 + rand() * 4_500_000),
-      deal_value: Math.floor(10_000 + rand() * 800_000),
-      followup_date: new Date(Date.now() + Math.floor(rand() * 14) * 86_400_000)
+      'field-company': company,
+      'field-marketplace': pick(MARKETPLACES),
+      'field-category': pick(CATEGORIES),
+      'field-monthly-revenue': Math.floor(50_000 + rand() * 4_500_000),
+      'field-deal-value': Math.floor(10_000 + rand() * 800_000),
+      'field-followup-date': new Date(Date.now() + Math.floor(rand() * 14) * 86_400_000)
         .toISOString()
         .slice(0, 10),
-      is_priority: rand() > 0.8,
-      notes: '',
+      'field-priority': rand() > 0.8,
+      'field-notes': '',
     },
     createdAt,
     updatedAt: createdAt,

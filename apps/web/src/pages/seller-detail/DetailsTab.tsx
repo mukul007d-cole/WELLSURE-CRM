@@ -30,7 +30,7 @@ export function groupFieldsBySection(
   let unsectioned: FieldSection | undefined;
 
   for (const field of fields) {
-    if (!(field.key in fieldValues)) continue;
+    if (!(field.id in fieldValues)) continue;
     const name = field.section?.trim();
     if (!name) {
       unsectioned ??= { name: UNSECTIONED, fields: [] };
@@ -97,7 +97,7 @@ export function DetailsTab({
                   {field.label}
                 </dt>
                 <dd className="mt-1 text-sm text-ink">
-                  {formatFieldValue(field, fieldValues[field.key])}
+                  {formatFieldValue(field, fieldValues[field.id])}
                 </dd>
               </div>
             ))}

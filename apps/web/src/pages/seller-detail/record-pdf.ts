@@ -70,7 +70,7 @@ export function buildRecordPdf(seller: Seller360Record, fields: readonly FieldDe
       write(field.label, { size: 8 });
       // Back up over the label's own line so the value sits under it tightly.
       y -= 4;
-      write(String(formatFieldValue(field, seller.fieldValues[field.key]) || '—'), { gap: 4 });
+      write(String(formatFieldValue(field, seller.fieldValues[field.id]) || '—'), { gap: 4 });
     }
   }
 
