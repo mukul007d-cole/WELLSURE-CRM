@@ -2,11 +2,18 @@
  * Generates the stable `key` identifiers admins used to type by hand for
  * every configuration entity (Journeys, Statuses, Fields, Services, Teams,
  * Departments, Roles, Notification Rules, Campaigns — see the "auto-generate
- * entity keys" plan). Every one of those tables enforces the same
- * `^[a-z][a-z0-9_]+$` shape (`configKey` in `apps/api/src/admin/validation.ts`,
- * `requireConfigKey` in `apps/api/src/configuration/validation.ts`, and the
- * matching inline patterns in the notifications and campaigns services), so
- * `slugify` targets that one shape rather than inventing a second convention.
+ * entity keys" plan). There are two variants of the `key` shape in the schema,
+ * not one, and `slugify` has to satisfy the stricter of them:
+ *
+ * - `configKey` in `apps/api/src/admin/validation.ts` (Role, Department, Team):
+ *   `^[a-z][a-z0-9_]*$` — a single letter is a valid key on its own.
+ * - `requireConfigKey` in `apps/api/src/configuration/validation.ts` (Journey,
+ *   Status, Field, Service), and the matching inline patterns in the
+ *   notifications and campaigns services (Notification Rule, Campaign):
+ *   `^[a-z][a-z0-9_]{1,62}$` — at least two characters.
+ *
+ * `slugify` always produces at least two characters so its output satisfies
+ * both, rather than depending on which entity happens to be calling it.
  *
  * Callers still own uniqueness: `key` is unique per-organization for most
  * entities but scoped further for a few (Status is unique per Journey, Team
@@ -23,6 +30,19 @@ const MAX_BASE_LENGTH = 54;
  * requires a leading letter — a `k_` prefix on anything that would otherwise
  * start with a digit or be empty (a name that is entirely punctuation or
  * non-Latin script, for instance).
+ *
+ * The result is always at least two characters. Two single-character cases
+ * fall out of the rules above without help: an all-punctuation or non-Latin
+ * name (Devanagari, Arabic, Tamil, Bengali, CJK — this product is deployed in
+ * India, so this is a live path, not an edge case) collapses to the bare
+ * placeholder letter `k`, and a genuinely one-letter name ("A") survives
+ * as-is. Both used to be returned verbatim, which satisfied `configKey`'s
+ * single-letter-is-fine pattern but not `requireConfigKey`'s (or the
+ * notifications/campaigns services') minimum of two — so creating a Journey,
+ * Status, Field, Service, Notification Rule, or Campaign with such a name
+ * threw a 400 the admin had no way to work around, since they no longer
+ * supply `key` themselves. Padding with a trailing `0` keeps a short result
+ * short and legible rather than reaching for a longer, less obvious fallback.
  */
 export function slugify(name: string): string {
   const base = name
@@ -33,8 +53,8 @@ export function slugify(name: string): string {
     .replace(/^_+|_+$/g, '')
     .slice(0, MAX_BASE_LENGTH)
     .replace(/_+$/g, '');
-  if (base === '') return 'k';
-  return /^[a-z]/.test(base) ? base : `k_${base}`;
+  const withLeadingLetter = base === '' ? 'k' : /^[a-z]/.test(base) ? base : `k_${base}`;
+  return withLeadingLetter.length >= 2 ? withLeadingLetter : `${withLeadingLetter}0`;
 }
 
 /**

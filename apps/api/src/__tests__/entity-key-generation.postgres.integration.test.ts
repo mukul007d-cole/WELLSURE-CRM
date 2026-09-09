@@ -32,6 +32,16 @@ import {
  * Every name is synthetic (`AGENTS.md`) — none of them names a real Falcon
  * concept, so the generated keys below are exercise fixtures, not documentation
  * of what a deployment should actually call things.
+ *
+ * Each create path below also runs once against a name that used to break
+ * `slugify` before its minimum-length fix ('日本語', 'नमस्ते', or 'A' — a
+ * non-Latin name, or a genuinely one-letter one). Journey, Status, Field,
+ * Service, Notification Rule, and Campaign all validate `key` with a
+ * two-character minimum (`requireConfigKey` and the notifications/campaigns
+ * services' inline pattern) and used to 400 on these; Department, Role, and
+ * Team validate with `configKey`'s more permissive pattern and never
+ * rejected them, but are exercised too, since `slugify` is shared and its
+ * output for these names changed regardless of which entity is asking.
  */
 describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real Postgres', () => {
   let db: Awaited<ReturnType<typeof createAdminPostgres>>;
@@ -74,7 +84,10 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
       notificationService: new NotificationService(prisma),
       prisma,
       audit: {},
-      emailSender: { sendPasswordReset: () => Promise.resolve(), sendEmail: () => Promise.resolve() },
+      emailSender: {
+        sendPasswordReset: () => Promise.resolve(),
+        sendEmail: () => Promise.resolve(),
+      },
       authConfig: { ...defaultAuthConfig, secureCookies: false },
       corsOrigins: [],
     } as unknown as ServerDependencies);
@@ -130,6 +143,12 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
     expect(second.body.id).not.toBe(first.body.id);
+
+    // Never actually rejected by `configKey`'s permissive pattern, but
+    // exercised anyway — see the file header.
+    const nonLatin = await call('POST', '/api/v1/departments', { name: '日本語' });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('日本語'));
   }, 30_000);
 
   it('generates a Role key from the name and resolves collisions the same way', async () => {
@@ -141,6 +160,12 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/roles', { name });
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Never actually rejected by `configKey`'s permissive pattern, but
+    // exercised anyway — see the file header.
+    const nonLatin = await call('POST', '/api/v1/roles', { name: 'नमस्ते' });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('नमस्ते'));
   }, 30_000);
 
   it('scopes a Team key to its Department, not to the organization', async () => {
@@ -205,6 +230,15 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     });
     expect(secondInA.statusCode).toBe(201);
     expect(secondInA.body.key).toBe(`${slugify(name)}_2`);
+
+    // Never actually rejected by `configKey`'s permissive pattern, but
+    // exercised anyway — see the file header.
+    const nonLatin = await call('POST', `/api/v1/departments/${departmentAId}/teams`, {
+      name: 'A',
+      members: [{ userId: leaderA, isLeader: true }],
+    });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('A'));
   }, 30_000);
 
   it('generates a Journey key from the name and resolves collisions', async () => {
@@ -216,6 +250,12 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/journeys', { name });
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Used to 400 here — Journey's `key` goes through `requireConfigKey`'s
+    // two-character minimum, and slugify('日本語') used to be the bare 'k'.
+    const nonLatin = await call('POST', '/api/v1/journeys', { name: '日本語' });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('日本語'));
   }, 30_000);
 
   it('scopes a Status key to its Journey, not to the organization', async () => {
@@ -248,6 +288,15 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const secondInA = await call('POST', `/api/v1/journeys/${journeyAId}/statuses`, statusBody);
     expect(secondInA.statusCode).toBe(201);
     expect(secondInA.body.key).toBe(`${slugify(statusBody.name)}_2`);
+
+    // Used to 400 here — Status's `key` goes through `requireConfigKey`'s
+    // two-character minimum, and slugify('नमस्ते') used to be the bare 'k'.
+    const nonLatin = await call('POST', `/api/v1/journeys/${journeyAId}/statuses`, {
+      ...statusBody,
+      name: 'नमस्ते',
+    });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('नमस्ते'));
   }, 30_000);
 
   it('generates a Service key from the name and resolves collisions', async () => {
@@ -259,6 +308,13 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/services', { name });
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Used to 400 here — Service's `key` goes through `requireConfigKey`'s
+    // two-character minimum, and a one-letter name used to survive slugify
+    // verbatim.
+    const nonLatin = await call('POST', '/api/v1/services', { name: 'A' });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('A'));
   }, 30_000);
 
   it('generates a Field key from the name and resolves collisions', async () => {
@@ -271,6 +327,17 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/fields', body);
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Used to 400 here — Field's `key` goes through `requireConfigKey`'s
+    // two-character minimum, and slugify('日本語') used to be the bare 'k'.
+    const nonLatin = await call('POST', '/api/v1/fields', {
+      name: '日本語',
+      fieldType: 'text',
+      editMode: 'manual',
+      source: 'manual',
+    });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('日本語'));
   }, 30_000);
 
   it('generates a Notification Rule key from the name and resolves collisions', async () => {
@@ -287,6 +354,17 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/notification-rules', body);
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Used to 400 here — the notifications service validates `key` with the
+    // same two-character-minimum pattern as `requireConfigKey`, and
+    // slugify('नमस्ते') used to be the bare 'k'.
+    const nonLatin = await call('POST', '/api/v1/notification-rules', {
+      name: 'नमस्ते',
+      triggerType: 'lead_deactivated',
+      recipients: [{ resolverType: 'previous_assignment_holder' }],
+    });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('नमस्ते'));
   }, 30_000);
 
   it('generates a Campaign key from the name and resolves collisions', async () => {
@@ -304,6 +382,18 @@ describe.runIf(shouldRunAdminPostgres)('auto-generated entity keys against real 
     const second = await call('POST', '/api/v1/campaigns', body);
     expect(second.statusCode).toBe(201);
     expect(second.body.key).toBe(`${slugify(name)}_2`);
+
+    // Used to 400 here — the campaigns service validates `key` with the same
+    // two-character-minimum pattern as `requireConfigKey`, and a one-letter
+    // name used to survive slugify verbatim.
+    const nonLatin = await call('POST', '/api/v1/campaigns', {
+      name: 'A',
+      subject: 'Synthetic subject line',
+      bodyDocument: { blocks: [] },
+      type: 'manual',
+    });
+    expect(nonLatin.statusCode).toBe(201);
+    expect(nonLatin.body.key).toBe(slugify('A'));
   }, 30_000);
 
   it('leaves an existing entity’s key untouched by later creations, and never accepts a client-supplied one', async () => {

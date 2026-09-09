@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { nextAvailableKey, slugify } from './slug.js';
 
-/** The shape every `key` column in the schema enforces (see slug.ts's header comment). */
-const keyPattern = /^[a-z][a-z0-9_]*$/;
+/**
+ * The stricter of the two `key` shapes the schema enforces (see slug.ts's
+ * header comment) — `requireConfigKey`'s and the notifications/campaigns
+ * services' `^[a-z][a-z0-9_]{1,62}$`, not `configKey`'s more permissive
+ * `^[a-z][a-z0-9_]*$`. Asserting against the tighter pattern here is the
+ * point: it is what guards `slugify` against ever producing a single-
+ * character key again, which the permissive pattern would have let through
+ * silently — that gap is exactly how the bug shipped the first time.
+ */
+const keyPattern = /^[a-z][a-z0-9_]{1,62}$/;
 
 describe('slugify', () => {
   it('lowercases and replaces runs of non-alphanumeric characters with one underscore', () => {
@@ -17,9 +25,20 @@ describe('slugify', () => {
     expect(slugify('42')).toBe('k_42');
   });
 
-  it('falls back to a single-character key for an all-punctuation or non-Latin name', () => {
-    expect(slugify('!!!')).toBe('k');
-    expect(slugify('日本語')).toBe('k');
+  it('pads an all-punctuation or non-Latin name to two characters rather than one', () => {
+    // A bare 'k' satisfied `configKey`'s permissive pattern but not
+    // `requireConfigKey`'s (or the notifications/campaigns services') minimum
+    // of two — the exact gap that let a Journey/Status/Field/Service/
+    // Notification Rule/Campaign named in Devanagari, Arabic, Tamil, Bengali,
+    // or CJK throw a 400 the admin could not work around.
+    expect(slugify('!!!')).toBe('k0');
+    expect(slugify('日本語')).toBe('k0');
+    expect(slugify('नमस्ते')).toBe('k0');
+  });
+
+  it('pads a genuinely one-letter name to two characters rather than returning it bare', () => {
+    expect(slugify('A')).toBe('a0');
+    expect(slugify('i')).toBe('i0');
   });
 
   it('strips accents rather than dropping the letters that carry them', () => {
@@ -27,7 +46,17 @@ describe('slugify', () => {
   });
 
   it('always produces a string matching every key column’s shape', () => {
-    for (const name of ['Ready For Onboarding', '123', '!!!', 'Café', 'a', 'A_B-C 1']) {
+    for (const name of [
+      'Ready For Onboarding',
+      '123',
+      '!!!',
+      'Café',
+      'a',
+      'A',
+      'A_B-C 1',
+      '日本語',
+      'नमस्ते',
+    ]) {
       expect(slugify(name)).toMatch(keyPattern);
     }
   });
