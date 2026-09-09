@@ -428,6 +428,19 @@ export interface RoutingState {
     isNext: boolean;
   }>;
 }
+/**
+ * Status Visibility (Phase 19): one Role allowed to see a lead while it sits
+ * in this Status. A distinct axis from `RoutingGrant` despite the identical
+ * per-(status, role) allow-list shape — this gates who may see a lead at
+ * all, not who may configure or operate its routing.
+ *
+ * Membership only, no action dimension: a Role either can see a lead here or
+ * the row is absent. Zero rows for a Status means unrestricted, not "visible
+ * to no one" — see `StatusVisibilityPanel`.
+ */
+export interface StatusVisibilityGrant {
+  roleId: string;
+}
 export interface PermissionCatalog {
   modules: Array<{ module: string; label: string; actions: string[] }>;
   supportedScopes: DataScope[];

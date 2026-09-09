@@ -1,9 +1,9 @@
 # Phase 19 — Status Visibility (status-scoped role record visibility)
 
-Status: **proposed — awaiting approval. Nothing in this plan is implemented.**
-Per `PLANS.md`, no code changes ship until this plan is explicitly approved,
-same discipline Phase 2 (the permission engine itself) and Phase 14a (the
-`TEAM`-scope decision) received.
+Status: **implemented.** Approved, then delivered in two stages per the
+approval's own instruction to stop before the UI: engine, repository, routing,
+and configuration CRUD first (with their tests, run against real Postgres),
+then the admin UI once that layer was reviewed.
 
 ## Goal
 
@@ -811,3 +811,29 @@ behavior change, which is the property decision 1 was chosen for.
   the same test pass. Not left in the history as a separate commit — verified
   locally and reverted, with this note as the record `AGENTS.md`/prior
   phases' practice asks for.
+- **UI delivered as its own stage, per the approval's explicit stop-and-report
+  instruction.** `StatusVisibilityPanel.tsx` (new) mirrors
+  `StatusRoutingPermissions.tsx`'s shape — a Role checklist, derived-not-copied
+  edit state, whole-set replace on save — collapsed to a plain membership
+  toggle rather than a three-action grid, since there is no VIEW/CONFIGURE/
+  OPERATE distinction here. It sits beside "Routing" in `JourneyDetailPage`'s
+  Statuses list as its own independent toggle rather than nested inside the
+  routing panel or behind a tab switcher: the two questions are unrelated
+  (who may operate assignment vs. who may see the lead at all) but interact
+  in one specific way — a routing candidate excluded by Visibility is
+  silently skipped at assignment time — so both panels can be open on the
+  same Status at once, deliberately, to surface that interaction rather than
+  hide it. Gated end to end on `roles_permissions:edit`, matching
+  `StatusRoutingPermissions`'s own gate exactly (not `:view` — there is no
+  read-only display mode anywhere else in this admin UI either, so this axis
+  doesn't invent one). The Statuses list itself gained the small addition
+  named in §7: a plain "Visible to N roles" indicator per Status row, fetched
+  once per Status via `useQueries` (the same batching pattern
+  `DashboardPage.tsx` already uses for its per-Status counts) and gated on the
+  same capability, so it costs nothing extra in requests for a viewer who
+  couldn't open the panel anyway. Covered by two new cases in
+  `AdminFlows.test.tsx`: the full restrict → indicator-updates → clear round
+  trip, and the self-escalation gate hiding the toggle entirely for a
+  `roles_permissions:view`-only holder. `pnpm typecheck`, `pnpm lint`,
+  `pnpm test`, and `pnpm build` all pass in `apps/web`, and the full
+  `apps/api` Postgres suite was re-run clean alongside it.

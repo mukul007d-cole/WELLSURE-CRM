@@ -34,6 +34,7 @@ import type {
   RoutingGrant,
   RoutingRule,
   RoutingState,
+  StatusVisibilityGrant,
   ImportAnalysis,
   ImportMapping,
   ImportRunResult,
@@ -175,8 +176,7 @@ export const adminApi = {
       `/journeys${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
     ),
   journey: (id: string) => request<AdminJourney>(`/journeys/${id}`),
-  createJourney: (body: { name: string }) =>
-    request<AdminJourney>('/journeys', json('POST', body)),
+  createJourney: (body: { name: string }) => request<AdminJourney>('/journeys', json('POST', body)),
   editJourney: (id: string, body: { name: string }) =>
     request<AdminJourney>(`/journeys/${id}`, json('PATCH', body)),
   deactivateJourney: (id: string) => request<AdminJourney>(`/journeys/${id}`, json('DELETE')),
@@ -302,6 +302,18 @@ export const routingApi = {
       `/leads/${leadId}/routing-assign`,
       json('POST', body),
     ),
+};
+
+/**
+ * Status Visibility (Phase 19): which Roles may see a lead while it sits in
+ * one Status. A separate endpoint pair from `routingApi`'s grants, despite
+ * the identical `roles_permissions:edit`-gated whole-set-replace shape —
+ * this axis gates lead visibility itself, not who may operate routing.
+ */
+export const statusVisibilityApi = {
+  list: (statusId: string) => request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`),
+  save: (statusId: string, roleIds: string[]) =>
+    request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`, json('PUT', { roleIds })),
 };
 
 export const campaignsApi = {

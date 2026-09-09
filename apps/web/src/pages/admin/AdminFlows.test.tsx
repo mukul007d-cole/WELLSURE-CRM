@@ -559,6 +559,61 @@ describe('administration resource flows', () => {
     expect(screen.queryByText(/Role permissions for this Status/i)).not.toBeInTheDocument();
   });
 
+  it('restricts a Status’s visibility to chosen roles, then reopens it, from inside the Statuses list', async () => {
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    await screen.findByRole('heading', { level: 2 });
+
+    // Visibility lives beside Routing in the same Statuses list, not a tab.
+    const toggles = await screen.findAllByRole('button', { name: 'Visibility' });
+    fireEvent.click(toggles[0] as HTMLElement);
+    expect(await screen.findByText(/^Unrestricted\./)).toBeInTheDocument();
+    // No restriction configured yet, so the list row carries no indicator —
+    // absence, not a "0 roles" badge, is how "unrestricted" reads.
+    expect(screen.queryByText(/Visible to \d/)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByLabelText(/Synthetic role B/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save visibility' }));
+
+    expect(await screen.findByText(/^Restricted\./)).toBeInTheDocument();
+    // The list row's own indicator, not just the open panel, picks up the change.
+    expect(await screen.findByText('Visible to 1 role')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear restriction' }));
+    await waitFor(() => expect(screen.getByText(/^Unrestricted\./)).toBeInTheDocument());
+    expect(screen.queryByText(/Visible to \d/)).not.toBeInTheDocument();
+  });
+
+  it('hides the visibility panel and its list indicator from someone who cannot edit permissions', async () => {
+    server.use(
+      http.get('/api/v1/auth/capabilities', () =>
+        HttpResponse.json({
+          permissions: [
+            { module: 'journeys_statuses', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'lead_routing', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'roles_permissions', action: 'view', scope: 'ORGANIZATION' },
+          ],
+          journeyIds: ['journey-alpha'],
+          fieldVisibility: [],
+        }),
+      ),
+    );
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    // Wait for the page (and its per-row toggles) to finish loading.
+    await screen.findAllByRole('button', { name: 'Routing' });
+    // `roles_permissions:view` alone is not enough — narrowing lead visibility
+    // is an edit act, the identical self-escalation rule Routing's own grant
+    // editor follows. Hidden entirely, not shown read-only: same precedent.
+    expect(screen.queryByRole('button', { name: 'Visibility' })).not.toBeInTheDocument();
+  });
+
   it('renders loading, empty, API error, and stale-capability forbidden states', async () => {
     server.use(
       http.get('/api/v1/fields', async () => {
