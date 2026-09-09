@@ -483,9 +483,24 @@ export async function getSeller360(input: {
     status: 200,
     body: {
       ...serializeLead(access.lead, [...access.visibleFieldIds]),
-      processInstances: access.visibleProcesses,
+      processInstances: access.visibleProcesses.map(serializeSellerProcess),
     },
   };
+}
+
+/**
+ * `LeadProcessRecord`'s own field is `id` — every internal caller
+ * (`leads/service.ts`, `prisma-lead-repository.ts`) reads and writes it under
+ * that name, and this function must not rename it there. On the wire, the
+ * client has always called this same value `processInstanceId` (it's the
+ * literal request-body field `editLead`/`reassign`/`moveJourney`/routing-
+ * assign all expect back), so the JSON response renames it at this one
+ * boundary rather than leaving the client to guess which of the two names a
+ * given payload uses.
+ */
+function serializeSellerProcess(process: Seller360Record['processInstances'][number]) {
+  const { id, ...rest } = process;
+  return { processInstanceId: id, ...rest };
 }
 
 /**

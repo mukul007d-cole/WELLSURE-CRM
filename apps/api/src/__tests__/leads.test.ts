@@ -277,6 +277,37 @@ describe('Lead/Seller core route and service behavior', () => {
     });
   });
 
+  /*
+   * Regression: the repository's own field for a process instance's id is
+   * `id` (matching Prisma's column and every internal caller in
+   * leads/service.ts) — but on the wire, every client-facing endpoint that
+   * accepts one back (editLead, reassign, moveJourney, routing-assign) has
+   * always called it `processInstanceId`, and the web app was built entirely
+   * against that name. Seller 360 alone sent the raw `id` field unrenamed, so
+   * an edit form built from this response could only ever submit the literal
+   * string "undefined" as its processInstanceId — a 500 from Postgres
+   * rejecting it as an invalid uuid, not a 4xx naming the real problem.
+   */
+  it("names each process instance `processInstanceId` on the wire, not the repository's internal `id`", async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    const response = await getSeller360({
+      auth,
+      sellerRepository: repo,
+      permissionRepository: permissionRepository({ journeys: [journeyA] }),
+      leadId: lead.id,
+      requestedFieldIds: [],
+      assignmentTypes: [assignmentType],
+      now,
+    });
+    expect(response.status).toBe(200);
+    const body = response.body as { processInstances: Array<Record<string, unknown>> };
+    expect(body.processInstances).toHaveLength(1);
+    expect(body.processInstances[0]?.processInstanceId).toBe(process.id);
+    expect(body.processInstances[0]).not.toHaveProperty('id');
+  });
+
   it('unions Seller 360 field visibility across authorized journey contexts', async () => {
     const repo = new MemoryLeadRepository();
     const lead = repo.seedLead({

@@ -516,9 +516,9 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     const detailResponse = await detail(asNarrow(), lead.leadId);
     expect(detailResponse.statusCode).toBe(200);
     const detailBody = JSON.parse(detailResponse.body) as {
-      processInstances: Array<{ id: string }>;
+      processInstances: Array<{ processInstanceId: string }>;
     };
-    expect(detailBody.processInstances.map((p) => p.id)).toEqual([openProcess]);
+    expect(detailBody.processInstances.map((p) => p.processInstanceId)).toEqual([openProcess]);
 
     // Only the visible process instance's own activity rows appear.
     const activityResponse = await activity(asNarrow(), lead.leadId);
