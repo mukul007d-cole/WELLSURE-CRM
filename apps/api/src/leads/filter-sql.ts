@@ -113,6 +113,21 @@ function whereClause(input: SellerListQueryInput, params: Params): string {
 /**
  * Data scope. Filters are ANDed alongside this, never in place of it, so no
  * filter can reach a record the caller's scope excludes.
+ *
+ * All three branches must independently enforce Status Visibility (Phase
+ * 19): `resolveAuthorization`'s `statusVisible` check
+ * (packages/permission-engine/src/decision.ts) is unconditional — it denies
+ * regardless of *how* the caller reached the record, assignment or direct
+ * grant alike — so a lead shared directly with a denied Role must not stay
+ * visible here just because it arrived through `user_access_grants` rather
+ * than `processExists()`'s assignment path. Only `processExists()` itself
+ * (the `mine` branch, and the first half of the `all` OR) got this in the
+ * original pass; `shared_with_me` and the `all` branch's own shared-record
+ * arm are two independent lookups against `process_instances` and each needs
+ * its own copy of the same check — see
+ * `phase19.postgres.integration.test.ts`'s direct-grant test, which pins
+ * this the same way the multi-Journey test pins `processExists()`'s
+ * placement.
  */
 function accessClause(input: SellerListQueryInput, params: Params): string {
   /*
@@ -121,14 +136,19 @@ function accessClause(input: SellerListQueryInput, params: Params): string {
    * statement whose parameters are never referenced — "could not determine data
    * type of parameter $2".
    */
-  if (input.accessMode === 'shared_with_me') return grantExists(input, params, 'view');
+  if (input.accessMode === 'shared_with_me')
+    return `(${grantExists(input, params, 'view')} AND ${anyProcessStatusVisible(input, params)})`;
   const process = processExists(input, params);
   if (input.accessMode === 'mine') return process;
   // Default 'all': assigned records, or records shared directly with the caller
-  // that still sit inside a Journey the role can see.
+  // that still sit inside a Journey the role can see *and* a Status the role
+  // isn't denied in — the same (journey, status) pair `processExists()`
+  // requires of an assigned record, checked against the same process
+  // instance rather than two independent ones.
   const shared = grantExists(input, params, input.predicate.directGrantAction);
   const journeyIds = params.bind([...input.predicate.journeyIds], '::uuid[]');
-  return `(${process} OR (${shared} AND EXISTS (SELECT 1 FROM process_instances pj WHERE pj.organization_id = l.organization_id AND pj.lead_id = l.id AND pj.active AND pj.journey_id = ANY(${journeyIds}))))`;
+  const sharedProcessVisible = `EXISTS (SELECT 1 FROM process_instances pj WHERE pj.organization_id = l.organization_id AND pj.lead_id = l.id AND pj.active AND pj.journey_id = ANY(${journeyIds}) AND ${statusVisibilityClause(input, params, 'pj')})`;
+  return `(${process} OR (${shared} AND ${sharedProcessVisible}))`;
 }
 
 function processExists(input: SellerListQueryInput, params: Params): string {
@@ -150,7 +170,7 @@ function processExists(input: SellerListQueryInput, params: Params): string {
     // instance to pass, silently inverting that rule — see
     // `phase19.postgres.integration.test.ts`'s multi-Journey test, which
     // pins this placement directly.
-    statusVisibilityClause(input, params),
+    statusVisibilityClause(input, params, 'p'),
   ];
   if (input.statusId !== undefined)
     parts.push(`p.current_status_id = ${params.bind(input.statusId, '::uuid')}`);
@@ -186,13 +206,40 @@ function processExists(input: SellerListQueryInput, params: Params): string {
  * EXISTS (a row for this Status naming the caller's Role)` — a Status with
  * no `status_visibility` rows at all imposes no restriction (the default,
  * unconfigured state); one with any rows narrows visibility to the Roles
- * listed. `p.current_status_id`/`p.organization_id` are correlated to the
- * enclosing per-process EXISTS this is spliced into, so this only ever asks
- * the question for the one process instance the outer EXISTS is testing.
+ * listed.
+ *
+ * `alias` names the `process_instances` row this is correlated against —
+ * `p` inside `processExists()`, `pj` inside the `all` branch's shared-record
+ * arm, `pv` inside `anyProcessStatusVisible()` — so the same clause can be
+ * spliced into any of the three independent `process_instances` lookups
+ * `accessClause()` runs, always asking the question of the one row its
+ * enclosing `EXISTS` is testing rather than of `leads` as a whole.
  */
-function statusVisibilityClause(input: SellerListQueryInput, params: Params): string {
+function statusVisibilityClause(
+  input: SellerListQueryInput,
+  params: Params,
+  alias: string,
+): string {
   const roleId = params.bind(input.predicate.roleId, '::uuid');
-  return `(NOT EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = p.organization_id AND v.status_id = p.current_status_id) OR EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = p.organization_id AND v.status_id = p.current_status_id AND v.role_id = ${roleId}))`;
+  return `(NOT EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = ${alias}.organization_id AND v.status_id = ${alias}.current_status_id) OR EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = ${alias}.organization_id AND v.status_id = ${alias}.current_status_id AND v.role_id = ${roleId}))`;
+}
+
+/**
+ * Status Visibility (Phase 19) for the `shared_with_me` view: does this lead
+ * have at least one active process instance whose current Status does not
+ * deny the caller's Role? `resolveAuthorization`'s `statusVisible` check is
+ * unconditional (packages/permission-engine/src/decision.ts) — it does not
+ * care whether the caller reached the record through ordinary scope or a
+ * direct grant — so a share must not bypass it.
+ *
+ * Deliberately no Journey filter here: `shared_with_me` already runs with no
+ * Journey restriction today (`grantExists()` alone, unchanged by this fix),
+ * and closing that separately is a distinct question from the one this
+ * function answers — see the plan doc's correction.
+ */
+function anyProcessStatusVisible(input: SellerListQueryInput, params: Params): string {
+  const alias = 'pv';
+  return `EXISTS (SELECT 1 FROM process_instances ${alias} WHERE ${alias}.organization_id = l.organization_id AND ${alias}.lead_id = l.id AND ${alias}.active AND ${statusVisibilityClause(input, params, alias)})`;
 }
 
 function grantExists(input: SellerListQueryInput, params: Params, action: string): string {

@@ -194,6 +194,61 @@ visible," which is the opposite of Phase 11's own rule and would regress
 existing Journey-access behavior on multi-Journey leads, not just this new
 axis. Flagged here so the implementation is checked against it directly.
 
+### Correction: `processExists()` is necessary but not sufficient — `accessClause()` has three branches, and two of them don't route through it
+
+Read in full (again, more carefully): `apps/api/src/leads/filter-sql.ts`'s
+`accessClause()` is not a single predicate that always calls `processExists()`
+— it is a three-way branch on `accessMode`, and `processExists()` is only one
+of the things it can return:
+
+| `accessMode` | Compiles to | Routes through `processExists()`? |
+|---|---|---|
+| `'mine'` | `processExists()` alone | Yes |
+| `'shared_with_me'` | `grantExists()` alone | **No** |
+| `'all'` (default) | `processExists() OR (grantExists() AND EXISTS(... process_instances pj ...))` | Only the first OR-arm |
+
+The second and third rows are both built on `user_access_grants` — a lead
+shared directly with a user (Lead Shares, `access-model.md`'s "Additional
+mechanism: direct record grants") — and neither one touches
+`process_instances` through `processExists()`. The `all` branch's own shared-
+record arm runs a **second, independent** `process_instances` lookup (aliased
+`pj`) that only ever checked Journey access, never Status. Putting the Status
+Visibility clause inside `processExists()` and calling the job done — which is
+exactly what an earlier pass of this plan's own implementation did — leaves
+both of these direct-grant paths wide open: a lead shared directly with a
+denied Role stays visible on the plain list and under `shared_with_me`, and
+still exists in the "restricted" Status's own allow-list narrative only on
+paper. This is not a hypothetical gap — it is **the exact bug this feature
+exists to prevent**, reachable through a mechanism (a Lead Share) this plan's
+§Full-record-visibility-gate section already named as in-scope
+("`AND`ed onto the existing chain", "no code path where this feature widens
+what a Role can see") without checking that every code path implementing that
+chain actually carries the new clause.
+
+The fix is the same shape as `processExists()`'s own clause, applied twice
+more: `grantExists()` alone (the `shared_with_me` branch) becomes
+`grantExists() AND` a new "does this lead have an active process instance
+whose Status the caller's Role isn't denied in" check with no Journey filter
+(matching that branch's existing, Journey-free scope); the `all` branch's `pj`
+subquery gains the identical Status Visibility clause `processExists()`
+already carries, checked against the **same** `pj` row its Journey filter
+already constrains — not a separate, independent lookup, for the same
+placement reason argued above for `processExists()` itself. Both
+`filter-sql.ts` (production) and `prisma-lead-repository.ts`'s `sellerWhere`
+(the Prisma oracle `phase13b.postgres.integration.test.ts` checks it against)
+need the fix together, or the parity test itself goes stale.
+
+**Test plan addition**, ahead of §Test plan below: as a denied Role B, with
+the lead shared directly with B via a `user_access_grants` row (not an
+assignment), assert the lead is absent from the plain list, absent under
+`accessMode=shared_with_me`, and 403s on direct fetch — and, for the
+vacuity check this plan's own discipline requires, this test must be written
+*before* the fix that closes this gap and confirmed to fail against the
+version that only gates `processExists()`. The plan's other tests (§Full
+record-visibility-gate, §Test plan) all reach their lead through ordinary
+`DataScope` and an assignment; none of them exercises `user_access_grants` at
+all, which is precisely why this gap shipped without any of them catching it.
+
 ### `createLead`/`editLead`/`moveLeadJourney` need one clarified rule, not a new mechanism
 
 - **`editLead`/status changes**: the gate must be evaluated against the
@@ -408,12 +463,31 @@ builder oracle `sellerWhere` is built from, kept in sync only by the
 test catches the drift — which is precisely what that test exists for, so it
 is the safety net for this exact class of mistake, not incidental coverage.
 
-Because `buildSellerListQuery`'s `ids` and `count` fragments both call the
-same `whereClause` → `accessClause` → `processExists` chain, and
-`listMatchingLeadIds` (bulk campaign send) shares the same predicate, all
-three inherit the fix from one change — no separate list-vs-count-vs-bulk
-logic to keep in sync, matching `access-model.md`'s "counts use the exact same
-access-filtering query as lists" rule directly.
+**Correction — `accessClause()` is not just `processExists()`.** An earlier
+pass of this section claimed "`ids` and `count` both call the same
+`whereClause` → `accessClause` → `processExists` chain," treating
+`accessClause()` as a synonym for `processExists()`. It is not: `accessClause()`
+branches on `accessMode` into three shapes — `processExists()` alone
+(`'mine'`), `grantExists()` alone (`'shared_with_me'`), and
+`processExists() OR (grantExists() AND` a second, independent
+`process_instances` lookup`)` (`'all'`, the default) — and only the first of
+those three, and half of the third, ever reaches `processExists()`. The two
+`grantExists()`-based shapes (a Lead Share, `user_access_grants`) need the
+identical Status Visibility clause added to them directly — `grantExists()
+AND` a Journey-free "active process instance whose Status isn't denied" check
+for `shared_with_me`, and the same clause spliced into the `all` branch's own
+`pj` subquery, correlated to that subquery's row exactly as `processExists()`
+correlates it to its own `p` row. See the correction subsection above
+(after §Current state's per-process-union discussion) for the full argument
+and the failure mode this closes: a lead shared directly with a denied Role
+staying visible regardless of the Status it sits in.
+
+`buildSellerListQuery`'s `ids` and `count` fragments, and `listMatchingLeadIds`
+(bulk campaign send), all three still compile from the one `whereClause` →
+`accessClause` function — so fixing `accessClause()` itself (all three of its
+branches, not just the one that calls `processExists()`) is still what fixes
+every caller in one place; the earlier wording just described a narrower
+target than what `accessClause()` actually is.
 
 `listSellers`'s explicit `statusId` filter (`SellerListInput.statusId`, when
 an admin filters the Seller List UI by one specific Status) should also be
@@ -837,3 +911,25 @@ behavior change, which is the property decision 1 was chosen for.
   `roles_permissions:view`-only holder. `pnpm typecheck`, `pnpm lint`,
   `pnpm test`, and `pnpm build` all pass in `apps/web`, and the full
   `apps/api` Postgres suite was re-run clean alongside it.
+- **Post-delivery correction: two of `accessClause()`'s three branches were
+  not gated by the first pass at all.** Caught in review, not by any test
+  this plan had written — see the "Correction" subsection inserted after
+  §Current state's per-process-union discussion, and the corrected §4 above,
+  for the full argument. `shared_with_me` (`grantExists()` alone) and the
+  `all` branch's own shared-record arm (a second, independent
+  `process_instances` lookup aliased `pj`) both let a lead shared directly
+  via `user_access_grants` bypass Status Visibility entirely — exactly the
+  bug this feature exists to prevent, and reachable through a mechanism
+  (Lead Shares) this plan's own §Full-record-visibility-gate section had
+  already named as in scope without verifying every branch actually carried
+  the check. Fixed in both `filter-sql.ts` and `prisma-lead-repository.ts`'s
+  `sellerWhere` (the two must move together, per §4, or the
+  `phase13b.postgres.integration.test.ts` parity test drifts). Checked for
+  vacuity the same way Risk 5 was: the new direct-grant test in
+  `phase19.postgres.integration.test.ts` was written first, run against the
+  version that only gated `processExists()`, and confirmed to fail (the
+  shared lead stayed visible on the plain list) before the fix to the other
+  two branches was applied and the same test confirmed to pass. None of this
+  plan's other tests exercise `user_access_grants` at all — every one of
+  them reaches its lead through ordinary `DataScope` and an assignment —
+  which is exactly why the gap shipped past them undetected.

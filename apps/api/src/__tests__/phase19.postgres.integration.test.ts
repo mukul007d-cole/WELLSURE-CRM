@@ -416,6 +416,68 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     expect((await activity(asWide(), lead.leadId)).statusCode).toBe(200);
   }, 120_000);
 
+  it('does not let a direct grant bypass Status Visibility, on the plain list, shared_with_me, or detail', async () => {
+    // Assigned to someone else, so SELF scope's own assignment-based path
+    // already excludes userSelf regardless of Status Visibility — a direct
+    // grant is the *only* route in either lead below, isolating exactly the
+    // two arms `accessClause()` compiles from `user_access_grants`: the
+    // dedicated `shared_with_me` branch, and the default `all` branch's own
+    // shared-record OR-arm. Neither routes through `processExists()`, so
+    // neither inherited the fix that lives inside it.
+    const deniedGate = await makeStatus(journey1, 'grant_gate_denied');
+    expect((await putVisibility(asAdmin(), deniedGate, [roleWide])).statusCode).toBe(200);
+    const deniedLead = await seedLead(deniedGate, journey1, userOtherOwner);
+    await prisma.userAccessGrant.create({
+      data: {
+        organizationId: org,
+        leadId: deniedLead.leadId,
+        userId: userSelf,
+        grantedByUserId: adminUser,
+        actions: ['view'],
+      },
+    });
+
+    // The plain list (`all`, the default): the grant's own OR-arm must
+    // respect Status Visibility too, not just the assignment arm beside it.
+    const plainDenied = await list(asSelf());
+    expect(plainDenied.body).not.toContain(deniedLead.leadId);
+
+    // `shared_with_me`: no assignment-based arm exists here at all, so this
+    // isolates the bug completely — a grant alone used to be sufficient.
+    const sharedDenied = await list(asSelf(), '&accessMode=shared_with_me');
+    expect(sharedDenied.body).not.toContain(deniedLead.leadId);
+    const sharedDeniedBody = JSON.parse(sharedDenied.body) as { total: number; rows: unknown[] };
+    expect(sharedDeniedBody.total).toBe(sharedDeniedBody.rows.length);
+    expect(sharedDeniedBody.rows).toHaveLength(0);
+
+    // Detail already got this right — decision.ts's `statusVisible` check is
+    // unconditional on how the caller reached the record — so this is the
+    // list query catching up to a rule the single-record path already
+    // enforced, not a new rule.
+    expect((await detail(asSelf(), deniedLead.leadId)).statusCode).toBe(403);
+
+    // Not vacuous: the identical shape — same Role, same grant, same wrong
+    // assignee — but a Status that allows roleSelf shows the lead on both
+    // surfaces, proving the absence above is Status Visibility denying it,
+    // not the grant mechanism failing outright.
+    const allowedGate = await makeStatus(journey1, 'grant_gate_allowed');
+    expect((await putVisibility(asAdmin(), allowedGate, [roleSelf])).statusCode).toBe(200);
+    const allowedLead = await seedLead(allowedGate, journey1, userOtherOwner);
+    await prisma.userAccessGrant.create({
+      data: {
+        organizationId: org,
+        leadId: allowedLead.leadId,
+        userId: userSelf,
+        grantedByUserId: adminUser,
+        actions: ['view'],
+      },
+    });
+    expect((await list(asSelf())).body).toContain(allowedLead.leadId);
+    const allowedShared = await list(asSelf(), '&accessMode=shared_with_me');
+    expect(allowedShared.body).toContain(allowedLead.leadId);
+    expect((await detail(asSelf(), allowedLead.leadId)).statusCode).toBe(200);
+  }, 120_000);
+
   it('keeps a lead visible through an unrestricted process instance when another is denied (multi-Journey union)', async () => {
     const gate = await makeStatus(journey1, 'union_gate');
     expect((await putVisibility(asAdmin(), gate, [roleWide])).statusCode).toBe(200);
