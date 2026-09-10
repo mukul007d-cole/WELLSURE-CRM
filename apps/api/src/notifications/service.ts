@@ -1,3 +1,4 @@
+import { nextAvailableKey } from '@falcon/validation';
 import type { FalconPrismaClient } from '@falcon/database';
 
 export const notificationTriggers = [
@@ -79,7 +80,6 @@ export class NotificationService {
   async createRule(input: {
     organizationId: string;
     actorUserId: string;
-    key: string;
     name: string;
     triggerType: string;
     scope?: unknown;
@@ -87,13 +87,24 @@ export class NotificationService {
   }) {
     validateRule(input);
     return this.prisma.$transaction(async (tx) => {
+      const name = input.name.trim();
+      const key = await nextAvailableKey(name, async (candidate) => {
+        const existing = await tx.notificationRule.findFirst({
+          where: { organizationId: input.organizationId, key: candidate },
+        });
+        return existing !== null;
+      });
+      // Defensive re-check of the generated key against the same shape
+      // `key`'s column enforces everywhere else — a generated key should
+      // always match, but create is the wrong place to find out it doesn't.
+      if (!/^[a-z][a-z0-9_]{1,62}$/.test(key)) throw new Error('validation_error');
       const rule = await tx.notificationRule.create({
         data: {
           organizationId: input.organizationId,
           createdById: input.actorUserId,
           updatedById: input.actorUserId,
-          key: input.key,
-          name: input.name.trim(),
+          key,
+          name,
           triggerType: input.triggerType,
           scope: input.scope as never,
           recipients: {
@@ -129,7 +140,7 @@ export class NotificationService {
     active: boolean;
     recipients: Array<{ resolverType: string; parameters?: unknown }>;
   }) {
-    validateRule({ ...input, key: 'existing' });
+    validateRule(input);
     return this.prisma.$transaction(async (tx) => {
       const old = await tx.notificationRule.findFirst({
         where: { organizationId: input.organizationId, id: input.id },
@@ -296,14 +307,12 @@ export class NotificationService {
 }
 
 function validateRule(input: {
-  key: string;
   name: string;
   triggerType: string;
   scope?: unknown;
   recipients: Array<{ resolverType: string }>;
 }) {
   if (
-    !/^[a-z][a-z0-9_]{1,62}$/.test(input.key) ||
     !input.name.trim() ||
     !notificationTriggers.includes(input.triggerType as never) ||
     !input.recipients.length ||

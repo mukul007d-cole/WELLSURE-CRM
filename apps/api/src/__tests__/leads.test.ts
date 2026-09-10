@@ -129,6 +129,63 @@ describe('Lead/Seller core route and service behavior', () => {
     expect(repo.activities).toMatchObject([{ actionType: 'field_edit', source: 'lead_api' }]);
   });
 
+  it('protects a locked field’s existing value when adding a lead to another journey via existingLeadId', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: { [fieldVisible]: 'original gst' } });
+    repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.fieldSettings = [lockedField(fieldVisible, journeyB)];
+    const response = await createLead({
+      auth,
+      leadRepository: repo,
+      permissionRepository: permissionRepository({
+        journeys: [journeyA, journeyB],
+        editableFields: [fieldVisible],
+      }),
+      existingLeadId: lead.id,
+      journeyId: journeyB,
+      statusId: statusEarly,
+      name: 'Synthetic Seller',
+      fieldValues: { [fieldVisible]: 'a different value' },
+      assignments: [{ assignmentType, userId: actorId }],
+      now,
+    });
+    expect(response).toEqual({
+      status: 400,
+      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+    });
+    // Not merely rejected — the lead's real stored value has to be
+    // untouched, not partially overwritten before the rejection.
+    expect(repo.leads.find((row) => row.id === lead.id)?.fieldValues).toEqual({
+      [fieldVisible]: 'original gst',
+    });
+  });
+
+  it('carries a locked field’s existing value forward when adding a lead to another journey without resubmitting it', async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: { [fieldVisible]: 'original gst' } });
+    repo.seedProcess(lead.id, journeyA, statusEarly);
+    repo.fieldSettings = [lockedField(fieldVisible, journeyB)];
+    const response = await createLead({
+      auth,
+      leadRepository: repo,
+      permissionRepository: permissionRepository({
+        journeys: [journeyA, journeyB],
+        editableFields: [fieldVisible],
+      }),
+      existingLeadId: lead.id,
+      journeyId: journeyB,
+      statusId: statusEarly,
+      name: 'Synthetic Seller',
+      fieldValues: {},
+      assignments: [{ assignmentType, userId: actorId }],
+      now,
+    });
+    expect(response.status).toBe(201);
+    expect(repo.leads.find((row) => row.id === lead.id)?.fieldValues).toEqual({
+      [fieldVisible]: 'original gst',
+    });
+  });
+
   it('blocks status changes that exactly match a missing required-from-status field', async () => {
     const repo = new MemoryLeadRepository();
     repo.fieldSettings = [requiredFromField(statusRequired)];
@@ -275,6 +332,37 @@ describe('Lead/Seller core route and service behavior', () => {
       fieldValues: { [fieldVisible]: 'visible' },
       processInstances: [{ journeyId: journeyA }, { journeyId: journeyB }],
     });
+  });
+
+  /*
+   * Regression: the repository's own field for a process instance's id is
+   * `id` (matching Prisma's column and every internal caller in
+   * leads/service.ts) — but on the wire, every client-facing endpoint that
+   * accepts one back (editLead, reassign, moveJourney, routing-assign) has
+   * always called it `processInstanceId`, and the web app was built entirely
+   * against that name. Seller 360 alone sent the raw `id` field unrenamed, so
+   * an edit form built from this response could only ever submit the literal
+   * string "undefined" as its processInstanceId — a 500 from Postgres
+   * rejecting it as an invalid uuid, not a 4xx naming the real problem.
+   */
+  it("names each process instance `processInstanceId` on the wire, not the repository's internal `id`", async () => {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    const response = await getSeller360({
+      auth,
+      sellerRepository: repo,
+      permissionRepository: permissionRepository({ journeys: [journeyA] }),
+      leadId: lead.id,
+      requestedFieldIds: [],
+      assignmentTypes: [assignmentType],
+      now,
+    });
+    expect(response.status).toBe(200);
+    const body = response.body as { processInstances: Array<Record<string, unknown>> };
+    expect(body.processInstances).toHaveLength(1);
+    expect(body.processInstances[0]?.processInstanceId).toBe(process.id);
+    expect(body.processInstances[0]).not.toHaveProperty('id');
   });
 
   it('unions Seller 360 field visibility across authorized journey contexts', async () => {
@@ -906,6 +994,9 @@ function permissionRepository(
     async hasJourneyAccess(request) {
       return (input.journeys ?? [journeyA]).includes(request.journeyId);
     },
+    async hasStatusVisibility() {
+      return true;
+    },
     async listAccessibleJourneyIds() {
       return input.journeys ?? [journeyA];
     },
@@ -955,7 +1046,13 @@ function optionalField(fieldId: string): LeadFieldSetting {
     requirement: 'optional',
     requiredFromStatusId: null,
     active: true,
-    field: { id: fieldId, fieldType: 'text', validationRule: null, active: true },
+    field: {
+      id: fieldId,
+      fieldType: 'text',
+      validationRule: null,
+      editMode: 'manual',
+      active: true,
+    },
   };
 }
 function requiredFromField(statusId: string): LeadFieldSetting {
@@ -963,5 +1060,21 @@ function requiredFromField(statusId: string): LeadFieldSetting {
     ...optionalField(fieldVisible),
     requirement: 'required',
     requiredFromStatusId: statusId,
+  };
+}
+function lockedField(fieldId: string, journeyId: string = journeyA): LeadFieldSetting {
+  return {
+    fieldId,
+    journeyId,
+    requirement: 'optional',
+    requiredFromStatusId: null,
+    active: true,
+    field: {
+      id: fieldId,
+      fieldType: 'text',
+      validationRule: null,
+      editMode: 'locked',
+      active: true,
+    },
   };
 }

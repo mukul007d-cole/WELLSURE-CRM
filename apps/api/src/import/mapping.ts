@@ -18,6 +18,19 @@ export interface ImportFieldDefinition {
   fieldType: string;
 }
 
+/**
+ * `calculated`/`system` Fields are excluded from `listImportableFields`
+ * itself, not merely rejected once the file runs (`LeadService.createLead`
+ * would silently drop a value for either anyway — see this module's header
+ * comment) — so the mapping UI never lets an admin map a column to one and
+ * believe it worked. `locked` stays importable: import only ever creates a
+ * fresh lead, never merges into an existing one, so a locked Field has no
+ * prior value to protect and this is exactly its one chance to be set.
+ * `api-only` stays importable too — bulk import counts as programmatic
+ * access, the same as any other API caller.
+ */
+export const nonImportableEditModes = ['calculated', 'system'] as const;
+
 export interface ImportStatusDefinition {
   id: string;
   key: string;
@@ -114,9 +127,11 @@ export function validateMapping(mapping: ImportMapping, context: MappingContext)
       case 'field': {
         const field = fieldsById.get(target.fieldId);
         if (field === undefined) {
-          // Covers all three ways a Field can be unusable here — inactive, not
-          // assigned to this Journey, or `hidden` for it — because the context
-          // only ever contains usable ones. This feature never creates a Field.
+          // Covers every way a Field can be unusable here — inactive, not
+          // assigned to this Journey, `hidden` for it, or `calculated`/`system`
+          // edit mode (whose values import can never actually write, so it is
+          // never offered as a target) — because the context only ever
+          // contains usable ones. This feature never creates a Field.
           throw invalid('that field is not available on the chosen journey', {
             column,
             fieldId: target.fieldId,

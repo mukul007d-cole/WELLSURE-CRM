@@ -18,13 +18,26 @@ export const leadFormSchema = z.object({
 
 export type LeadFormValues = z.infer<typeof leadFormSchema>;
 
+/**
+ * `field.key` is only ever the *form's* own local namespace here — it's what
+ * `DynamicFieldControl` registers each input under, purely so the on-screen
+ * control has a stable, readable react-hook-form path. The API's own
+ * `fieldValues` object (both what it returns and what it accepts back) is
+ * keyed by Field **id**: `field_values` is a JSONB column the backend
+ * addresses by id everywhere — the GIN-indexed containment queries,
+ * `field_journey_settings`, field-visibility redaction (`resolveAuthorization`'s
+ * `requestedEditFieldIds` is checked against real field ids, and rejects
+ * anything else with an invalid-uuid error rather than a clean 400). These two
+ * functions are the one place that translates between the two: reading the
+ * server's id-keyed object into the form's key-keyed one, and back.
+ */
 export function defaultFieldValues(
   fields: FieldDefinition[],
   existing?: Record<string, unknown>,
 ): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
   for (const field of fields) {
-    const value = existing?.[field.key];
+    const value = existing?.[field.id];
     if (field.type === 'boolean') {
       result[field.key] = Boolean(value);
     } else if (value === null || value === undefined) {
@@ -50,16 +63,16 @@ export function toFieldValues(
   for (const field of fields) {
     const raw = formFields[field.key];
     if (field.type === 'boolean') {
-      result[field.key] = Boolean(raw);
+      result[field.id] = Boolean(raw);
       continue;
     }
     if (raw === '' || raw === undefined) continue;
     if (field.type === 'number') {
       const parsed = Number(raw);
-      result[field.key] = Number.isNaN(parsed) ? undefined : parsed;
+      result[field.id] = Number.isNaN(parsed) ? undefined : parsed;
       continue;
     }
-    result[field.key] = raw;
+    result[field.id] = raw;
   }
   return result;
 }

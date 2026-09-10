@@ -76,7 +76,7 @@ module "compute" {
   public_base_url               = var.public_base_url
   email_from                    = var.email_from
   campaign_email_from           = var.campaign_email_from
-  image_tag = var.image_tag
+  image_tag                     = var.image_tag
 }
 
 # Interface-only, as they have been since phase 1. Kept wired so the environment

@@ -107,6 +107,9 @@ function createPostgresScopeRepository(sql: postgres.Sql): PermissionRepository 
     hasJourneyAccess() {
       return Promise.resolve(false);
     },
+    hasStatusVisibility() {
+      return Promise.resolve(true);
+    },
     listAccessibleJourneyIds() {
       return Promise.resolve([]);
     },

@@ -96,9 +96,6 @@ describe('campaigns admin', () => {
     );
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Create campaign' }));
-    fireEvent.change(screen.getByLabelText(/^Stable key/i), {
-      target: { value: 'synthetic_triggered' },
-    });
     fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: 'Synthetic triggered' } });
     fireEvent.change(screen.getByLabelText(/^Subject/i), { target: { value: 'Welcome aboard' } });
     fireEvent.change(screen.getByLabelText(/^When to send/i), { target: { value: 'triggered' } });

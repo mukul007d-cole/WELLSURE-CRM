@@ -14,6 +14,17 @@ export const qk = {
   journeyStatuses: (journeyId: string) => ['statuses', journeyId] as const,
   fields: () => ['fields'] as const,
   seller: (leadId: string) => ['seller', leadId] as const,
+  /**
+   * The seller fetched *with* `fieldValues` populated (Seller 360 and the edit
+   * form both need this). Deliberately a different key from `seller` above:
+   * the board's drag-and-drop prefetch (`useMoveLeadStatus`, `BoardPage`)
+   * warms plain `seller` with no `requestedFieldIds`, and sharing one cache
+   * entry between the two would let whichever fetch wins the race hand the
+   * other its field-less response for a full `staleTime`. Still a prefix of
+   * `seller`, so `invalidateQueries({ queryKey: qk.seller(id) })` still
+   * catches it.
+   */
+  sellerDetail: (leadId: string) => ['seller', leadId, 'detail'] as const,
   sellerActivity: (leadId: string) => ['seller', leadId, 'activity'] as const,
   sellerAttachments: (leadId: string) => ['seller', leadId, 'attachments'] as const,
   sellerRepeats: (leadId: string, needle: string) => ['seller', leadId, 'repeats', needle] as const,

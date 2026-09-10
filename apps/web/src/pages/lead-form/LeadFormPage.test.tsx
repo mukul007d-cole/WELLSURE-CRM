@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
-import { JOURNEYS } from '../../mocks/fixtures';
+import { JOURNEYS, LEADS } from '../../mocks/fixtures';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { LeadFormPage } from './LeadFormPage';
@@ -302,6 +302,84 @@ describe('lead form assignment types', () => {
     expect(await response.json()).toEqual({ error: 'forbidden' });
   });
 
+  /**
+   * The actual defect. `toFieldValues` keyed its output by `field.key`
+   * ("company_name") rather than `field.id`, and the real API's
+   * `field_values` column is addressed by id everywhere — so this request
+   * would have thrown a 500 against the real backend (Postgres rejecting a
+   * non-uuid id) and, even here against the more forgiving mock, would have
+   * left the lead's real `field-company` value untouched while adding a
+   * dead `company_name` key beside it. This exercises the real mock handler
+   * (no stub) end to end, so it catches drift on either side of that
+   * boundary, not just a client-side crash.
+   */
+  it('saves an Additional field edit keyed by the Field’s id, not its key', async () => {
+    renderEdit('user-admin', 'lead-1');
+    await waitForFormReady();
+
+    const companyField = screen.getByLabelText(/Company Name/);
+    fireEvent.change(companyField, { target: { value: 'Renamed via Additional field' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(screen.getByText(/^Seller detail: lead-1$/)).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    const lead = LEADS.find((row) => row.id === 'lead-1')!;
+    expect(lead.fieldValues['field-company']).toBe('Renamed via Additional field');
+    expect(lead.fieldValues).not.toHaveProperty('company_name');
+  });
+
+  /**
+   * The real API returns a value for a Field id only when the caller's query
+   * string names it (see `resolveFieldDecision` in the permission engine) —
+   * this suite's mock GET handler doesn't enforce that rule, so it can't
+   * catch a client that forgets to ask. This test enforces the real rule
+   * directly: if `sellersApi.detail` ever stopped sending
+   * `requestedFieldIds`, every Additional field would reopen blank, looking
+   * exactly like the earlier save never took — the bug this closes.
+   */
+  it('prefills a saved Additional field when the edit form reopens', async () => {
+    server.use(
+      http.get('/api/v1/leads/:id', ({ request }) => {
+        const requested = new Set(
+          (new URL(request.url).searchParams.get('requestedFieldIds') ?? '')
+            .split(',')
+            .filter(Boolean),
+        );
+        const allValues: Record<string, unknown> = { 'field-company': 'Existing Company Value' };
+        return HttpResponse.json({
+          id: 'lead-1',
+          name: 'Vantage Retail Co',
+          phone: null,
+          email: null,
+          fieldValues: Object.fromEntries(
+            Object.entries(allValues).filter(([id]) => requested.has(id)),
+          ),
+          processInstances: [
+            {
+              processInstanceId: 'pi-lead-1',
+              journeyId: JOURNEY.id,
+              active: true,
+              assignments: [],
+              journey: { id: JOURNEY.id, key: JOURNEY.key, name: JOURNEY.name },
+              currentStatus: {
+                id: 'status-1',
+                key: 'new',
+                name: 'New',
+                outcomeType: 'open',
+                behaviorType: 'default',
+              },
+            },
+          ],
+        });
+      }),
+    );
+    renderEdit('user-admin', 'lead-1');
+    await waitForFormReady();
+
+    expect(screen.getByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
+  });
+
   it('lets an ORGANIZATION-scoped user edit regardless, matching the engine', async () => {
     // ORGANIZATION scope short-circuits the record check, so the same omission
     // is harmless there — which is why this defect stayed hidden.
@@ -318,5 +396,147 @@ describe('lead form assignment types', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+});
+
+describe('lead form editMode rendering', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  function stubFields(
+    fields: Array<{
+      id: string;
+      key: string;
+      label: string;
+      type: string;
+      editMode: string;
+      section?: string | null;
+    }>,
+  ) {
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json(
+          fields.map((field) => ({
+            id: field.id,
+            key: field.key,
+            name: field.label,
+            fieldType: field.type,
+            editMode: field.editMode,
+            section: field.section ?? null,
+            source: 'manual',
+            active: true,
+          })),
+        ),
+      ),
+    );
+  }
+
+  it('renders a locked field as an editable control before it has a value', async () => {
+    stubFields([
+      { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
+    ]);
+    renderCreate();
+    expect(await screen.findByLabelText('GST Number')).not.toBeDisabled();
+  });
+
+  it('renders a locked field read-only once it already has a value', async () => {
+    stubFields([
+      { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
+    ]);
+    server.use(
+      http.get('/api/v1/leads/:id', () =>
+        HttpResponse.json({
+          id: 'lead-1',
+          name: 'Vantage Retail Co',
+          phone: null,
+          email: null,
+          fieldValues: { 'field-locked': 'GSTIN123' },
+          processInstances: [
+            {
+              processInstanceId: 'pi-lead-1',
+              journeyId: JOURNEY.id,
+              active: true,
+              assignments: [],
+              journey: { id: JOURNEY.id, key: JOURNEY.key, name: JOURNEY.name },
+              currentStatus: {
+                id: 'status-1',
+                key: 'new',
+                name: 'New',
+                outcomeType: 'open',
+                behaviorType: 'default',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderEdit('user-admin', 'lead-1');
+    const input = await screen.findByLabelText('GST Number');
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue('GSTIN123');
+  });
+
+  it('renders calculated and system fields as read-only from the start', async () => {
+    stubFields([
+      {
+        id: 'field-calc',
+        key: 'deal_value',
+        label: 'Deal Value',
+        type: 'number',
+        editMode: 'calculated',
+      },
+      {
+        id: 'field-sys',
+        key: 'created_channel',
+        label: 'Created Channel',
+        type: 'text',
+        editMode: 'system',
+      },
+    ]);
+    renderCreate();
+    expect(await screen.findByLabelText('Deal Value')).toBeDisabled();
+    expect(screen.getByLabelText('Created Channel')).toBeDisabled();
+  });
+
+  it('never renders an editable control for an api-only field', async () => {
+    stubFields([
+      {
+        id: 'field-api',
+        key: 'external_id',
+        label: 'External Id',
+        type: 'text',
+        editMode: 'api-only',
+      },
+      { id: 'field-manual', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
+    ]);
+    renderCreate();
+    await screen.findByLabelText('Notes');
+    expect(screen.queryByLabelText('External Id')).not.toBeInTheDocument();
+  });
+
+  it('groups Additional details by section, matching the read-only Details tab', async () => {
+    stubFields([
+      {
+        id: 'field-a',
+        key: 'field_a',
+        label: 'Field A',
+        type: 'text',
+        editMode: 'manual',
+        section: 'Company',
+      },
+      {
+        id: 'field-b',
+        key: 'field_b',
+        label: 'Field B',
+        type: 'text',
+        editMode: 'manual',
+        section: 'Contact',
+      },
+    ]);
+    renderCreate();
+    await screen.findByLabelText('Field A');
+    expect(screen.getByText('Company')).toBeInTheDocument();
+    expect(screen.getByText('Contact')).toBeInTheDocument();
   });
 });

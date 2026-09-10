@@ -245,6 +245,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
         journeyIds: [journey],
         includeDirectGrantsForUserId: actor,
         directGrantAction: 'view',
+        roleId: role,
       },
     });
     expect(listed.total).toBe(1);
@@ -336,7 +337,6 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
     const rule = await notifications.createRule({
       organizationId: org,
       actorUserId: owner,
-      key: 'shared_edit_rule',
       name: 'Shared edit',
       triggerType: 'shared_lead_modified_by_non_owner',
       recipients: [
@@ -434,7 +434,6 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       notifications.createRule({
         organizationId: org,
         actorUserId: owner,
-        key: 'invalid_rule',
         name: 'Invalid',
         triggerType: 'unknown',
         recipients: [{ resolverType: 'assignment_holder' }],
@@ -470,7 +469,6 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       const rule = await notifications.createRule({
         organizationId: org,
         actorUserId: owner,
-        key: `resolver_${resolverType}`,
         name: `Resolver ${resolverType}`,
         triggerType: 'status_changed',
         recipients: [{ resolverType, parameters }],
@@ -512,7 +510,6 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
     const created = await notifications.createRule({
       organizationId: org,
       actorUserId: owner,
-      key: 'ordered_rule',
       name: 'Ordered rule',
       triggerType: 'lead_deactivated',
       recipients: [

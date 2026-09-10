@@ -16,7 +16,9 @@ import {
   deactivateService,
   deactivateStatus,
   readConfiguration,
+  reorderFields,
   reorderStatuses,
+  updateField,
   upsertFieldVisibility,
   type ConfigurationRouteResult,
 } from '../routes/configuration.js';
@@ -38,7 +40,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(false),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_journey_b',
       name: 'Test Journey B',
     });
     expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
@@ -50,7 +51,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_b',
       name: 'Test Journey B',
     });
     expect(response.status).toBe(201);
@@ -78,7 +78,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_c',
       name: 'Test Journey C',
     });
 
@@ -106,7 +105,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_journey_d',
       name: 'Test Journey D',
     });
 
@@ -175,7 +173,6 @@ describe('configuration engine API', () => {
     const field = await service.createField({
       organizationId: orgA,
       actorUserId: actorId,
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'manual',
@@ -209,7 +206,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'invalid',
@@ -238,7 +234,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: new MemoryConfigurationRepository(),
-      key: 'test_select',
       name: 'Test Select',
       fieldType: 'select',
       validationRule: { options: ['One', 'One'] },
@@ -246,6 +241,309 @@ describe('configuration engine API', () => {
       source: 'manual',
     });
     expect(response.status).toBe(400);
+  });
+
+  describe('Field sort order', () => {
+    it('appends new Fields to the end when sortOrder is omitted', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const first = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'First',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      const second = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Second',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      expect((first.body as { sortOrder: number }).sortOrder).toBe(0);
+      expect((second.body as { sortOrder: number }).sortOrder).toBe(1);
+    });
+
+    it('reorders a complete field list atomically and audits every changed row', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const first = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'First',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      const second = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Second',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      const firstId = (first.body as { id: string }).id;
+      const secondId = (second.body as { id: string }).id;
+
+      const response = await reorderFields({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        fieldIds: [secondId, firstId],
+      });
+      expect(response.status).toBe(200);
+      expect(repository.rows.fields.get(secondId)?.sortOrder).toBe(0);
+      expect(repository.rows.fields.get(firstId)?.sortOrder).toBe(1);
+      expect(repository.systemAudits.filter((audit) => audit.action === 'reorder')).toHaveLength(2);
+    });
+
+    it('rejects a reorder list with duplicate ids', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const created = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'First',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      const fieldId = (created.body as { id: string }).id;
+      const response = await reorderFields({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        fieldIds: [fieldId, fieldId],
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('calculated Field config', () => {
+    it('stores a valid arithmetic calculation nested in validationRule', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const revenue = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Monthly Revenue',
+        fieldType: 'number',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      const revenueId = (revenue.body as { id: string }).id;
+
+      const dealValue = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Deal Value',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'field', fieldId: revenueId },
+          operator: '*',
+          right: { type: 'constant', value: 12 },
+        },
+      });
+      expect(dealValue.status).toBe(201);
+      expect((dealValue.body as { validationRule: unknown }).validationRule).toEqual({
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'field', fieldId: revenueId },
+          operator: '*',
+          right: { type: 'constant', value: 12 },
+        },
+      });
+    });
+
+    it('rejects a calculated field with no calculation config', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Deal Value',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects a calculation referencing a field that does not exist', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Deal Value',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'field', fieldId: 'does-not-exist' },
+          operator: '*',
+          right: { type: 'constant', value: 12 },
+        },
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects chaining a calculated field onto another calculated field', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const first = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Base Calculation',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'constant', value: 1 },
+          operator: '+',
+          right: { type: 'constant', value: 1 },
+        },
+      });
+      const firstId = (first.body as { id: string }).id;
+
+      const chained = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Chained Calculation',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'field', fieldId: firstId },
+          operator: '+',
+          right: { type: 'constant', value: 1 },
+        },
+      });
+      expect(chained.status).toBe(400);
+    });
+
+    it('rejects a calculation config when edit mode is not calculated', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Not Calculated',
+        fieldType: 'number',
+        editMode: 'manual',
+        source: 'manual',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'constant', value: 1 },
+          operator: '+',
+          right: { type: 'constant', value: 1 },
+        },
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it('lets an update replace the calculation without the field colliding with itself', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const created = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        name: 'Deal Value',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'constant', value: 1 },
+          operator: '+',
+          right: { type: 'constant', value: 1 },
+        },
+      });
+      const fieldId = (created.body as { id: string }).id;
+
+      const updated = await updateField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: repository,
+        fieldId,
+        name: 'Deal Value',
+        fieldType: 'number',
+        editMode: 'calculated',
+        source: 'calculated',
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'constant', value: 2 },
+          operator: '*',
+          right: { type: 'constant', value: 3 },
+        },
+      });
+      expect(updated.status).toBe(200);
+      expect((updated.body as { validationRule: unknown }).validationRule).toEqual({
+        calculation: {
+          kind: 'arithmetic',
+          left: { type: 'constant', value: 2 },
+          operator: '*',
+          right: { type: 'constant', value: 3 },
+        },
+      });
+    });
+  });
+
+  describe('system Field config', () => {
+    it('requires a non-blank key and stores it in validationRule', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Created Channel',
+        fieldType: 'text',
+        editMode: 'system',
+        source: 'system',
+        system: { key: 'creation_channel' },
+      });
+      expect(response.status).toBe(201);
+      expect((response.body as { validationRule: unknown }).validationRule).toEqual({
+        system: { key: 'creation_channel' },
+      });
+    });
+
+    it('rejects a system field with no key', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Created Channel',
+        fieldType: 'text',
+        editMode: 'system',
+        source: 'system',
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects a system config when edit mode is not system', async () => {
+      const response = await createField({
+        auth: auth(),
+        permissionRepository: permissionRepository(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Not System',
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+        system: { key: 'creation_channel' },
+      });
+      expect(response.status).toBe(400);
+    });
   });
 });
 
@@ -299,7 +597,6 @@ describe('configuration catalog visibility without journey access', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      key: 'test_field_a',
       name: 'Test Field A',
       fieldType: 'text',
       editMode: 'manual',
@@ -414,7 +711,6 @@ describe('configuration deactivation permission actions', () => {
             auth: auth(),
             permissionRepository,
             configurationRepository: repository,
-            key: 'test_service_a',
             name: 'Test Service A',
           }),
         );
@@ -437,7 +733,6 @@ describe('configuration deactivation permission actions', () => {
             auth: auth(),
             permissionRepository,
             configurationRepository: repository,
-            key: 'test_field_b',
             name: 'Test Field B',
             fieldType: 'text',
             editMode: 'manual',

@@ -101,6 +101,7 @@ interface FieldSettingRow {
     id: string;
     fieldType: string;
     validationRule: unknown;
+    editMode: string;
     active: boolean;
   };
 }
@@ -209,7 +210,9 @@ export class PrismaLeadRepository
     const rows = await this.prisma.fieldJourneySetting.findMany({
       where: { organizationId, journeyId, active: true },
       include: {
-        field: { select: { id: true, fieldType: true, validationRule: true, active: true } },
+        field: {
+          select: { id: true, fieldType: true, validationRule: true, editMode: true, active: true },
+        },
       },
     });
     return rows.map((row) => ({
@@ -233,7 +236,10 @@ export class PrismaLeadRepository
     const row = await this.prisma.lead.findUnique({
       where: { organizationId_id: { organizationId, id: leadId } },
       include: {
-        processInstances: { where: { active: true }, select: { journeyId: true, active: true } },
+        processInstances: {
+          where: { active: true },
+          select: { journeyId: true, active: true, currentStatusId: true },
+        },
       },
     });
     return row === null
@@ -243,6 +249,7 @@ export class PrismaLeadRepository
           processInstances: (row.processInstances ?? []).map((process) => ({
             journeyId: process.journeyId,
             active: process.active,
+            statusId: process.currentStatusId,
           })),
         };
   }
@@ -618,6 +625,27 @@ export class PrismaLeadRepository
 }
 
 /**
+ * Status Visibility (Phase 19), the Prisma-oracle transpose of
+ * `filter-sql.ts`'s `statusVisibilityClause`: a Status with no
+ * `status_visibility` rows at all is unrestricted (`none: {}` — no row
+ * anywhere names *this* current Status); one with rows narrows to the Roles
+ * listed (`some: { roleId }`). Shared by every `processInstances` filter
+ * below that stands in for `processExists()` or one of its two direct-grant
+ * counterparts — `resolveAuthorization`'s `statusVisible` check
+ * (packages/permission-engine/src/decision.ts) is unconditional, so neither
+ * an assignment nor a direct grant may bypass it. All three call sites must
+ * stay in lockstep with `filter-sql.ts`'s SQL form or
+ * `phase13b.postgres.integration.test.ts`'s scope-parity test catches the
+ * drift.
+ */
+function statusVisibleOr(roleId: string) {
+  return [
+    { currentStatus: { visibilityRoles: { none: {} } } },
+    { currentStatus: { visibilityRoles: { some: { roleId } } } },
+  ];
+}
+
+/**
  * The Prisma expression of data scope, superseded in production by
  * `buildSellerListQuery`'s SQL. Retained deliberately: leaving the query
  * builder means scope is now written twice, and this is the oracle the
@@ -653,6 +681,16 @@ export function sellerWhere(
                 OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
               },
             },
+            // No Journey filter here, matching this view's existing scope —
+            // see `filter-sql.ts`'s `anyProcessStatusVisible`. Status
+            // Visibility is the axis this adds.
+            processInstances: {
+              some: {
+                organizationId: input.organizationId,
+                active: true,
+                OR: statusVisibleOr(input.recordPredicate.roleId),
+              },
+            },
           }
         : {
             OR: [
@@ -672,6 +710,7 @@ export function sellerWhere(
                     organizationId: input.organizationId,
                     active: true,
                     journeyId: { in: [...input.recordPredicate.journeyIds] },
+                    OR: statusVisibleOr(input.recordPredicate.roleId),
                   },
                 },
               },
@@ -691,6 +730,8 @@ export function processWhere(
       in: input.journeyId === undefined ? [...input.recordPredicate.journeyIds] : [input.journeyId],
     },
     ...(input.statusId === undefined ? {} : { currentStatusId: input.statusId }),
+    // Status Visibility (Phase 19) — see `statusVisibleOr` above.
+    OR: statusVisibleOr(input.recordPredicate.roleId),
     assignments: {
       some: {
         organizationId: input.organizationId,

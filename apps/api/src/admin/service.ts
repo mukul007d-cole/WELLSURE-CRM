@@ -3,7 +3,6 @@ import { preparePasswordReset, type EmailSender } from '../auth/password-reset.j
 import type { AdminRepository } from './repository.js';
 import type { AdminContext, UserWriteInput } from './types.js';
 import {
-  configKey,
   ids,
   pagination,
   permissions,
@@ -79,13 +78,8 @@ export class AdminService {
   getRole(ctx: AdminContext, id: string) {
     return this.repository.getRole(ctx.organizationId, id);
   }
-  createRole(ctx: AdminContext, key: unknown, name: unknown) {
-    return this.repository.createRole(
-      ctx.organizationId,
-      ctx.actorUserId,
-      configKey(key),
-      text(name, 'name'),
-    );
+  createRole(ctx: AdminContext, name: unknown) {
+    return this.repository.createRole(ctx.organizationId, ctx.actorUserId, text(name, 'name'));
   }
   updateRole(ctx: AdminContext, id: string, name: unknown) {
     return this.repository.updateRole(ctx.organizationId, ctx.actorUserId, id, text(name, 'name'));
@@ -138,11 +132,10 @@ export class AdminService {
   getDepartment(ctx: AdminContext, id: string) {
     return this.repository.getDepartment(ctx.organizationId, id);
   }
-  createDepartment(ctx: AdminContext, key: unknown, name: unknown) {
+  createDepartment(ctx: AdminContext, name: unknown) {
     return this.repository.createDepartment(
       ctx.organizationId,
       ctx.actorUserId,
-      configKey(key),
       text(name, 'name'),
     );
   }
@@ -170,7 +163,6 @@ export class AdminService {
       ctx.organizationId,
       ctx.actorUserId,
       departmentId,
-      configKey(body.key),
       text(body.name, 'name'),
       teamMembers(body.members),
     );

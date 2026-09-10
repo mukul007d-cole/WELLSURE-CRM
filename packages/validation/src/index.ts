@@ -12,3 +12,19 @@ export {
   toCsvRow,
 } from './csv.js';
 export type { CsvErrorCode, CsvParseOptions, CsvRow, CsvTable } from './csv.js';
+
+export { nextAvailableKey, slugify } from './slug.js';
+
+export {
+  computeCalculatedValue,
+  isCalculationConfig,
+  parseCalculationConfig,
+} from './calculation.js';
+export type {
+  ArithmeticCalculation,
+  CalculationConfig,
+  CalculationOperand,
+  ParseCalculationResult,
+  ReferenceableField,
+  TemplateCalculation,
+} from './calculation.js';

@@ -10,7 +10,13 @@ import {
   USERS,
   type MockLead,
 } from './fixtures';
-import type { RoutingGrant, RoutingRule, Team, TeamMember } from '../types/domain';
+import type {
+  RoutingGrant,
+  RoutingRule,
+  StatusVisibilityGrant,
+  Team,
+  TeamMember,
+} from '../types/domain';
 import { isLeadInScope, stripFieldValues } from './permissions';
 import {
   clearCookieHeader,
@@ -23,6 +29,30 @@ import {
 import type { NotificationItem, NotificationRule } from '../types/domain';
 
 const API_BASE = '/api/v1';
+
+/**
+ * Mirrors the server's auto-generated `key` (see `@falcon/validation`'s
+ * `slugify`/`nextAvailableKey`) closely enough for admin-flow tests: lowercase,
+ * non-alphanumeric runs collapsed to one underscore, `k_` prefix if that would
+ * not start with a letter, then `_2`, `_3`, … on collision. `apps/web` carries
+ * no `@falcon/*` package dependency, so this is a small deliberate duplicate
+ * rather than a new cross-boundary import just for mocks.
+ */
+function mockSlugify(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (base === '') return 'k';
+  return /^[a-z]/.test(base) ? base : `k_${base}`;
+}
+function mockNextKey(name: string, existingKeys: readonly string[]): string {
+  const base = mockSlugify(name);
+  const taken = new Set(existingKeys);
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) candidate = `${base}_${suffix}`;
+  return candidate;
+}
 
 const MOCK_SHARES: Array<{
   id: string;
@@ -100,7 +130,10 @@ function activityFor(leadId: string): MockActivityEntry[] {
       actionType: 'field_edit',
       source: 'lead_api',
       commentText: null,
-      oldValue: { name: lead.name, fieldValues: { ...lead.fieldValues, category: 'Unassigned' } },
+      oldValue: {
+        name: lead.name,
+        fieldValues: { ...lead.fieldValues, 'field-category': 'Unassigned' },
+      },
       newValue: { name: lead.name, fieldValues: lead.fieldValues },
     },
     {
@@ -179,7 +212,6 @@ const MOCK_NOTIFICATION_RULES: NotificationRule[] = [
   },
 ];
 interface RuleWriteBody {
-  key?: string;
   name: string;
   triggerType: string;
   active?: boolean;
@@ -244,7 +276,7 @@ const MOCK_DEPARTMENTS = [
     version: 1,
   },
 ];
-const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
+const MOCK_ADMIN_FIELDS = FIELDS.map((field, index) => ({
   id: field.id,
   key: field.key,
   name: field.label,
@@ -253,6 +285,7 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   section: null as string | null,
   editMode: 'manual',
   source: 'manual',
+  sortOrder: index,
   active: true,
 }));
 const MOCK_ADMIN_USERS = [
@@ -294,6 +327,11 @@ const MOCK_TEAMS: Team[] = [
 /** Per-Status routing rules and their per-Status role grants. */
 const MOCK_ROUTING_RULES: RoutingRule[] = [];
 const MOCK_ROUTING_GRANTS: Array<RoutingGrant & { statusId: string }> = [];
+/**
+ * Status Visibility (Phase 19): starts empty, matching the real default —
+ * every Status is unrestricted until an admin adds a row.
+ */
+const MOCK_STATUS_VISIBILITY: Array<StatusVisibilityGrant & { statusId: string }> = [];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
@@ -309,6 +347,7 @@ const INITIAL_ADMIN_STATE = structuredClone({
   teams: MOCK_TEAMS,
   routingRules: MOCK_ROUTING_RULES,
   routingGrants: MOCK_ROUTING_GRANTS,
+  statusVisibility: MOCK_STATUS_VISIBILITY,
   fields: MOCK_ADMIN_FIELDS,
   users: MOCK_ADMIN_USERS,
   notificationRules: MOCK_NOTIFICATION_RULES,
@@ -340,6 +379,7 @@ export function resetAdminMockState() {
   MOCK_TEAMS.splice(0, MOCK_TEAMS.length, ...initial.teams);
   MOCK_ROUTING_RULES.splice(0, MOCK_ROUTING_RULES.length, ...initial.routingRules);
   MOCK_ROUTING_GRANTS.splice(0, MOCK_ROUTING_GRANTS.length, ...initial.routingGrants);
+  MOCK_STATUS_VISIBILITY.splice(0, MOCK_STATUS_VISIBILITY.length, ...initial.statusVisibility);
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_NOTIFICATION_RULES.splice(0, MOCK_NOTIFICATION_RULES.length, ...initial.notificationRules);
@@ -551,8 +591,12 @@ export const handlers = [
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
   http.post(`${API_BASE}/journeys`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
-    const row = { id: `journey-${Date.now()}`, key: body.key, name: body.name, isActive: true };
+    const body = (await request.json()) as { name: string };
+    const key = mockNextKey(
+      body.name,
+      JOURNEYS.map((journey) => journey.key),
+    );
+    const row = { id: `journey-${Date.now()}`, key, name: body.name, isActive: true };
     JOURNEYS.push(row);
     return HttpResponse.json({ ...row, active: true, statuses: [] }, { status: 201 });
   }),
@@ -600,12 +644,20 @@ export const handlers = [
   http.post(`${API_BASE}/journeys/:id/statuses`, async ({ params, request }) => {
     const body = (await request.json()) as Omit<
       (typeof STATUSES)[number],
-      'id' | 'journeyId' | 'isActive'
+      'id' | 'journeyId' | 'isActive' | 'key'
     >;
+    const journeyId = String(params.id);
+    // Status `key` is unique per Journey, not per organization — see the
+    // schema's `@@unique` — so only this Journey's existing keys count.
+    const key = mockNextKey(
+      body.name,
+      STATUSES.filter((status) => status.journeyId === journeyId).map((status) => status.key),
+    );
     const row = {
       ...body,
+      key,
       id: `status-${Date.now()}`,
-      journeyId: String(params.id),
+      journeyId,
       isActive: true,
     };
     STATUSES.push(row);
@@ -674,20 +726,34 @@ export const handlers = [
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
     // Always a Page of API-shaped rows (`name`/`fieldType`), matching what
-    // readConfiguration actually serializes.
+    // readConfiguration actually serializes — sortOrder-ordered, same as the
+    // real listFields query, so the admin's reordering is actually visible.
     return HttpResponse.json(
       pageResponse(
         request,
-        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
+        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)).sort(
+          (a, b) => a.sortOrder - b.sortOrder,
+        ),
       ),
     );
   }),
   http.post(`${API_BASE}/fields`, async ({ request }) => {
     const body = (await request.json()) as Omit<
       (typeof MOCK_ADMIN_FIELDS)[number],
-      'id' | 'active'
+      'id' | 'active' | 'key'
     >;
-    const row = { ...body, id: `field-${Date.now()}`, active: true };
+    const key = mockNextKey(
+      body.name,
+      MOCK_ADMIN_FIELDS.map((field) => field.key),
+    );
+    const row = {
+      ...body,
+      key,
+      id: `field-${Date.now()}`,
+      // Append-to-end, matching the real API when sortOrder is omitted.
+      sortOrder: body.sortOrder ?? MOCK_ADMIN_FIELDS.length,
+      active: true,
+    };
     MOCK_ADMIN_FIELDS.push(row);
     return HttpResponse.json(row, { status: 201 });
   }),
@@ -703,6 +769,17 @@ export const handlers = [
     if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
     row.active = false;
     return HttpResponse.json(row);
+  }),
+  http.put(`${API_BASE}/fields/order`, async ({ request }) => {
+    const { fieldIds } = (await request.json()) as { fieldIds: string[] };
+    const updated = fieldIds
+      .map((id, sortOrder) => {
+        const row = MOCK_ADMIN_FIELDS.find((field) => field.id === id);
+        if (row) row.sortOrder = sortOrder;
+        return row;
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    return HttpResponse.json(updated);
   }),
 
   http.get(`${API_BASE}/services`, async () => {
@@ -748,10 +825,13 @@ export const handlers = [
       : HttpResponse.json(errorBody('not_found'), { status: 404 });
   }),
   http.post(`${API_BASE}/roles`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
+    const body = (await request.json()) as { name: string };
     const row = {
       id: `role-${Date.now()}`,
-      key: body.key,
+      key: mockNextKey(
+        body.name,
+        MOCK_ROLES.map((role) => role.key),
+      ),
       name: body.name,
       active: true,
       version: 1,
@@ -830,10 +910,13 @@ export const handlers = [
     HttpResponse.json(pageResponse(request, MOCK_DEPARTMENTS)),
   ),
   http.post(`${API_BASE}/departments`, async ({ request }) => {
-    const body = (await request.json()) as { key: string; name: string };
+    const body = (await request.json()) as { name: string };
     const row = {
       id: `department-${Date.now()}`,
-      key: body.key,
+      key: mockNextKey(
+        body.name,
+        MOCK_DEPARTMENTS.map((department) => department.key),
+      ),
       name: body.name,
       active: true,
       version: 1,
@@ -865,16 +948,22 @@ export const handlers = [
   }),
   http.post(`${API_BASE}/departments/:id/teams`, async ({ params, request }) => {
     const body = (await request.json()) as {
-      key: string;
       name: string;
       members: Array<{ userId: string; isLeader: boolean }>;
     };
     if (!body.members.some((member) => member.isLeader))
       return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    const departmentId = String(params.id);
+    // Team `key` is unique per Department, not per organization — see the
+    // schema's `@@unique` — so only this Department's existing keys count.
+    const key = mockNextKey(
+      body.name,
+      MOCK_TEAMS.filter((team) => team.departmentId === departmentId).map((team) => team.key),
+    );
     const row = {
       id: `team-${Date.now()}`,
-      departmentId: String(params.id),
-      key: body.key,
+      departmentId,
+      key,
       name: body.name,
       active: true,
       version: 1,
@@ -981,6 +1070,25 @@ export const handlers = [
     );
     return HttpResponse.json(body.permissions);
   }),
+  http.get(`${API_BASE}/statuses/:statusId/visibility`, ({ params }) =>
+    HttpResponse.json(
+      MOCK_STATUS_VISIBILITY.filter((row) => row.statusId === params.statusId)
+        .map(({ roleId }) => ({ roleId }))
+        .sort((a, b) => a.roleId.localeCompare(b.roleId)),
+    ),
+  ),
+  http.put(`${API_BASE}/statuses/:statusId/visibility`, async ({ params, request }) => {
+    const body = (await request.json()) as { roleIds: string[] };
+    const kept = MOCK_STATUS_VISIBILITY.filter((row) => row.statusId !== params.statusId);
+    const roleIds = [...new Set(body.roleIds)].sort();
+    MOCK_STATUS_VISIBILITY.splice(
+      0,
+      MOCK_STATUS_VISIBILITY.length,
+      ...kept,
+      ...roleIds.map((roleId) => ({ roleId, statusId: String(params.statusId) })),
+    );
+    return HttpResponse.json(roleIds.map((roleId) => ({ roleId })));
+  }),
   http.put(`${API_BASE}/teams/:id/members`, async ({ params, request }) => {
     const body = (await request.json()) as {
       members: Array<{ userId: string; isLeader: boolean }>;
@@ -1051,6 +1159,10 @@ export const handlers = [
       journeyId: null,
       statusId: null,
       ...body,
+      key: mockNextKey(
+        String(body.name),
+        MOCK_CAMPAIGNS.map((campaign) => campaign.key),
+      ),
       stats: { sent: 0, failed: 0, pending: 0, skippedNoEmail: 0 },
     };
     MOCK_CAMPAIGNS.push(row as (typeof MOCK_CAMPAIGNS)[number]);
@@ -1428,7 +1540,10 @@ export const handlers = [
     const body = (await request.json()) as RuleWriteBody;
     const row: NotificationRule = {
       id: `rule-${MOCK_NOTIFICATION_RULES.length + 1}-${Date.now()}`,
-      key: body.key ?? '',
+      key: mockNextKey(
+        body.name,
+        MOCK_NOTIFICATION_RULES.map((rule) => rule.key),
+      ),
       name: body.name,
       triggerType: body.triggerType,
       scope: null,

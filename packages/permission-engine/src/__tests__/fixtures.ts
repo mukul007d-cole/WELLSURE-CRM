@@ -17,6 +17,13 @@ export interface FixtureState {
   fields: Array<FieldVisibilitySnapshot & { roleId: string; organizationId: string }>;
   assignments: AssignmentSnapshot[];
   grants: DirectGrantSnapshot[];
+  /**
+   * Phase 19. Deliberately empty by default: a Status with no row here is
+   * unrestricted, so every existing test that never touches this axis stays
+   * correct without adding rows for it — that emptiness *is* the fixture for
+   * "unconfigured", not an omission to fill in.
+   */
+  statusVisibility: Array<{ statusId: string; roleId: string; organizationId: string }>;
 }
 
 export const orgA = 'org-synthetic-a';
@@ -27,6 +34,10 @@ export const actionEdit = 'action.synthetic.edit';
 export const journeyA = 'journey-synthetic-a';
 export const leadA = 'lead-synthetic-a';
 export const assignmentPrimary = 'assignment.synthetic.primary';
+/** A Status with no `status_visibility` rows configured — unrestricted. */
+export const statusOpen = 'status-synthetic-open';
+/** A Status restricted, by fixture rows, to `role-self` only. */
+export const statusRestricted = 'status-synthetic-restricted';
 
 export function createFixtureState(): FixtureState {
   return {
@@ -80,6 +91,9 @@ export function createFixtureState(): FixtureState {
       { ...assignment('lead-synthetic-other-org', 'user-other-org'), organizationId: orgB },
     ],
     grants: [],
+    // `statusOpen` intentionally has no rows — see `FixtureState.statusVisibility`.
+    // `statusRestricted` is allow-listed to `role-self` only.
+    statusVisibility: [{ statusId: statusRestricted, roleId: 'role-self', organizationId: orgA }],
   };
 }
 
@@ -118,6 +132,12 @@ export function createRepository(state = createFixtureState()): PermissionReposi
             row.active,
         ),
       );
+    },
+    hasStatusVisibility(input) {
+      const rows = state.statusVisibility.filter(
+        (row) => row.organizationId === input.organizationId && row.statusId === input.statusId,
+      );
+      return Promise.resolve(rows.length === 0 || rows.some((row) => row.roleId === input.roleId));
     },
     listAccessibleJourneyIds(input) {
       return Promise.resolve(

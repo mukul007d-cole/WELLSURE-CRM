@@ -108,6 +108,16 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
     const row = find(this.rows.fields, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
+  async listFieldSummaries(org: string) {
+    return [...this.rows.fields.values()]
+      .filter((row) => row.organizationId === org && row.active !== false)
+      .map((row) => ({
+        id: row.id,
+        fieldType: typeof row.fieldType === 'string' ? row.fieldType : 'text',
+        editMode: typeof row.editMode === 'string' ? row.editMode : 'manual',
+        active: row.active !== false,
+      }));
+  }
   async listJourneyFieldSettings(org: string, journey: string) {
     return [...this.rows.fieldSettings.values()].filter(
       (row) => row.organizationId === org && row.journeyId === journey && row.active !== false,
@@ -118,6 +128,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   }
   async writeActivity(input: LeadActivityInput) {
     this.activities.push(input);
+  }
+  async journeyKeyExists(org: string, key: string) {
+    return [...this.rows.journeys.values()].some((r) => r.organizationId === org && r.key === key);
   }
   async createJourney(input: Record<string, unknown>) {
     return put(this.rows.journeys, input);
@@ -131,6 +144,11 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async countActiveProcessInstancesForJourney(org: string, id: string) {
     return this.processInstances.filter((p) => p.organizationId === org && p.journeyId === id)
       .length;
+  }
+  async statusKeyExists(org: string, journeyId: string, key: string) {
+    return [...this.rows.statuses.values()].some(
+      (r) => r.organizationId === org && r.journeyId === journeyId && r.key === key,
+    );
   }
   async createStatus(input: Record<string, unknown>) {
     return put(this.rows.statuses, input);
@@ -159,6 +177,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
       }
     return count;
   }
+  async serviceKeyExists(org: string, key: string) {
+    return [...this.rows.services.values()].some((r) => r.organizationId === org && r.key === key);
+  }
   async createService(input: Record<string, unknown>) {
     return put(this.rows.services, input);
   }
@@ -170,6 +191,9 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   }
   async countActiveLeadServicesForService(_org: string, id: string) {
     return this.leadServices.filter((s) => s.serviceId === id && s.active).length;
+  }
+  async fieldKeyExists(org: string, key: string) {
+    return [...this.rows.fields.values()].some((r) => r.organizationId === org && r.key === key);
   }
   async createField(input: Record<string, unknown>) {
     return put(this.rows.fields, input);
@@ -322,6 +346,11 @@ export function permissionRepository(
     },
     async hasJourneyAccess(input: { roleId: string; organizationId: string; journeyId: string }) {
       return journeyAccess && input.journeyId === journeyId;
+    },
+    async hasStatusVisibility() {
+      // These fixtures never write a `status_visibility` row, so every
+      // Status is unrestricted, per the default this feature ships with.
+      return true;
     },
     async listAccessibleJourneyIds() {
       return journeyAccess ? [journeyId] : [];

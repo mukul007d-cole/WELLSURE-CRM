@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAuth } from '../../app/AuthContext';
 import { configApi, exportApi, sellersApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
+import { formatFieldValue } from '../../lib/format';
 import { DEFAULT_PAGE_SIZE } from '../../lib/constants';
 import { Banner } from '../../components/ui/Banner';
 import { Button, ButtonLink } from '../../components/ui/Button';
@@ -86,10 +87,24 @@ export function SellerListPage() {
     enabled: Boolean(journeyId),
   });
 
+  // All known Field ids, so every row's `fieldValues` comes back populated —
+  // the API only returns a value for a Field id explicitly requested. Kept in
+  // the query key so the list re-fetches once the Field catalogue itself
+  // loads, rather than being stuck with the empty list the very first render
+  // saw.
+  const fieldIds = (fieldsQuery.data ?? []).map((field) => field.id);
+  // "All journeys" is the summary view (Journey/Status/Owner, same as
+  // always); picking one journey is the "data heavy" view — every
+  // organization Field gets its own column, since nothing in this app scopes
+  // Fields to a journey below the admin configuration screens (the seller
+  // create/edit form shows the same "Additional fields" for every journey
+  // too).
+  const journeyFields = journeyId ? (fieldsQuery.data ?? []) : [];
+
   const sellersQuery = useQuery({
     queryKey: [
       'sellers',
-      { journeyId, statusId, search, page, accessMode, filter, sortBy, sortDirection },
+      { journeyId, statusId, search, page, accessMode, filter, sortBy, sortDirection, fieldIds },
     ],
     queryFn: () =>
       sellersApi.list({
@@ -101,6 +116,7 @@ export function SellerListPage() {
         sortBy,
         sortDirection,
         accessMode,
+        requestedFieldIds: fieldIds,
         ...(filter ? { filter } : {}),
       }),
     placeholderData: (previous) => previous,
@@ -297,8 +313,23 @@ export function SellerListPage() {
           journeys={journeysQuery.data ?? []}
           activeJourneyId={journeyId}
           onSelect={(id) => {
-            updateParam('journeyId', id);
-            updateParam('statusId', undefined);
+            // One `setParams` call, not two `updateParam` calls: each reads
+            // params from the same pre-click snapshot, so a second call
+            // doesn't compose with the first — it replaces it outright. That
+            // silently dropped the journey change whenever this handler
+            // followed it with a second call clearing `statusId`, which is
+            // every time: clicking a journey tab picked it in the URL, then
+            // immediately un-picked it again, so nothing on screen moved and
+            // the tab read as unclickable. See the sort `onChange` below for
+            // the same combined-update shape done correctly.
+            setParams((prev) => {
+              const next = new URLSearchParams(prev);
+              if (id) next.set('journeyId', id);
+              else next.delete('journeyId');
+              next.delete('statusId');
+              next.set('page', '1');
+              return next;
+            });
           }}
         />
       </div>
@@ -350,6 +381,7 @@ export function SellerListPage() {
                   ...(sellerColumns.includes('journey') ? ['Journey'] : []),
                   ...(sellerColumns.includes('status') ? ['Status'] : []),
                   ...(sellerColumns.includes('owner') ? ['Owner'] : []),
+                  ...journeyFields.map((field) => field.label),
                   { label: '', width: '5rem' },
                 ]}
               >
@@ -396,6 +428,11 @@ export function SellerListPage() {
                       {sellerColumns.includes('owner') ? (
                         <DataCell>{process?.ownerName ?? 'Unassigned'}</DataCell>
                       ) : null}
+                      {journeyFields.map((field) => (
+                        <DataCell key={field.id}>
+                          {formatFieldValue(field, row.fieldValues[field.id])}
+                        </DataCell>
+                      ))}
                       <DataCell align="right">
                         <RowActions>
                           <Link

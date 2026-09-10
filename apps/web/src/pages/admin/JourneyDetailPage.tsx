@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
@@ -8,17 +8,18 @@ import { Card } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
-import { adminApi } from '../../lib/api-client';
+import { adminApi, statusVisibilityApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import type { Status } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
 import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { StatusRoutingPanel } from './StatusRoutingPanel';
+import { StatusVisibilityPanel, statusVisibilityKey } from './StatusVisibilityPanel';
 
 type StatusDraft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   outcomeType: string;
   behaviorType: string;
@@ -38,6 +39,14 @@ export function JourneyDetailPage() {
   const [settingDraft, setSettingDraft] = useState<SettingDraft | null>(null);
   /** Which Status's routing section is open. Routing lives here, not in a tab. */
   const [routingStatusId, setRoutingStatusId] = useState<string | null>(null);
+  /**
+   * Which Status's visibility section is open — independent of `routingStatusId`
+   * so an admin can have both open on the same Status at once. That pairing is
+   * deliberate: a routing pool candidate whose role can't see this Status is
+   * silently skipped at assignment time, so seeing both panels side by side
+   * surfaces that interaction instead of hiding it behind separate tabs.
+   */
+  const [visibilityStatusId, setVisibilityStatusId] = useState<string | null>(null);
   const journey = useQuery({
     queryKey: ['admin', 'journey', journeyId],
     queryFn: () => adminApi.journey(journeyId),
@@ -117,6 +126,24 @@ export function JourneyDetailPage() {
   const orderedStatuses = (order ?? statuses.map((status) => status.id))
     .map((id) => statuses.find((status) => status.id === id))
     .filter((status): status is Status => Boolean(status));
+  /**
+   * One row per Status, so the list itself shows a restriction before anyone
+   * opens a panel to find it. Only fetched for someone who can actually open
+   * the Visibility panel — a `roles_permissions:edit`-less viewer would just
+   * get a 403 for a count they can't act on anyway.
+   */
+  const canSeeVisibility = can('roles_permissions', 'edit');
+  const visibilityCountQueries = useQueries({
+    queries: statuses.map((status) => ({
+      queryKey: statusVisibilityKey(status.id),
+      queryFn: () => statusVisibilityApi.list(status.id),
+      enabled: canSeeVisibility,
+      staleTime: 30_000,
+    })),
+  });
+  const visibilityCounts = new Map(
+    statuses.map((status, index) => [status.id, visibilityCountQueries[index]?.data?.length ?? 0]),
+  );
   useUnsavedChanges(
     statusDraft !== null ||
       settingDraft !== null ||
@@ -166,7 +193,6 @@ export function JourneyDetailPage() {
               size="sm"
               onClick={() =>
                 setStatusDraft({
-                  key: '',
                   name: '',
                   outcomeType: 'open',
                   behaviorType: 'default',
@@ -232,6 +258,15 @@ export function JourneyDetailPage() {
                   <span className="ml-2 text-sm text-ink-soft">
                     {status.outcomeType} · {status.behaviorType}
                   </span>
+                  {canSeeVisibility && (visibilityCounts.get(status.id) ?? 0) > 0 ? (
+                    <span
+                      className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand"
+                      title="Only the roles configured here can see a lead while it sits in this Status"
+                    >
+                      Visible to {visibilityCounts.get(status.id)}{' '}
+                      {visibilityCounts.get(status.id) === 1 ? 'role' : 'roles'}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex gap-1">
                   {can('journeys_statuses', 'edit') ? (
@@ -284,8 +319,28 @@ export function JourneyDetailPage() {
                       Routing
                     </Button>
                   ) : null}
+                  {canSeeVisibility ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={visibilityStatusId === status.id}
+                      onClick={() =>
+                        setVisibilityStatusId(visibilityStatusId === status.id ? null : status.id)
+                      }
+                    >
+                      Visibility
+                    </Button>
+                  ) : null}
                 </div>
               </div>
+              {/*
+               * Two independent panels, not tabs: Routing and Visibility answer
+               * different questions (who may operate assignment vs. who may see
+               * the lead at all), and a routing pool candidate excluded by
+               * Visibility is silently skipped at assignment time — so an admin
+               * configuring one benefits from being able to see the other at the
+               * same time, stacked here rather than hidden behind a switcher.
+               */}
               {routingStatusId === status.id ? (
                 <div className="mt-3">
                   <StatusRoutingPanel
@@ -293,6 +348,11 @@ export function JourneyDetailPage() {
                     journeyId={journeyId}
                     assignmentTypeSuggestions={journey.data?.assignmentTypes ?? []}
                   />
+                </div>
+              ) : null}
+              {visibilityStatusId === status.id ? (
+                <div className="mt-3">
+                  <StatusVisibilityPanel statusId={status.id} />
                 </div>
               ) : null}
             </li>
@@ -403,16 +463,14 @@ function StatusEditor({
     setDraft({ ...draft, [key]: value });
   return (
     <div className="grid gap-3 rounded-control border bg-paper p-3 sm:grid-cols-3">
-      <Field label="Stable key" required>
-        {({ inputId }) => (
-          <Input
-            id={inputId}
-            disabled={Boolean(draft.id)}
-            value={draft.key}
-            onChange={(event) => update('key', event.target.value)}
-          />
-        )}
-      </Field>
+      {draft.id ? (
+        // The key is computed from the name at creation and never changes
+        // afterward — shown here read-only, for API/URL reference, not as an
+        // editable field.
+        <Field label="Stable key">
+          {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+        </Field>
+      ) : null}
       <Field label="Name" required>
         {({ inputId }) => (
           <Input
@@ -460,7 +518,7 @@ function StatusEditor({
         )}
       </Field>
       <div className="flex items-end gap-2">
-        <Button loading={loading} disabled={!draft.key || !draft.name} onClick={save}>
+        <Button loading={loading} disabled={!draft.name} onClick={save}>
           Save Status
         </Button>
         <Button variant="ghost" onClick={cancel}>

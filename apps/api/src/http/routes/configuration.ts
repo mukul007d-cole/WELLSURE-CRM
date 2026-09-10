@@ -8,6 +8,7 @@ import {
   updateJourney,
   deactivateJourney,
   updateStatus,
+  reorderFields,
   reorderStatuses,
   updateField,
   readJourneyFields,
@@ -77,9 +78,7 @@ export function registerConfigurationRoutes(
   read('/api/v1/services/:serviceId', 'services');
   read('/api/v1/fields', 'fields');
   read('/api/v1/fields/:fieldId', 'fields');
-  bind('POST', '/api/v1/journeys', (r, b) =>
-    createJourney({ ...base(r), key: String(b.key), name: String(b.name) }),
-  );
+  bind('POST', '/api/v1/journeys', (r, b) => createJourney({ ...base(r), name: String(b.name) }));
   bind('PATCH', '/api/v1/journeys/:journeyId', (r, b, p) =>
     updateJourney({ ...base(r), journeyId: String(p.journeyId), name: String(b.name) }),
   );
@@ -90,7 +89,6 @@ export function registerConfigurationRoutes(
     createStatus({
       ...base(r),
       journeyId: String(p.journeyId),
-      key: String(b.key),
       name: String(b.name),
       outcomeType: String(b.outcomeType),
       behaviorType: String(b.behaviorType),
@@ -128,7 +126,6 @@ export function registerConfigurationRoutes(
   bind('POST', '/api/v1/services', (r, b) =>
     createService({
       ...base(r),
-      key: String(b.key),
       name: String(b.name),
       ...(b.description === null || typeof b.description === 'string'
         ? { description: b.description }
@@ -141,17 +138,25 @@ export function registerConfigurationRoutes(
   bind('POST', '/api/v1/fields', (r, b) =>
     createField({
       ...base(r),
-      key: String(b.key),
       name: String(b.name),
       fieldType: String(b.fieldType),
       editMode: String(b.editMode),
       source: String(b.source),
       ...(b.validationRule !== undefined ? { validationRule: b.validationRule } : {}),
       ...(b.section === null || typeof b.section === 'string' ? { section: b.section } : {}),
+      ...(b.calculation !== undefined ? { calculation: b.calculation } : {}),
+      ...(b.system !== undefined ? { system: b.system } : {}),
+      ...(typeof b.sortOrder === 'number' ? { sortOrder: b.sortOrder } : {}),
     }),
   );
   bind('DELETE', '/api/v1/fields/:fieldId', (r, _b, p) =>
     deactivateField({ ...base(r), fieldId: String(p.fieldId) }),
+  );
+  bind('PUT', '/api/v1/fields/order', (r, b) =>
+    reorderFields({
+      ...base(r),
+      fieldIds: Array.isArray(b.fieldIds) ? b.fieldIds.map(String) : [],
+    }),
   );
   bind('PATCH', '/api/v1/fields/:fieldId', (r, b, p) =>
     updateField({
@@ -163,6 +168,8 @@ export function registerConfigurationRoutes(
       ...(typeof b.section === 'string' || b.section === null ? { section: b.section } : {}),
       editMode: String(b.editMode),
       source: String(b.source),
+      ...(b.calculation !== undefined ? { calculation: b.calculation } : {}),
+      ...(b.system !== undefined ? { system: b.system } : {}),
     }),
   );
   server.get(

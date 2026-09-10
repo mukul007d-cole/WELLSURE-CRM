@@ -102,7 +102,10 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        // Admin-controlled, not creation order — this is what lets an admin
+        // put a Field (and, by extension, a Section — see `groupFieldsBySection`
+        // in the web app) anywhere, not just append new ones at the end.
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         include,
       }),
     ]);
@@ -119,12 +122,29 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       },
     }) as Promise<ConfigRow | null>;
   }
+  /**
+   * The lightweight shape a calculated Field's config needs to validate its
+   * references — every active Field's id/type/editMode, org-wide, not
+   * scoped to one journey (a calculated Field can reference any Field, the
+   * same way `field_values` itself isn't journey-scoped).
+   */
+  async listFieldSummaries(
+    org: string,
+  ): Promise<Array<{ id: string; fieldType: string; editMode: string; active: boolean }>> {
+    return this.prisma.field.findMany({
+      where: { organizationId: org, active: true },
+      select: { id: true, fieldType: true, editMode: true, active: true },
+    });
+  }
   listJourneyFieldSettings(org: string, journeyId: string) {
     return this.prisma.fieldJourneySetting.findMany({
       where: { organizationId: org, journeyId, active: true },
       orderBy: [{ fieldId: 'asc' }],
       include: { field: true },
     }) as Promise<ConfigRow[]>;
+  }
+  async journeyKeyExists(org: string, key: string): Promise<boolean> {
+    return (await this.prisma.journey.findFirst({ where: { organizationId: org, key } })) !== null;
   }
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
@@ -171,6 +191,12 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       where: { organizationId: org, journeyId: id, active: true },
     });
   }
+  async statusKeyExists(org: string, journeyId: string, key: string): Promise<boolean> {
+    return (
+      (await this.prisma.status.findFirst({ where: { organizationId: org, journeyId, key } })) !==
+      null
+    );
+  }
   createStatus(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.status.create({ data: input as never }) as Promise<ConfigRow>;
   }
@@ -216,6 +242,9 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     });
     return result.count;
   }
+  async serviceKeyExists(org: string, key: string): Promise<boolean> {
+    return (await this.prisma.service.findFirst({ where: { organizationId: org, key } })) !== null;
+  }
   createService(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.service.create({ data: input as never }) as Promise<ConfigRow>;
   }
@@ -235,6 +264,9 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     return this.prisma.leadService.count({
       where: { organizationId: org, serviceId: id, active: true },
     });
+  }
+  async fieldKeyExists(org: string, key: string): Promise<boolean> {
+    return (await this.prisma.field.findFirst({ where: { organizationId: org, key } })) !== null;
   }
   createField(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.field.create({ data: input as never }) as Promise<ConfigRow>;

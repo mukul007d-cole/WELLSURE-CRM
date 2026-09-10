@@ -76,6 +76,14 @@ export interface FieldDefinition {
    * declared it, so the value was on the wire and unused.
    */
   section?: string | null;
+  /**
+   * 'manual' | 'locked' | 'calculated' | 'system' | 'api-only'. The lead form
+   * and Details tab use this to decide whether a Field is a normal editable
+   * input, read-only, or hidden from the form entirely — see
+   * `DynamicFieldControl`. Enforcement itself is server-side
+   * (`leads/validation.ts`); this only decides what the form renders.
+   */
+  editMode: string;
 }
 
 export interface JourneyFieldSetting {
@@ -154,6 +162,13 @@ export interface SellerListInput {
   accessMode?: 'mine' | 'shared_with_me' | 'all';
   /** JSON-encoded filter, per the Seller List filter model. */
   filter?: string | undefined;
+  /**
+   * Field ids the caller wants back on each row's `fieldValues`. The API
+   * returns a value only for a Field id explicitly requested here — same rule
+   * `sellersApi.detail`/`activity` follow — so a list view that wants
+   * Field columns has to name them, not just rely on role visibility.
+   */
+  requestedFieldIds?: readonly string[] | undefined;
 }
 
 /**
@@ -334,15 +349,45 @@ export interface AdminJourney {
    */
   assignmentTypes?: readonly string[] | undefined;
 }
+/**
+ * Mirrors `packages/validation/src/calculation.ts` on the API side — the
+ * config an `editMode: 'calculated'` Field stores. Two narrow modes, not a
+ * general formula language: arithmetic over two operands (each another
+ * Field's numeric value or a constant), or a `{{field:<id>}}` text template.
+ */
+export type CalculationOperand =
+  { type: 'field'; fieldId: string } | { type: 'constant'; value: number };
+
+export interface ArithmeticCalculation {
+  kind: 'arithmetic';
+  left: CalculationOperand;
+  operator: '+' | '-' | '*' | '/';
+  right: CalculationOperand;
+}
+
+export interface TemplateCalculation {
+  kind: 'template';
+  template: string;
+}
+
+export type CalculationConfig = ArithmeticCalculation | TemplateCalculation;
+
 export interface AdminField {
   id: string;
   key: string;
   name: string;
   fieldType: string;
-  validationRule: { options?: string[]; [key: string]: unknown } | null;
+  validationRule: {
+    options?: string[];
+    calculation?: CalculationConfig;
+    system?: { key: string };
+    [key: string]: unknown;
+  } | null;
   section: string | null;
   editMode: string;
   source: string;
+  /** Display order among Fields (and, by extension, Sections) — admin-controlled via reorderFields. */
+  sortOrder: number;
   active: boolean;
 }
 /**
@@ -427,6 +472,19 @@ export interface RoutingState {
     openCount: number;
     isNext: boolean;
   }>;
+}
+/**
+ * Status Visibility (Phase 19): one Role allowed to see a lead while it sits
+ * in this Status. A distinct axis from `RoutingGrant` despite the identical
+ * per-(status, role) allow-list shape — this gates who may see a lead at
+ * all, not who may configure or operate its routing.
+ *
+ * Membership only, no action dimension: a Role either can see a lead here or
+ * the row is absent. Zero rows for a Status means unrestricted, not "visible
+ * to no one" — see `StatusVisibilityPanel`.
+ */
+export interface StatusVisibilityGrant {
+  roleId: string;
 }
 export interface PermissionCatalog {
   modules: Array<{ module: string; label: string; actions: string[] }>;

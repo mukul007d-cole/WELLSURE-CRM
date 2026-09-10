@@ -12,8 +12,20 @@ import {
 import type { FieldDefinition } from '../../types/domain';
 
 const fields: FieldDefinition[] = [
-  { id: 'field-text', key: 'synthetic_text', label: 'Synthetic Text', type: 'text' },
-  { id: 'field-number', key: 'synthetic_number', label: 'Synthetic Number', type: 'number' },
+  {
+    id: 'field-text',
+    key: 'synthetic_text',
+    label: 'Synthetic Text',
+    type: 'text',
+    editMode: 'manual',
+  },
+  {
+    id: 'field-number',
+    key: 'synthetic_number',
+    label: 'Synthetic Number',
+    type: 'number',
+    editMode: 'manual',
+  },
 ];
 
 describe('seller list filter state', () => {

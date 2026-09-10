@@ -983,6 +983,73 @@ describe.runIf(shouldRunAdminPostgres)('Phase 15 bulk import and export', () => 
       expect(run.statusCode).toBe(400);
       expect(run.body).toContain(message);
     });
+
+    /**
+     * `LeadService.createLead` would silently drop a value mapped to a
+     * `calculated`/`system` Field rather than reject it (`leads/validation.ts`)
+     * — so without this, a file mapped onto one would preview and commit
+     * successfully while quietly discarding every value in that column, with
+     * nothing telling the importer why. Excluding it from
+     * `listImportableFields` turns that into the same clear, file-level
+     * rejection an inactive or hidden Field already gets, before any row runs.
+     */
+    it('refuses to map a column onto a calculated field, since import could never write to it', async () => {
+      const calculatedField = randomUUID();
+      await prisma.field.create({
+        data: {
+          id: calculatedField,
+          organizationId: org,
+          key: 'synthetic_calculated',
+          name: 'Synthetic Calculated',
+          fieldType: 'number',
+          editMode: 'calculated',
+          source: 'calculated',
+          validationRule: {
+            calculation: {
+              kind: 'arithmetic',
+              left: { type: 'constant', value: 1 },
+              operator: '+',
+              right: { type: 'constant', value: 1 },
+            },
+          },
+        },
+      });
+      await prisma.fieldJourneySetting.create({
+        data: {
+          organizationId: org,
+          fieldId: calculatedField,
+          journeyId: journey,
+          requirement: 'optional',
+        },
+      });
+      // Field-visibility EDIT is a separate, per-field grant (see the
+      // `companyField`/`secretField`/`sizeField` grants above) — without one for
+      // this newly created Field, `authorizeImport` denies it with a 403 before
+      // the run ever reaches the mapping-target check this test means to exercise.
+      await prisma.fieldVisibility.create({
+        data: {
+          organizationId: org,
+          fieldId: calculatedField,
+          roleId: adminRole,
+          accessLevel: 'EDIT',
+        },
+      });
+
+      const run = await runImport('preview', `${header}\nX,1,x@example.test,Acme,\n`, {
+        journeyId: journey,
+        assignments: [{ assignmentType, userId: adminUser }],
+        columns: {
+          name: { kind: 'core', column: 'name' },
+          phone: { kind: 'core', column: 'phone' },
+          email: { kind: 'core', column: 'email' },
+          company: { kind: 'field', fieldId: calculatedField },
+          junk: { kind: 'skip' },
+        },
+        matchKeys: [],
+      });
+      expect(run.statusCode).toBe(400);
+      expect(run.body).toContain('that field is not available on the chosen journey');
+    });
   });
 
   describe('export', () => {

@@ -47,7 +47,6 @@ describe('NotificationRulesPage', () => {
       .mockImplementation((input, init) => originalFetch(input, init));
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Create rule' }));
-    fireEvent.change(screen.getByLabelText(/^Key/), { target: { value: 'synthetic_notice' } });
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic notice' } });
     fireEvent.change(screen.getByLabelText(/^Trigger/), { target: { value: 'lead_reassigned' } });
 
@@ -72,7 +71,6 @@ describe('NotificationRulesPage', () => {
     const posted = fetchSpy.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(posted).toBeDefined();
     expect(sentBody(posted)).toEqual({
-      key: 'synthetic_notice',
       name: 'Synthetic notice',
       triggerType: 'lead_reassigned',
       recipients: [

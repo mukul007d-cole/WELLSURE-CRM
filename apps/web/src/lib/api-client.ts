@@ -34,6 +34,7 @@ import type {
   RoutingGrant,
   RoutingRule,
   RoutingState,
+  StatusVisibilityGrant,
   ImportAnalysis,
   ImportMapping,
   ImportRunResult,
@@ -175,8 +176,7 @@ export const adminApi = {
       `/journeys${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
     ),
   journey: (id: string) => request<AdminJourney>(`/journeys/${id}`),
-  createJourney: (body: { key: string; name: string }) =>
-    request<AdminJourney>('/journeys', json('POST', body)),
+  createJourney: (body: { name: string }) => request<AdminJourney>('/journeys', json('POST', body)),
   editJourney: (id: string, body: { name: string }) =>
     request<AdminJourney>(`/journeys/${id}`, json('PATCH', body)),
   deactivateJourney: (id: string) => request<AdminJourney>(`/journeys/${id}`, json('DELETE')),
@@ -209,6 +209,8 @@ export const adminApi = {
   editField: (id: string, body: object) =>
     request<AdminField>(`/fields/${id}`, json('PATCH', body)),
   deactivateField: (id: string) => request<AdminField>(`/fields/${id}`, json('DELETE')),
+  reorderFields: (fieldIds: string[]) =>
+    request<AdminField[]>('/fields/order', json('PUT', { fieldIds })),
   // The Field side of field_visibility. One request carries the Field's whole
   // role set — never a per-role loop, which is how the role-side axis is saved
   // too.
@@ -304,6 +306,18 @@ export const routingApi = {
     ),
 };
 
+/**
+ * Status Visibility (Phase 19): which Roles may see a lead while it sits in
+ * one Status. A separate endpoint pair from `routingApi`'s grants, despite
+ * the identical `roles_permissions:edit`-gated whole-set-replace shape —
+ * this axis gates lead visibility itself, not who may operate routing.
+ */
+export const statusVisibilityApi = {
+  list: (statusId: string) => request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`),
+  save: (statusId: string, roleIds: string[]) =>
+    request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`, json('PUT', { roleIds })),
+};
+
 export const campaignsApi = {
   list: () => request<{ total: number; items: Campaign[] }>('/campaigns'),
   get: (id: string) => request<Campaign>(`/campaigns/${id}`),
@@ -332,9 +346,21 @@ export const sellersApi = {
         pageSize: input.pageSize,
         accessMode: input.accessMode,
         filter: input.filter,
+        requestedFieldIds: input.requestedFieldIds?.join(','),
       })}`,
     ),
-  detail: (id: string) => request<Seller360Record>(`/leads/${id}`),
+  /**
+   * `requestedFieldIds` is optional here only so callers that never touch
+   * field values (the board's drag prefetch) don't have to invent an empty
+   * list — omitting it is identical to passing one. A caller that wants
+   * `fieldValues` populated must name every Field id it wants back: the API
+   * returns a value only for ids explicitly requested, intersected with what
+   * the caller's role can see, same as `activity` below.
+   */
+  detail: (id: string, context?: { requestedFieldIds: readonly string[] }) =>
+    request<Seller360Record>(
+      `/leads/${id}${toQuery({ requestedFieldIds: context?.requestedFieldIds.join(',') })}`,
+    ),
   // These return { lead, process } — the raw rows — not a Seller360Record.
   // Typing them as the latter meant `created.id` was silently undefined, which
   // navigated to /sellers/undefined and 500ed on a non-UUID lookup.
@@ -494,6 +520,9 @@ function normalizeField(row: RawField): FieldDefinition {
     // The API has always sent this; the normalizer just dropped it on the
     // floor, so the record page had no way to group details by section.
     ...(row.section === undefined ? {} : { section: row.section }),
+    // Defaults to 'manual' for older mock fixtures that predate this field —
+    // the real API always sends one.
+    editMode: row.editMode ?? 'manual',
   };
 }
 

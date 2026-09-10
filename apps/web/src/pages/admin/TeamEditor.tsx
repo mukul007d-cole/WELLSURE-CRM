@@ -6,7 +6,7 @@ import type { AdminUser, TeamMember } from '../../types/domain';
 
 export type TeamDraft = {
   id?: string;
-  key: string;
+  key?: string;
   name: string;
   members: TeamMember[];
 };
@@ -47,16 +47,14 @@ export function TeamEditor({
   return (
     <div className="space-y-3 rounded-control border bg-paper p-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Stable key" required>
-          {({ inputId }) => (
-            <Input
-              id={inputId}
-              disabled={Boolean(draft.id)}
-              value={draft.key}
-              onChange={(event) => setDraft({ ...draft, key: event.target.value })}
-            />
-          )}
-        </Field>
+        {draft.id ? (
+          // The key is computed from the name at creation and never changes
+          // afterward — shown here read-only, for API/URL reference, not as
+          // an editable field.
+          <Field label="Stable key">
+            {({ inputId }) => <Input id={inputId} disabled value={draft.key} />}
+          </Field>
+        ) : null}
         <Field label="Name" required>
           {({ inputId }) => (
             <Input
@@ -118,11 +116,7 @@ export function TeamEditor({
       ) : null}
 
       <div className="flex gap-2">
-        <Button
-          loading={loading}
-          disabled={!draft.name || (!draft.id && !draft.key) || !hasLeader}
-          onClick={save}
-        >
+        <Button loading={loading} disabled={!draft.name || !hasLeader} onClick={save}>
           Save Team
         </Button>
         <Button variant="ghost" onClick={cancel}>

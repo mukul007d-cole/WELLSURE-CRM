@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { groupFieldsBySection } from './DetailsTab';
+import { groupFieldsBySection } from '../../lib/field-sections';
 import { formatFieldValue } from '../../lib/format';
 import type { FieldDefinition, Seller360Record } from '../../types/domain';
 
@@ -63,14 +63,14 @@ export function buildRecordPdf(seller: Seller360Record, fields: readonly FieldDe
     y += 4;
   }
 
-  for (const section of groupFieldsBySection(fields, seller.fieldValues)) {
+  for (const section of groupFieldsBySection(fields, (field) => field.id in seller.fieldValues)) {
     rule();
     write(section.name, { size: 12, bold: true, gap: 4 });
     for (const field of section.fields) {
       write(field.label, { size: 8 });
       // Back up over the label's own line so the value sits under it tightly.
       y -= 4;
-      write(String(formatFieldValue(field, seller.fieldValues[field.key]) || '—'), { gap: 4 });
+      write(String(formatFieldValue(field, seller.fieldValues[field.id]) || '—'), { gap: 4 });
     }
   }
 

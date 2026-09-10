@@ -69,7 +69,6 @@ export function DepartmentDetailPage() {
         return;
       }
       await adminApi.createTeam(departmentId, {
-        key: draft.key,
         name: draft.name,
         members: draft.members,
       });
@@ -138,7 +137,7 @@ export function DepartmentDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-display text-lg font-semibold">Teams</h3>
           {can('users', 'create') ? (
-            <Button size="sm" onClick={() => setDraft({ key: '', name: '', members: [] })}>
+            <Button size="sm" onClick={() => setDraft({ name: '', members: [] })}>
               Create Team
             </Button>
           ) : null}

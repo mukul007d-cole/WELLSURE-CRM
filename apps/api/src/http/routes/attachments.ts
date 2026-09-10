@@ -35,16 +35,29 @@ export function registerAttachmentRoutes(server: FastifyInstance, deps: ServerDe
     return;
   }
 
-  /** Can this caller act on this lead, in the journey they claim? */
+  /**
+   * Can this caller act on this lead, through *any* of its active process
+   * instances? Looked up server-side — `routes/leads.ts`'s `resolveLeadAccess`
+   * union, transposed — rather than trusting a client-claimed `journeyId`.
+   *
+   * That shift is required, not cosmetic, for Status Visibility specifically:
+   * unlike Journey access, this axis defaults to permissive when `statusId`
+   * is absent, so a client that simply omitted it (every caller of the old,
+   * journeyId-trusting shape did) would silently bypass a real restriction
+   * rather than just get a spurious denial the way a wrong Journey claim
+   * would.
+   */
   const allowedOnLead = async (
     request: FastifyRequest,
     leadId: string,
     module: string,
     action: string,
-    context: { journeyId: string; assignmentTypes: string[] },
-  ) =>
-    (
-      await resolveAuthorization({
+    context: { assignmentTypes: string[] },
+  ) => {
+    const lead = await deps.leadRepository.findSeller360(request.auth.user.organizationId, leadId);
+    if (lead === null) return false;
+    for (const process of lead.processInstances.filter((row) => row.active)) {
+      const decision = await resolveAuthorization({
         repository: deps.permissionRepository,
         request: {
           organizationId: request.auth.user.organizationId,
@@ -52,14 +65,17 @@ export function registerAttachmentRoutes(server: FastifyInstance, deps: ServerDe
           module,
           action,
           leadId,
-          journeyId: context.journeyId,
+          journeyId: process.journeyId,
+          statusId: process.currentStatus.id,
           assignmentTypes: context.assignmentTypes,
         },
-      })
-    ).allowed;
+      });
+      if (decision.allowed) return true;
+    }
+    return false;
+  };
 
   const leadContext = (source: Record<string, unknown>) => ({
-    journeyId: typeof source.journeyId === 'string' ? source.journeyId : '',
     assignmentTypes: strings(source.assignmentTypes),
   });
 

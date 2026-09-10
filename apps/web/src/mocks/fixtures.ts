@@ -60,25 +60,51 @@ export const SERVICES: Service[] = [
 ];
 
 export const FIELDS: FieldDefinition[] = [
-  { id: 'field-company', key: 'company_name', label: 'Company Name', type: 'text' },
+  {
+    id: 'field-company',
+    key: 'company_name',
+    label: 'Company Name',
+    type: 'text',
+    editMode: 'manual',
+  },
   {
     id: 'field-marketplace',
     key: 'marketplace',
     label: 'Marketplace',
     type: 'select',
     options: ['Amazon', 'Flipkart', 'Meesho', 'Myntra'],
+    editMode: 'manual',
   },
-  { id: 'field-category', key: 'category', label: 'Category', type: 'text' },
+  { id: 'field-category', key: 'category', label: 'Category', type: 'text', editMode: 'manual' },
   {
     id: 'field-monthly-revenue',
     key: 'monthly_revenue',
     label: 'Monthly Revenue (₹)',
     type: 'number',
+    editMode: 'manual',
   },
-  { id: 'field-deal-value', key: 'deal_value', label: 'Deal Value (₹)', type: 'number' },
-  { id: 'field-followup-date', key: 'followup_date', label: 'Follow-up Date', type: 'date' },
-  { id: 'field-priority', key: 'is_priority', label: 'Priority Account', type: 'boolean' },
-  { id: 'field-notes', key: 'notes', label: 'Notes', type: 'textarea' },
+  {
+    id: 'field-deal-value',
+    key: 'deal_value',
+    label: 'Deal Value (₹)',
+    type: 'number',
+    editMode: 'manual',
+  },
+  {
+    id: 'field-followup-date',
+    key: 'followup_date',
+    label: 'Follow-up Date',
+    type: 'date',
+    editMode: 'manual',
+  },
+  {
+    id: 'field-priority',
+    key: 'is_priority',
+    label: 'Priority Account',
+    type: 'boolean',
+    editMode: 'manual',
+  },
+  { id: 'field-notes', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
 ];
 
 export interface MockUser {
@@ -238,17 +264,19 @@ export const LEADS: MockLead[] = COMPANY_NAMES.flatMap((company, index) => {
     name: company,
     phone: `+91 9${Math.floor(100000000 + rand() * 899999999)}`,
     email: `contact@${company.toLowerCase().replace(/[^a-z]+/g, '')}.com`,
+    // Keyed by Field id, matching the real API's field_values contract — see
+    // mocks/permissions.ts's header comment.
     fieldValues: {
-      company_name: company,
-      marketplace: pick(MARKETPLACES),
-      category: pick(CATEGORIES),
-      monthly_revenue: Math.floor(50_000 + rand() * 4_500_000),
-      deal_value: Math.floor(10_000 + rand() * 800_000),
-      followup_date: new Date(Date.now() + Math.floor(rand() * 14) * 86_400_000)
+      'field-company': company,
+      'field-marketplace': pick(MARKETPLACES),
+      'field-category': pick(CATEGORIES),
+      'field-monthly-revenue': Math.floor(50_000 + rand() * 4_500_000),
+      'field-deal-value': Math.floor(10_000 + rand() * 800_000),
+      'field-followup-date': new Date(Date.now() + Math.floor(rand() * 14) * 86_400_000)
         .toISOString()
         .slice(0, 10),
-      is_priority: rand() > 0.8,
-      notes: '',
+      'field-priority': rand() > 0.8,
+      'field-notes': '',
     },
     createdAt,
     updatedAt: createdAt,

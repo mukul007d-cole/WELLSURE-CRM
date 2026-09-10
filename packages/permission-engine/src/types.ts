@@ -8,6 +8,7 @@ export type PermissionDeniedReason =
   | 'FEATURE_ACTION_DENIED'
   | 'JOURNEY_DENIED'
   | 'RECORD_SCOPE_DENIED'
+  | 'STATUS_VISIBILITY_DENIED'
   | 'FIELD_VIEW_DENIED'
   | 'FIELD_EDIT_DENIED'
   | 'WORKFLOW_NOT_ENFORCED';
@@ -85,6 +86,21 @@ export interface PermissionRepository {
     organizationId: string;
     journeyId: string;
   }): Promise<boolean>;
+  /**
+   * Phase 19 — may this Role see a lead currently sitting in this Status?
+   *
+   * A Status with zero `status_visibility` rows is unrestricted (this must
+   * return `true` for every Role); once a Status has any row at all, this
+   * returns `true` only for a Role a row names. See
+   * docs/planning/phase-19-status-scoped-role-visibility.md — this is the
+   * one consequential default-state decision the whole feature turns on, and
+   * every implementation of this method must encode it identically.
+   */
+  hasStatusVisibility(input: {
+    roleId: string;
+    organizationId: string;
+    statusId: string;
+  }): Promise<boolean>;
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
@@ -129,6 +145,13 @@ export interface AuthorizationRequest {
   action: string;
   journeyId?: string;
   leadId?: string;
+  /**
+   * The Status a specific record currently sits in — parallel to `journeyId`,
+   * checked via `hasStatusVisibility` only when present. Bulk/list-style
+   * callers with no single Status in view leave this unset and rely on
+   * `RecordPredicate.roleId` instead (see there).
+   */
+  statusId?: string;
   requestedFieldIds?: readonly string[];
   requestedEditFieldIds?: readonly string[];
   assignmentTypes?: readonly string[];
@@ -150,6 +173,15 @@ export interface RecordPredicate {
   journeyIds: readonly string[];
   includeDirectGrantsForUserId: string;
   directGrantAction: string;
+  /**
+   * Phase 19 — the caller's own Role id, so a many-row query (the Seller
+   * List, export, bulk import matching) can apply the same
+   * `hasStatusVisibility` rule `AuthorizationRequest.statusId` applies to a
+   * single record, per process instance, in SQL: unrestricted unless the
+   * instance's current Status has any `status_visibility` row, in which case
+   * only a row naming this Role passes.
+   */
+  roleId: string;
 }
 
 export interface AuthorizationDecision {

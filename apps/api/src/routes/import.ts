@@ -212,6 +212,11 @@ export async function runImport(input: {
           journeyIds: [],
           includeDirectGrantsForUserId: input.auth.user.id,
           directGrantAction: 'view',
+          // Never a real Role match for a Phase 19 status_visibility row —
+          // deliberately, since this whole predicate already denies every
+          // record (`allowedUserIds: []`); a real roleId here would matter
+          // only if some other clause in the predicate were less strict.
+          roleId: view.roleId ?? '',
         },
         ...(input.expectedContentHash === undefined
           ? {}

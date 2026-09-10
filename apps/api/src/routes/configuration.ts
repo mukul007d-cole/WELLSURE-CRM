@@ -100,7 +100,6 @@ export async function createJourney(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
@@ -113,7 +112,6 @@ export async function createJourney(input: {
       service.createJourney({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
       }),
     201,
@@ -244,7 +242,6 @@ export async function createStatus(input: {
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
   journeyId: string;
-  key: string;
   name: string;
   outcomeType: string;
   behaviorType: string;
@@ -261,7 +258,6 @@ export async function createStatus(input: {
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
         journeyId: input.journeyId,
-        key: input.key,
         name: input.name,
         outcomeType: input.outcomeType,
         behaviorType: input.behaviorType,
@@ -274,7 +270,6 @@ export async function createService(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   description?: string | null;
   now?: Date;
@@ -288,7 +283,6 @@ export async function createService(input: {
       service.createService({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
         ...(input.description === undefined ? {} : { description: input.description }),
       }),
@@ -327,13 +321,16 @@ export async function createField(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  key: string;
   name: string;
   fieldType: string;
   validationRule?: unknown;
   section?: string | null;
   editMode: string;
   source: string;
+  calculation?: unknown;
+  system?: unknown;
+  /** Defaults to append-to-end in the service when omitted. */
+  sortOrder?: number;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
@@ -345,13 +342,15 @@ export async function createField(input: {
       service.createField({
         organizationId: input.auth.user.organizationId,
         actorUserId: input.auth.user.id,
-        key: input.key,
         name: input.name,
         fieldType: input.fieldType,
         ...(input.validationRule === undefined ? {} : { validationRule: input.validationRule }),
         ...(input.section === undefined ? {} : { section: input.section }),
         editMode: input.editMode,
         source: input.source,
+        ...(input.calculation === undefined ? {} : { calculation: input.calculation }),
+        ...(input.system === undefined ? {} : { system: input.system }),
+        ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
       }),
     201,
   );
@@ -388,6 +387,8 @@ export async function updateField(input: {
   section?: string | null;
   editMode: string;
   source: string;
+  calculation?: unknown;
+  system?: unknown;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
     input,
@@ -405,6 +406,28 @@ export async function updateField(input: {
         ...(input.section === undefined ? {} : { section: input.section }),
         editMode: input.editMode,
         source: input.source,
+        ...(input.calculation === undefined ? {} : { calculation: input.calculation }),
+        ...(input.system === undefined ? {} : { system: input.system }),
+      }),
+    200,
+  );
+}
+export async function reorderFields(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  fieldIds: string[];
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.fields,
+    'edit',
+    undefined,
+    (service) =>
+      service.reorderFields({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        fieldIds: input.fieldIds,
       }),
     200,
   );

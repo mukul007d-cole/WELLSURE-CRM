@@ -45,9 +45,20 @@ export function Seller360Page() {
 
   const fieldsQuery = useQuery({ queryKey: qk.fields(), queryFn: configApi.fields });
   const sellerQuery = useQuery({
-    queryKey: qk.seller(sellerId as string),
-    queryFn: () => sellersApi.detail(sellerId as string),
-    enabled: Boolean(sellerId),
+    queryKey: qk.sellerDetail(sellerId as string),
+    queryFn: () =>
+      sellersApi.detail(sellerId as string, {
+        requestedFieldIds: (fieldsQuery.data ?? []).map((field) => field.id),
+      }),
+    // Waits on the Field catalogue to *settle* (succeed or fail — `fields`
+    // everywhere else already tolerates the latter via `?? []`) so the very
+    // first fetch already names every id it wants back — see
+    // `qk.sellerDetail`. Firing early with an empty `requestedFieldIds` would
+    // make the API (correctly, by its own rule) hand back no field values at
+    // all, which is exactly the "Details tab is empty" bug this closes; but
+    // gating on success alone would hang the page forever for a viewer whose
+    // role can't even list Fields.
+    enabled: Boolean(sellerId) && !fieldsQuery.isPending,
     retry: (count, error) =>
       error instanceof ApiError && error.status === 404 ? false : count < 1,
   });

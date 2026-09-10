@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse, delay } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
+import { FIELDS } from '../../mocks/fixtures';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { DepartmentsPage } from './DepartmentsPage';
@@ -45,7 +46,6 @@ describe('administration resource flows', () => {
   it('creates, edits, paginates, and deactivates Journeys', async () => {
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_journey');
     change('Name', 'Synthetic Journey');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Journey')).toBeInTheDocument();
@@ -68,7 +68,6 @@ describe('administration resource flows', () => {
   it('purges a deactivated Journey only after its key is typed', async () => {
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_purgeable');
     change('Name', 'Synthetic Purgeable');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Purgeable')).toBeInTheDocument();
@@ -110,7 +109,6 @@ describe('administration resource flows', () => {
     );
     renderPage(<JourneysPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Journey' }));
-    change('Stable key', 'synthetic_blocked');
     change('Name', 'Synthetic Blocked');
     fireEvent.click(screen.getByRole('button', { name: 'Save Journey' }));
     expect(await screen.findByText('Synthetic Blocked')).toBeInTheDocument();
@@ -164,7 +162,6 @@ describe('administration resource flows', () => {
     );
     await screen.findByRole('heading', { level: 2 });
     fireEvent.click(await screen.findByRole('button', { name: 'Create Status' }));
-    change('Stable key', 'synthetic_status');
     change('Name', 'Synthetic Status');
     change('Order', '7');
     fireEvent.click(screen.getByRole('button', { name: 'Save Status' }));
@@ -207,7 +204,6 @@ describe('administration resource flows', () => {
   it('creates a select Field with options, edits it, and deactivates it', async () => {
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    change('Stable key', 'synthetic_select');
     change('Name', 'Synthetic Select');
     change('Type', 'select');
     change('Options', 'One\nTwo');
@@ -235,7 +231,6 @@ describe('administration resource flows', () => {
     );
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    change('Stable key', 'synthetic_granted');
     change('Name', 'Synthetic Granted');
 
     // Nothing is pre-ticked: a new Field is hidden from every role until an
@@ -361,9 +356,126 @@ describe('administration resource flows', () => {
     );
     renderPage(<FieldsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
-    await screen.findByLabelText(/^Stable key/i);
+    await screen.findByLabelText(/^Name/i);
     expect(screen.queryByText('Role visibility')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Synthetic role A view')).not.toBeInTheDocument();
+  });
+
+  it('builds an arithmetic calculation for a calculated numeric Field and sends it on save', async () => {
+    let createBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/v1/fields', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { ...createBody, id: 'field-new', key: 'synthetic_deal', active: true, sortOrder: 99 },
+          { status: 201 },
+        );
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    change('Name', 'Synthetic Deal Value');
+    change('Type', 'number');
+    change('Edit mode', 'calculated');
+
+    const monthlyRevenue = FIELDS.find((field) => field.key === 'monthly_revenue')!;
+    fireEvent.change(await screen.findByLabelText('Left'), { target: { value: 'field' } });
+    const leftField = await screen.findByLabelText('Left field');
+    // The eligible-field catalogue loads asynchronously after the row
+    // renders — setting a value with no matching <option> yet is a no-op.
+    await within(leftField.closest('div') as HTMLElement).findByRole('option', {
+      name: monthlyRevenue.label,
+    });
+    fireEvent.change(leftField, { target: { value: monthlyRevenue.id } });
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: '*' } });
+    fireEvent.change(screen.getByLabelText('Right'), { target: { value: 'constant' } });
+    fireEvent.change(screen.getByLabelText('Right constant value'), { target: { value: '12' } });
+    // Left/Right double as the arithmetic operand kind selects and the Field
+    // grid — "Edit mode" already suggested Source for us.
+    expect(screen.getByLabelText(/^Source/i)).toHaveValue('calculated');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+
+    await waitFor(() => expect(createBody).toBeDefined());
+    expect(createBody?.calculation).toEqual({
+      kind: 'arithmetic',
+      left: { type: 'field', fieldId: monthlyRevenue.id },
+      operator: '*',
+      right: { type: 'constant', value: 12 },
+    });
+    expect(createBody?.source).toBe('calculated');
+  });
+
+  it('rejects a calculated Field of an unsupported type before it ever reaches the server', async () => {
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    change('Name', 'Synthetic Bad Calc');
+    change('Type', 'boolean');
+    change('Edit mode', 'calculated');
+    expect(
+      screen.getByText(/Calculated fields must be type Number.*Text\/Textarea/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Field' })).toBeDisabled();
+  });
+
+  it('shows a system key input for a system Field and sends it on save', async () => {
+    let createBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/v1/fields', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { ...createBody, id: 'field-new', key: 'synthetic_system', active: true, sortOrder: 99 },
+          { status: 201 },
+        );
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    change('Name', 'Synthetic System Field');
+    change('Edit mode', 'system');
+    fireEvent.change(await screen.findByLabelText(/^System key/i), {
+      target: { value: 'creation_channel' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+    await waitFor(() => expect(createBody).toBeDefined());
+    expect(createBody?.system).toEqual({ key: 'creation_channel' });
+    expect(createBody?.source).toBe('system');
+  });
+
+  it('auto-suggests Source from Edit mode until the admin picks their own', async () => {
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    expect(screen.getByLabelText(/^Source/i)).toHaveValue('manual');
+
+    change('Edit mode', 'calculated');
+    expect(screen.getByLabelText(/^Source/i)).toHaveValue('calculated');
+
+    change('Source', 'import');
+    change('Edit mode', 'system');
+    // Once hand-picked, a later Edit mode change must not clobber it.
+    expect(screen.getByLabelText(/^Source/i)).toHaveValue('import');
+  });
+
+  it('reorders Fields and saves the new order', async () => {
+    let reorderBody: { fieldIds: string[] } | undefined;
+    server.use(
+      http.put('/api/v1/fields/order', async ({ request }) => {
+        reorderBody = (await request.json()) as { fieldIds: string[] };
+        return HttpResponse.json([]);
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reorder fields' }));
+    await screen.findByText('Field order');
+
+    const first = FIELDS[0]!;
+    const second = FIELDS[1]!;
+    fireEvent.click(await screen.findByRole('button', { name: `Move ${first.label} down` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field order' }));
+
+    await waitFor(() => expect(reorderBody).toBeDefined());
+    expect(reorderBody?.fieldIds[0]).toBe(second.id);
+    expect(reorderBody?.fieldIds[1]).toBe(first.id);
   });
 
   it('filters, creates, edits, paginates, and deactivates Users without a password', async () => {
@@ -411,7 +523,6 @@ describe('administration resource flows', () => {
   it('creates and edits Departments and creates, edits, deactivates Roles with replacement selection', async () => {
     const { unmount } = renderPage(<DepartmentsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Department' }));
-    change('Stable key', 'synthetic_department');
     change('Name', 'Synthetic Department');
     fireEvent.click(screen.getByRole('button', { name: 'Save Department' }));
     expect(await screen.findByText('Synthetic Department')).toBeInTheDocument();
@@ -424,7 +535,6 @@ describe('administration resource flows', () => {
     cleanup();
     renderPage(<RolesPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Create Role' }));
-    change('Stable key', 'synthetic_role');
     change('Name', 'Synthetic Role');
     fireEvent.click(screen.getByRole('button', { name: 'Save Role' }));
     expect(await screen.findByText('Synthetic Role')).toBeInTheDocument();
@@ -457,7 +567,6 @@ describe('administration resource flows', () => {
     expect(screen.getByText(/led by Alba Fenn/)).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Create Team' }));
-    change('Stable key', 'synthetic_new_team');
     change('Name', 'Synthetic new team');
 
     // Save stays disabled until somebody leads the Team — the same rule the
@@ -566,6 +675,61 @@ describe('administration resource flows', () => {
     // routing rights is a permissions act, so a routing configurator must not be
     // able to widen its own access from here.
     expect(screen.queryByText(/Role permissions for this Status/i)).not.toBeInTheDocument();
+  });
+
+  it('restricts a Status’s visibility to chosen roles, then reopens it, from inside the Statuses list', async () => {
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    await screen.findByRole('heading', { level: 2 });
+
+    // Visibility lives beside Routing in the same Statuses list, not a tab.
+    const toggles = await screen.findAllByRole('button', { name: 'Visibility' });
+    fireEvent.click(toggles[0] as HTMLElement);
+    expect(await screen.findByText(/^Unrestricted\./)).toBeInTheDocument();
+    // No restriction configured yet, so the list row carries no indicator —
+    // absence, not a "0 roles" badge, is how "unrestricted" reads.
+    expect(screen.queryByText(/Visible to \d/)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByLabelText(/Synthetic role B/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save visibility' }));
+
+    expect(await screen.findByText(/^Restricted\./)).toBeInTheDocument();
+    // The list row's own indicator, not just the open panel, picks up the change.
+    expect(await screen.findByText('Visible to 1 role')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear restriction' }));
+    await waitFor(() => expect(screen.getByText(/^Unrestricted\./)).toBeInTheDocument());
+    expect(screen.queryByText(/Visible to \d/)).not.toBeInTheDocument();
+  });
+
+  it('hides the visibility panel and its list indicator from someone who cannot edit permissions', async () => {
+    server.use(
+      http.get('/api/v1/auth/capabilities', () =>
+        HttpResponse.json({
+          permissions: [
+            { module: 'journeys_statuses', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'lead_routing', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'roles_permissions', action: 'view', scope: 'ORGANIZATION' },
+          ],
+          journeyIds: ['journey-alpha'],
+          fieldVisibility: [],
+        }),
+      ),
+    );
+    renderPage(
+      <JourneyDetailPage />,
+      '/admin/journeys/journey-alpha',
+      '/admin/journeys/:journeyId',
+    );
+    // Wait for the page (and its per-row toggles) to finish loading.
+    await screen.findAllByRole('button', { name: 'Routing' });
+    // `roles_permissions:view` alone is not enough — narrowing lead visibility
+    // is an edit act, the identical self-escalation rule Routing's own grant
+    // editor follows. Hidden entirely, not shown read-only: same precedent.
+    expect(screen.queryByRole('button', { name: 'Visibility' })).not.toBeInTheDocument();
   });
 
   it('renders loading, empty, API error, and stale-capability forbidden states', async () => {

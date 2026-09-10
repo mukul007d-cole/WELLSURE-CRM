@@ -2,7 +2,11 @@ import type { RecordPredicate } from '@falcon/permission-engine';
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { buildSellerListQuery } from '../leads/filter-sql.js';
-import type { ImportFieldDefinition, ImportStatusDefinition } from './mapping.js';
+import {
+  nonImportableEditModes,
+  type ImportFieldDefinition,
+  type ImportStatusDefinition,
+} from './mapping.js';
 import type { ImportRepository, ImportTransactionClient } from './service.js';
 
 export class PrismaImportRepository implements ImportRepository {
@@ -11,11 +15,18 @@ export class PrismaImportRepository implements ImportRepository {
   /**
    * What a column may be mapped to.
    *
-   * Three conditions, all of which `validateFieldValues` would otherwise
+   * Four conditions, three of which `validateFieldValues` would otherwise
    * enforce one row at a time: the Field is active, it is actively assigned to
    * this Journey, and the assignment is not `hidden`. Excluding them here is
    * what turns "field is not assigned to this journey" from five thousand row
    * rejections into a mapping target that was never offered.
+   *
+   * The fourth — excluding `calculated`/`system` edit modes — isn't something
+   * `validateFieldValues` rejects at all: it silently drops a client-supplied
+   * value for either and computes/leaves it instead (`leads/validation.ts`).
+   * Left mappable here, the file would commit with every one of those columns
+   * quietly discarded and no indication why; excluding them here means the
+   * mapping UI never offers a target whose values are thrown away.
    *
    * This feature never creates a Field, so anything absent from this list is
    * simply not mappable.
@@ -30,7 +41,7 @@ export class PrismaImportRepository implements ImportRepository {
         journeyId,
         active: true,
         requirement: { not: 'hidden' },
-        field: { active: true },
+        field: { active: true, editMode: { notIn: [...nonImportableEditModes] } },
       },
       include: { field: { select: { id: true, key: true, name: true, fieldType: true } } },
     });

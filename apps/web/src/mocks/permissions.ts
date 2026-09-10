@@ -1,10 +1,16 @@
 import { FIELDS, type MockLead, type MockUser } from './fixtures';
 
-const FIELD_ID_TO_KEY = new Map(FIELDS.map((field) => [field.id, field.key]));
-
-export function visibleFieldKeys(user: MockUser): Set<string> {
+/**
+ * `fieldValues` is keyed by Field id, matching the real API — `field_values`
+ * is a JSONB column the backend addresses by id everywhere (the GIN-indexed
+ * containment queries, `field_journey_settings`, field-visibility redaction).
+ * A field's `key` is a separate, human-readable identifier used only for
+ * things like URL-safe references and generated names — never for indexing
+ * into a lead's own field values.
+ */
+export function visibleFieldIds(user: MockUser): Set<string> {
   return new Set(
-    FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)).map((field) => field.key),
+    FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)).map((field) => field.id),
   );
 }
 
@@ -12,18 +18,12 @@ export function stripFieldValues(
   fieldValues: Record<string, unknown>,
   user: MockUser,
 ): Record<string, unknown> {
-  const visible = visibleFieldKeys(user);
+  const visible = visibleFieldIds(user);
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fieldValues)) {
-    if (visible.has(key)) result[key] = value;
+  for (const [id, value] of Object.entries(fieldValues)) {
+    if (visible.has(id)) result[id] = value;
   }
   return result;
-}
-
-export function restrictedFieldKeys(user: MockUser): string[] {
-  return user.restrictedFieldIds
-    .map((id) => FIELD_ID_TO_KEY.get(id))
-    .filter((key): key is string => Boolean(key));
 }
 
 export function isLeadInScope(lead: MockLead, user: MockUser): boolean {

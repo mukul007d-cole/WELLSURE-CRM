@@ -122,7 +122,7 @@ class MemoryLeadRepository implements LeadReadRepository {
       phone: null,
       email: 'seller@example.test',
       fieldValues: { 'field-visible': 'visible', 'field-hidden': 'hidden' },
-      processInstances: [{ journeyId: journeyA, active: true }],
+      processInstances: [{ journeyId: journeyA, active: true, statusId: 'status-a' }],
     };
   }
 }
@@ -150,6 +150,9 @@ function createPermissionRepository(): PermissionRepository {
       return { module: 'leads', action: 'view', scope: 'SELF' };
     },
     async hasJourneyAccess() {
+      return true;
+    },
+    async hasStatusVisibility() {
       return true;
     },
     async listAccessibleJourneyIds() {
