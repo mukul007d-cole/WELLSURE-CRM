@@ -55,7 +55,7 @@ RUN test -n "$VITE_FALCON_ORGANIZATION_ID" \
 RUN pnpm build
 
 # Drop dev dependencies before they are copied into the runtime image.
-RUN pnpm prune --prod
+FROM build AS pruned
 
 # ---------------------------------------------------------------------------
 # Runtime
@@ -72,11 +72,11 @@ ENV NODE_ENV=production
 # `node` exists in the base image; the process has no reason to be root.
 USER node
 
-COPY --from=build --chown=node:node /app/node_modules              ./node_modules
-COPY --from=build --chown=node:node /app/apps/api/dist             ./apps/api/dist
-COPY --from=build --chown=node:node /app/apps/api/node_modules     ./apps/api/node_modules
-COPY --from=build --chown=node:node /app/apps/web/dist             ./apps/web/dist
-COPY --from=build --chown=node:node /app/packages                  ./packages
+COPY --from=pruned --chown=node:node /app/node_modules              ./node_modules
+COPY --from=pruned --chown=node:node /app/apps/api/dist             ./apps/api/dist
+COPY --from=pruned --chown=node:node /app/apps/api/node_modules     ./apps/api/node_modules
+COPY --from=pruned --chown=node:node /app/apps/web/dist             ./apps/web/dist
+COPY --from=pruned --chown=node:node /app/packages                  ./packages
 
 # Where registerWeb serves the bundle from. Setting it here rather than in the
 # service definition keeps the path an implementation detail of the image.

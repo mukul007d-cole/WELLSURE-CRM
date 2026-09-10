@@ -9,6 +9,10 @@ variable "environment" {
   type        = string
 }
 
+variable "image_tag" {
+  description = "Image tag App Runner is created with. GIT SHA of the first real build."
+  type = string
+}
 variable "common_tags" {
   description = "Tags applied to every resource."
   type        = map(string)
