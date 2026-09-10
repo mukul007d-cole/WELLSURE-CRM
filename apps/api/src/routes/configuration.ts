@@ -327,6 +327,10 @@ export async function createField(input: {
   section?: string | null;
   editMode: string;
   source: string;
+  calculation?: unknown;
+  system?: unknown;
+  /** Defaults to append-to-end in the service when omitted. */
+  sortOrder?: number;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
@@ -344,6 +348,9 @@ export async function createField(input: {
         ...(input.section === undefined ? {} : { section: input.section }),
         editMode: input.editMode,
         source: input.source,
+        ...(input.calculation === undefined ? {} : { calculation: input.calculation }),
+        ...(input.system === undefined ? {} : { system: input.system }),
+        ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
       }),
     201,
   );
@@ -380,6 +387,8 @@ export async function updateField(input: {
   section?: string | null;
   editMode: string;
   source: string;
+  calculation?: unknown;
+  system?: unknown;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
     input,
@@ -397,6 +406,28 @@ export async function updateField(input: {
         ...(input.section === undefined ? {} : { section: input.section }),
         editMode: input.editMode,
         source: input.source,
+        ...(input.calculation === undefined ? {} : { calculation: input.calculation }),
+        ...(input.system === undefined ? {} : { system: input.system }),
+      }),
+    200,
+  );
+}
+export async function reorderFields(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  fieldIds: string[];
+}): Promise<ConfigurationRouteResult> {
+  return mutate(
+    input,
+    configurationModules.fields,
+    'edit',
+    undefined,
+    (service) =>
+      service.reorderFields({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        fieldIds: input.fieldIds,
       }),
     200,
   );

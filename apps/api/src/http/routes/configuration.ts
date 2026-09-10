@@ -8,6 +8,7 @@ import {
   updateJourney,
   deactivateJourney,
   updateStatus,
+  reorderFields,
   reorderStatuses,
   updateField,
   readJourneyFields,
@@ -143,10 +144,19 @@ export function registerConfigurationRoutes(
       source: String(b.source),
       ...(b.validationRule !== undefined ? { validationRule: b.validationRule } : {}),
       ...(b.section === null || typeof b.section === 'string' ? { section: b.section } : {}),
+      ...(b.calculation !== undefined ? { calculation: b.calculation } : {}),
+      ...(b.system !== undefined ? { system: b.system } : {}),
+      ...(typeof b.sortOrder === 'number' ? { sortOrder: b.sortOrder } : {}),
     }),
   );
   bind('DELETE', '/api/v1/fields/:fieldId', (r, _b, p) =>
     deactivateField({ ...base(r), fieldId: String(p.fieldId) }),
+  );
+  bind('PUT', '/api/v1/fields/order', (r, b) =>
+    reorderFields({
+      ...base(r),
+      fieldIds: Array.isArray(b.fieldIds) ? b.fieldIds.map(String) : [],
+    }),
   );
   bind('PATCH', '/api/v1/fields/:fieldId', (r, b, p) =>
     updateField({
@@ -158,6 +168,8 @@ export function registerConfigurationRoutes(
       ...(typeof b.section === 'string' || b.section === null ? { section: b.section } : {}),
       editMode: String(b.editMode),
       source: String(b.source),
+      ...(b.calculation !== undefined ? { calculation: b.calculation } : {}),
+      ...(b.system !== undefined ? { system: b.system } : {}),
     }),
   );
   server.get(

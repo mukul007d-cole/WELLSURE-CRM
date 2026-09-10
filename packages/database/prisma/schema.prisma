@@ -423,6 +423,14 @@ model Field {
   section        String?
   editMode       String   @map("edit_mode")
   source         String
+  /**
+   * Display order within a Section (and of Sections themselves, by their
+   * first Field's position) on the Details tab, the lead form, and the admin
+   * Fields list. Defaulted to 0 at the column level only as a safety net —
+   * `ConfigurationService.createField` always computes a real append-to-end
+   * value, the same way `sortOrder` works for Status.
+   */
+  sortOrder      Int      @default(0) @map("sort_order")
   active         Boolean  @default(true)
   version        Int      @default(1)
   createdById    String?  @map("created_by") @db.Uuid
@@ -440,6 +448,7 @@ model Field {
   @@id([organizationId, id])
   @@unique([organizationId, key])
   @@index([organizationId, active])
+  @@index([organizationId, active, sortOrder])
   @@map("fields")
 }
 

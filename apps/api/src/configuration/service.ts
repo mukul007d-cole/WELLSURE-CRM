@@ -1,4 +1,4 @@
-import { nextAvailableKey } from '@falcon/validation';
+import { nextAvailableKey, type ReferenceableField } from '@falcon/validation';
 
 import type { ConfigurationAuditWriter, LeadActivityWriter } from './audit.js';
 import { ConfigurationError } from './errors.js';
@@ -7,11 +7,14 @@ import {
   fieldEditModes,
   fieldRequirements,
   fieldSources,
+  isRecordObject,
+  requireCalculationConfig,
   requireConfigKey,
   requireFieldValidationRule,
   requireNonBlank,
   requireNonNegativeInteger,
   requireOneOf,
+  requireSystemKey,
   statusBehaviorTypes,
   statusOutcomeTypes,
 } from './validation.js';
@@ -69,6 +72,10 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     id: string,
     active: boolean | undefined,
   ): Promise<ConfigRow | null>;
+  /** For validating a calculated Field's config: every active Field's id/type/editMode. */
+  listFieldSummaries(
+    organizationId: string,
+  ): Promise<Array<{ id: string; fieldType: string; editMode: string; active: boolean }>>;
   listJourneyFieldSettings(organizationId: string, journeyId: string): Promise<ConfigRow[]>;
   createJourney(input: Record<string, unknown>): Promise<ConfigRow>;
   updateJourney(
@@ -499,6 +506,16 @@ export class ConfigurationService {
     section?: string | null;
     editMode: string;
     source: string;
+    /** Required when editMode is 'calculated'; rejected otherwise. */
+    calculation?: unknown;
+    /** Required when editMode is 'system'; rejected otherwise. Free-text key only — see `requireSystemKey`. */
+    system?: unknown;
+    /**
+     * Defaults to append-to-end when omitted — unlike Status, where the admin
+     * UI always computes and sends it, a Field's order is new enough that most
+     * callers (existing tests among them) have no opinion on it.
+     */
+    sortOrder?: number;
   }) {
     return this.repository.transaction(async (tx) => {
       const name = requireNonBlank(input.name, 'field name');
@@ -507,15 +524,31 @@ export class ConfigurationService {
           tx.fieldKeyExists(input.organizationId, candidate),
         ),
       );
+      const fieldType = requireNonBlank(input.fieldType, 'field type');
+      const editMode = requireOneOf(input.editMode, fieldEditModes, 'edit mode');
+      const validationRule = await this.withModeConfig(tx, {
+        organizationId: input.organizationId,
+        fieldType,
+        editMode,
+        ownFieldId: null,
+        baseValidationRule: requireFieldValidationRule(fieldType, input.validationRule),
+        calculation: input.calculation,
+        system: input.system,
+      });
+      const sortOrder =
+        input.sortOrder === undefined
+          ? (await tx.listFieldSummaries(input.organizationId)).length
+          : requireNonNegativeInteger(input.sortOrder, 'sort order');
       const row = await tx.createField({
         organizationId: input.organizationId,
         key,
         name,
-        fieldType: requireNonBlank(input.fieldType, 'field type'),
-        validationRule: requireFieldValidationRule(input.fieldType, input.validationRule),
+        fieldType,
+        validationRule,
         section: input.section ?? null,
-        editMode: requireOneOf(input.editMode, fieldEditModes, 'edit mode'),
+        editMode,
         source: requireOneOf(input.source, fieldSources, 'source'),
+        sortOrder,
         createdById: input.actorUserId,
         updatedById: input.actorUserId,
       });
@@ -556,16 +589,29 @@ export class ConfigurationService {
     section?: string | null;
     editMode: string;
     source: string;
+    calculation?: unknown;
+    system?: unknown;
   }) {
     return this.repository.transaction(async (tx) => {
       const oldValue = await requireFound(tx.findField(input.organizationId, input.fieldId));
+      const fieldType = requireNonBlank(input.fieldType, 'field type');
+      const editMode = requireOneOf(input.editMode, fieldEditModes, 'edit mode');
+      const validationRule = await this.withModeConfig(tx, {
+        organizationId: input.organizationId,
+        fieldType,
+        editMode,
+        ownFieldId: input.fieldId,
+        baseValidationRule: requireFieldValidationRule(fieldType, input.validationRule),
+        calculation: input.calculation,
+        system: input.system,
+      });
       const row = await requireFound(
         tx.updateField(input.organizationId, input.fieldId, {
           name: requireNonBlank(input.name, 'field name'),
-          fieldType: requireNonBlank(input.fieldType, 'field type'),
-          validationRule: requireFieldValidationRule(input.fieldType, input.validationRule),
+          fieldType,
+          validationRule,
           section: input.section ?? null,
-          editMode: requireOneOf(input.editMode, fieldEditModes, 'edit mode'),
+          editMode,
           source: requireOneOf(input.source, fieldSources, 'source'),
           updatedById: input.actorUserId,
         }),
@@ -573,6 +619,91 @@ export class ConfigurationService {
       await tx.writeSystemAudit(audit(input, 'field', input.fieldId, 'edit', oldValue, row));
       return row;
     });
+  }
+
+  /** Mirrors `reorderStatuses` exactly — see there for why one bulk call, not N `updateField`s. */
+  async reorderFields(input: { organizationId: string; actorUserId: string; fieldIds: string[] }) {
+    if (new Set(input.fieldIds).size !== input.fieldIds.length)
+      throw new ConfigurationError('validation_error', 'fieldIds must be unique');
+    return this.repository.transaction(async (tx) => {
+      const current = await Promise.all(
+        input.fieldIds.map((id) => requireFound(tx.findField(input.organizationId, id))),
+      );
+      const rows: ConfigRow[] = [];
+      for (const [sortOrder, oldValue] of current.entries()) {
+        const row = await requireFound(
+          tx.updateField(input.organizationId, oldValue.id, {
+            sortOrder,
+            updatedById: input.actorUserId,
+          }),
+        );
+        await tx.writeSystemAudit(audit(input, 'field', oldValue.id, 'reorder', oldValue, row));
+        rows.push(row);
+      }
+      return rows;
+    });
+  }
+
+  /**
+   * Folds a calculated/system Field's config into its `validationRule` JSON
+   * — there's no dedicated column, same as `select`'s `options`. Refuses the
+   * config when it doesn't match `editMode` in either direction: providing
+   * one for the wrong mode is caller error, not something to silently drop.
+   */
+  private async withModeConfig(
+    repository: ConfigurationRepository,
+    input: {
+      organizationId: string;
+      fieldType: string;
+      editMode: string;
+      ownFieldId: string | null;
+      baseValidationRule: unknown;
+      calculation?: unknown;
+      system?: unknown;
+    },
+  ): Promise<unknown> {
+    let validationRule = input.baseValidationRule;
+    if (input.editMode === 'calculated') {
+      const referenceable = await this.referenceableFields(repository, input.organizationId);
+      const calculation = requireCalculationConfig({
+        raw: input.calculation,
+        fieldType: input.fieldType,
+        ownFieldId: input.ownFieldId,
+        referenceable,
+      });
+      validationRule = {
+        ...(isRecordObject(validationRule) ? validationRule : {}),
+        calculation,
+      };
+    } else if (input.calculation !== undefined) {
+      throw new ConfigurationError(
+        'validation_error',
+        'calculation config is only valid when edit mode is calculated',
+      );
+    }
+    if (input.editMode === 'system') {
+      const key = requireSystemKey(input.system);
+      validationRule = { ...(isRecordObject(validationRule) ? validationRule : {}), system: { key } };
+    } else if (input.system !== undefined) {
+      throw new ConfigurationError(
+        'validation_error',
+        'system config is only valid when edit mode is system',
+      );
+    }
+    return validationRule;
+  }
+
+  private async referenceableFields(
+    repository: ConfigurationRepository,
+    organizationId: string,
+  ): Promise<ReadonlyMap<string, ReferenceableField>> {
+    const fields = await repository.listFieldSummaries(organizationId);
+    return new Map(
+      fields.map((field) => [
+        field.id,
+        { fieldType: field.fieldType, editMode: field.editMode, active: field.active },
+      ]),
+    );
   }
 
   listJourneyFieldSettings(input: { organizationId: string; journeyId: string }) {

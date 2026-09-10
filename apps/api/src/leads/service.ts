@@ -131,14 +131,28 @@ export class LeadService {
           : await tx.findStatus(input.organizationId, input.journeyId, input.statusId);
       if (status === null || !status.active)
         throw new LeadError('validation_error', 'status is invalid');
+
+      // Fetched *before* validating, when reusing a lead: a locked field can
+      // only be protected against a client-supplied change by checking what
+      // it already holds, and a calculated field can only be recomputed
+      // correctly from the record's real existing values, not from nothing.
+      // Fetching first also means the required-field completeness check
+      // below sees the lead's actual state rather than only the values this
+      // one call happens to submit.
+      const existingLead =
+        input.existingLeadId === undefined
+          ? null
+          : await requireLead(tx, input.organizationId, input.existingLeadId);
+
       const settings = await tx.listFieldSettings(input.organizationId, input.journeyId);
       const mergedFieldValues = validateFieldValues({
         settings,
         fieldValues: input.fieldValues,
+        ...(existingLead === null ? {} : { existingFieldValues: existingLead.fieldValues }),
         statusId: status.id,
       });
       const lead =
-        input.existingLeadId === undefined
+        existingLead === null
           ? await tx.createLead({
               organizationId: input.organizationId,
               name: validateNonBlank(input.name, 'lead name'),
@@ -146,7 +160,14 @@ export class LeadService {
               email: input.email ?? null,
               fieldValues: mergedFieldValues,
             })
-          : await this.attachExistingLead(tx, input, mergedFieldValues);
+          : await requireFound(
+              tx.updateLead(input.organizationId, existingLead.id, {
+                name: validateNonBlank(input.name, 'lead name'),
+                phone: input.phone ?? existingLead.phone,
+                email: input.email ?? existingLead.email,
+                fieldValues: mergedFieldValues,
+              }),
+            );
       const duplicate = await tx.findActiveProcessInstanceByLeadJourney(
         input.organizationId,
         lead.id,
@@ -348,29 +369,16 @@ export class LeadService {
       return { lead: updatedLead, process: updatedProcess };
     });
   }
+}
 
-  private async attachExistingLead(
-    tx: LeadRepository,
-    input: {
-      organizationId: string;
-      existingLeadId?: string;
-      name: string;
-      phone?: string | null;
-      email?: string | null;
-    },
-    fieldValues: Record<string, unknown>,
-  ): Promise<LeadCoreRecord> {
-    const existing = await tx.findLead(input.organizationId, input.existingLeadId!);
-    if (existing === null) throw new LeadError('not_found', 'lead not found');
-    return requireFound(
-      tx.updateLead(input.organizationId, existing.id, {
-        name: validateNonBlank(input.name, 'lead name'),
-        phone: input.phone ?? existing.phone,
-        email: input.email ?? existing.email,
-        fieldValues: { ...existing.fieldValues, ...fieldValues },
-      }),
-    );
-  }
+async function requireLead(
+  repository: LeadRepository,
+  organizationId: string,
+  leadId: string,
+): Promise<LeadCoreRecord> {
+  const lead = await repository.findLead(organizationId, leadId);
+  if (lead === null) throw new LeadError('not_found', 'lead not found');
+  return lead;
 }
 
 async function validateAssignmentUsers(

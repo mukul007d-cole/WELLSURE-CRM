@@ -1,3 +1,9 @@
+import {
+  parseCalculationConfig,
+  type CalculationConfig,
+  type ReferenceableField,
+} from '@falcon/validation';
+
 import { ConfigurationError } from './errors.js';
 
 export const statusOutcomeTypes = ['open', 'closed_won', 'closed_lost'] as const;
@@ -45,6 +51,47 @@ export function requireNonNegativeInteger(value: number, label: string): number 
     throw new ConfigurationError('validation_error', `${label} must be a non-negative integer`);
   }
   return value;
+}
+
+/**
+ * Wraps the shared, dependency-free `@falcon/validation` parser: this module
+ * throws `ConfigurationError`, same as every other `require*` here, rather
+ * than making `@falcon/validation` invent an error type both `configuration`
+ * and `leads` would separately have to recognize.
+ */
+export function requireCalculationConfig(input: {
+  raw: unknown;
+  fieldType: string;
+  ownFieldId: string | null;
+  referenceable: ReadonlyMap<string, ReferenceableField>;
+}): CalculationConfig {
+  const result = parseCalculationConfig(input);
+  if (!result.ok) throw new ConfigurationError('validation_error', result.reason);
+  return result.config;
+}
+
+/**
+ * `system` edit mode's config is deliberately just a free-text key today —
+ * no catalog of system-populated values has been decided (`leads/validation.ts`'s
+ * `computeSystemValue` is a documented no-op) — so this only checks the key
+ * is present, not that it names anything real yet.
+ */
+export function requireSystemKey(raw: unknown): string {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new ConfigurationError(
+      'validation_error',
+      'system config is required for a system field',
+    );
+  }
+  const key = (raw as { key?: unknown }).key;
+  if (typeof key !== 'string' || key.trim() === '') {
+    throw new ConfigurationError('validation_error', 'system config requires a non-blank key');
+  }
+  return key.trim();
+}
+
+export function isRecordObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function requireFieldValidationRule(fieldType: string, value: unknown): unknown {

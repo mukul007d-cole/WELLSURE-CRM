@@ -108,6 +108,16 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
     const row = find(this.rows.fields, org, id);
     return row && (active === undefined || row.active === active) ? row : null;
   }
+  async listFieldSummaries(org: string) {
+    return [...this.rows.fields.values()]
+      .filter((row) => row.organizationId === org && row.active !== false)
+      .map((row) => ({
+        id: row.id,
+        fieldType: typeof row.fieldType === 'string' ? row.fieldType : 'text',
+        editMode: typeof row.editMode === 'string' ? row.editMode : 'manual',
+        active: row.active !== false,
+      }));
+  }
   async listJourneyFieldSettings(org: string, journey: string) {
     return [...this.rows.fieldSettings.values()].filter(
       (row) => row.organizationId === org && row.journeyId === journey && row.active !== false,

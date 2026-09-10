@@ -101,6 +101,7 @@ interface FieldSettingRow {
     id: string;
     fieldType: string;
     validationRule: unknown;
+    editMode: string;
     active: boolean;
   };
 }
@@ -209,7 +210,9 @@ export class PrismaLeadRepository
     const rows = await this.prisma.fieldJourneySetting.findMany({
       where: { organizationId, journeyId, active: true },
       include: {
-        field: { select: { id: true, fieldType: true, validationRule: true, active: true } },
+        field: {
+          select: { id: true, fieldType: true, validationRule: true, editMode: true, active: true },
+        },
       },
     });
     return rows.map((row) => ({
