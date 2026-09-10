@@ -1,54 +1,9 @@
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Eyebrow } from '../../components/ui/Heading';
+import { groupFieldsBySection } from '../../lib/field-sections';
 import { formatFieldValue } from '../../lib/format';
 import type { FieldDefinition } from '../../types/domain';
-
-/** Fields with no configured section, grouped last under a neutral heading. */
-const UNSECTIONED = 'Other details';
-
-export interface FieldSection {
-  name: string;
-  fields: FieldDefinition[];
-}
-
-/**
- * Group a lead's visible fields by their configured `Field.section`.
- *
- * Section names are administrator configuration, never a fixed list — a
- * deployment that configures no sections gets one group and the same flat
- * layout as before. Order follows first appearance in the field list, which is
- * the order the configuration API already returns, so an admin controls the
- * section order by ordering the fields.
- */
-export function groupFieldsBySection(
-  fields: readonly FieldDefinition[],
-  fieldValues: Record<string, unknown>,
-): FieldSection[] {
-  const sections: FieldSection[] = [];
-  const byName = new Map<string, FieldSection>();
-  let unsectioned: FieldSection | undefined;
-
-  for (const field of fields) {
-    if (!(field.id in fieldValues)) continue;
-    const name = field.section?.trim();
-    if (!name) {
-      unsectioned ??= { name: UNSECTIONED, fields: [] };
-      unsectioned.fields.push(field);
-      continue;
-    }
-    let section = byName.get(name);
-    if (!section) {
-      section = { name, fields: [] };
-      byName.set(name, section);
-      sections.push(section);
-    }
-    section.fields.push(field);
-  }
-  // Always last: an unnamed group shouldn't jump ahead of named ones.
-  if (unsectioned) sections.push(unsectioned);
-  return sections;
-}
 
 export function DetailsTab({
   fields,
@@ -69,7 +24,7 @@ export function DetailsTab({
     );
   }
 
-  const sections = groupFieldsBySection(fields, fieldValues);
+  const sections = groupFieldsBySection(fields, (field) => field.id in fieldValues);
   if (sections.length === 0) {
     return (
       <EmptyState

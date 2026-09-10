@@ -21,8 +21,7 @@
  */
 
 export type CalculationOperand =
-  | { type: 'field'; fieldId: string }
-  | { type: 'constant'; value: number };
+  { type: 'field'; fieldId: string } | { type: 'constant'; value: number };
 
 export interface ArithmeticCalculation {
   kind: 'arithmetic';
@@ -46,8 +45,7 @@ export interface ReferenceableField {
 }
 
 export type ParseCalculationResult =
-  | { ok: true; config: CalculationConfig }
-  | { ok: false; reason: string };
+  { ok: true; config: CalculationConfig } | { ok: false; reason: string };
 
 /**
  * Validates a calculated Field's config at *create/update* time — shape,
@@ -186,8 +184,7 @@ export function computeCalculatedValue(
 ): unknown {
   if (config.kind === 'template') {
     return config.template.replace(templateTokenPattern, (_match, fieldId: string) => {
-      const value = fieldValues[fieldId.trim()];
-      return value === null || value === undefined ? '' : String(value);
+      return stringifyFieldValue(fieldValues[fieldId.trim()]);
     });
   }
   const left = resolveOperand(config.left, fieldValues);
@@ -212,4 +209,17 @@ function resolveOperand(
   if (operand.type === 'constant') return operand.value;
   const value = fieldValues[operand.fieldId];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Renders one referenced field's value for a template substitution. Narrowed
+ * to the primitive types a Field's value actually holds (never a bare
+ * `String(value)` on the raw `unknown`, which would silently print
+ * `[object Object]` for anything unexpected) — missing, null, or any other
+ * shape substitutes an empty string rather than failing to compute.
+ */
+function stringifyFieldValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
 }

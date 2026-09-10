@@ -76,6 +76,14 @@ export interface FieldDefinition {
    * declared it, so the value was on the wire and unused.
    */
   section?: string | null;
+  /**
+   * 'manual' | 'locked' | 'calculated' | 'system' | 'api-only'. The lead form
+   * and Details tab use this to decide whether a Field is a normal editable
+   * input, read-only, or hidden from the form entirely — see
+   * `DynamicFieldControl`. Enforcement itself is server-side
+   * (`leads/validation.ts`); this only decides what the form renders.
+   */
+  editMode: string;
 }
 
 export interface JourneyFieldSetting {
@@ -341,15 +349,45 @@ export interface AdminJourney {
    */
   assignmentTypes?: readonly string[] | undefined;
 }
+/**
+ * Mirrors `packages/validation/src/calculation.ts` on the API side — the
+ * config an `editMode: 'calculated'` Field stores. Two narrow modes, not a
+ * general formula language: arithmetic over two operands (each another
+ * Field's numeric value or a constant), or a `{{field:<id>}}` text template.
+ */
+export type CalculationOperand =
+  { type: 'field'; fieldId: string } | { type: 'constant'; value: number };
+
+export interface ArithmeticCalculation {
+  kind: 'arithmetic';
+  left: CalculationOperand;
+  operator: '+' | '-' | '*' | '/';
+  right: CalculationOperand;
+}
+
+export interface TemplateCalculation {
+  kind: 'template';
+  template: string;
+}
+
+export type CalculationConfig = ArithmeticCalculation | TemplateCalculation;
+
 export interface AdminField {
   id: string;
   key: string;
   name: string;
   fieldType: string;
-  validationRule: { options?: string[]; [key: string]: unknown } | null;
+  validationRule: {
+    options?: string[];
+    calculation?: CalculationConfig;
+    system?: { key: string };
+    [key: string]: unknown;
+  } | null;
   section: string | null;
   editMode: string;
   source: string;
+  /** Display order among Fields (and, by extension, Sections) — admin-controlled via reorderFields. */
+  sortOrder: number;
   active: boolean;
 }
 /**

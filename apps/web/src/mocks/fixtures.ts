@@ -60,25 +60,51 @@ export const SERVICES: Service[] = [
 ];
 
 export const FIELDS: FieldDefinition[] = [
-  { id: 'field-company', key: 'company_name', label: 'Company Name', type: 'text' },
+  {
+    id: 'field-company',
+    key: 'company_name',
+    label: 'Company Name',
+    type: 'text',
+    editMode: 'manual',
+  },
   {
     id: 'field-marketplace',
     key: 'marketplace',
     label: 'Marketplace',
     type: 'select',
     options: ['Amazon', 'Flipkart', 'Meesho', 'Myntra'],
+    editMode: 'manual',
   },
-  { id: 'field-category', key: 'category', label: 'Category', type: 'text' },
+  { id: 'field-category', key: 'category', label: 'Category', type: 'text', editMode: 'manual' },
   {
     id: 'field-monthly-revenue',
     key: 'monthly_revenue',
     label: 'Monthly Revenue (₹)',
     type: 'number',
+    editMode: 'manual',
   },
-  { id: 'field-deal-value', key: 'deal_value', label: 'Deal Value (₹)', type: 'number' },
-  { id: 'field-followup-date', key: 'followup_date', label: 'Follow-up Date', type: 'date' },
-  { id: 'field-priority', key: 'is_priority', label: 'Priority Account', type: 'boolean' },
-  { id: 'field-notes', key: 'notes', label: 'Notes', type: 'textarea' },
+  {
+    id: 'field-deal-value',
+    key: 'deal_value',
+    label: 'Deal Value (₹)',
+    type: 'number',
+    editMode: 'manual',
+  },
+  {
+    id: 'field-followup-date',
+    key: 'followup_date',
+    label: 'Follow-up Date',
+    type: 'date',
+    editMode: 'manual',
+  },
+  {
+    id: 'field-priority',
+    key: 'is_priority',
+    label: 'Priority Account',
+    type: 'boolean',
+    editMode: 'manual',
+  },
+  { id: 'field-notes', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
 ];
 
 export interface MockUser {

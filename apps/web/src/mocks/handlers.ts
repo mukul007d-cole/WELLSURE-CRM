@@ -276,7 +276,7 @@ const MOCK_DEPARTMENTS = [
     version: 1,
   },
 ];
-const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
+const MOCK_ADMIN_FIELDS = FIELDS.map((field, index) => ({
   id: field.id,
   key: field.key,
   name: field.label,
@@ -285,6 +285,7 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field) => ({
   section: null as string | null,
   editMode: 'manual',
   source: 'manual',
+  sortOrder: index,
   active: true,
 }));
 const MOCK_ADMIN_USERS = [
@@ -725,11 +726,14 @@ export const handlers = [
     const user = requireUser();
     if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
     // Always a Page of API-shaped rows (`name`/`fieldType`), matching what
-    // readConfiguration actually serializes.
+    // readConfiguration actually serializes — sortOrder-ordered, same as the
+    // real listFields query, so the admin's reordering is actually visible.
     return HttpResponse.json(
       pageResponse(
         request,
-        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)),
+        MOCK_ADMIN_FIELDS.filter((field) => !user.restrictedFieldIds.includes(field.id)).sort(
+          (a, b) => a.sortOrder - b.sortOrder,
+        ),
       ),
     );
   }),
@@ -742,7 +746,14 @@ export const handlers = [
       body.name,
       MOCK_ADMIN_FIELDS.map((field) => field.key),
     );
-    const row = { ...body, key, id: `field-${Date.now()}`, active: true };
+    const row = {
+      ...body,
+      key,
+      id: `field-${Date.now()}`,
+      // Append-to-end, matching the real API when sortOrder is omitted.
+      sortOrder: body.sortOrder ?? MOCK_ADMIN_FIELDS.length,
+      active: true,
+    };
     MOCK_ADMIN_FIELDS.push(row);
     return HttpResponse.json(row, { status: 201 });
   }),
@@ -758,6 +769,17 @@ export const handlers = [
     if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
     row.active = false;
     return HttpResponse.json(row);
+  }),
+  http.put(`${API_BASE}/fields/order`, async ({ request }) => {
+    const { fieldIds } = (await request.json()) as { fieldIds: string[] };
+    const updated = fieldIds
+      .map((id, sortOrder) => {
+        const row = MOCK_ADMIN_FIELDS.find((field) => field.id === id);
+        if (row) row.sortOrder = sortOrder;
+        return row;
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    return HttpResponse.json(updated);
   }),
 
   http.get(`${API_BASE}/services`, async () => {

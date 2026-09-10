@@ -209,6 +209,8 @@ export const adminApi = {
   editField: (id: string, body: object) =>
     request<AdminField>(`/fields/${id}`, json('PATCH', body)),
   deactivateField: (id: string) => request<AdminField>(`/fields/${id}`, json('DELETE')),
+  reorderFields: (fieldIds: string[]) =>
+    request<AdminField[]>('/fields/order', json('PUT', { fieldIds })),
   // The Field side of field_visibility. One request carries the Field's whole
   // role set — never a per-role loop, which is how the role-side axis is saved
   // too.
@@ -518,6 +520,9 @@ function normalizeField(row: RawField): FieldDefinition {
     // The API has always sent this; the normalizer just dropped it on the
     // floor, so the record page had no way to group details by section.
     ...(row.section === undefined ? {} : { section: row.section }),
+    // Defaults to 'manual' for older mock fixtures that predate this field —
+    // the real API always sends one.
+    editMode: row.editMode ?? 'manual',
   };
 }
 

@@ -1046,7 +1046,13 @@ function optionalField(fieldId: string): LeadFieldSetting {
     requirement: 'optional',
     requiredFromStatusId: null,
     active: true,
-    field: { id: fieldId, fieldType: 'text', validationRule: null, editMode: 'manual', active: true },
+    field: {
+      id: fieldId,
+      fieldType: 'text',
+      validationRule: null,
+      editMode: 'manual',
+      active: true,
+    },
   };
 }
 function requiredFromField(statusId: string): LeadFieldSetting {

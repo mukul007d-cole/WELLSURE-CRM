@@ -398,3 +398,145 @@ describe('lead form assignment types', () => {
     expect(response.status).toBe(200);
   });
 });
+
+describe('lead form editMode rendering', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  function stubFields(
+    fields: Array<{
+      id: string;
+      key: string;
+      label: string;
+      type: string;
+      editMode: string;
+      section?: string | null;
+    }>,
+  ) {
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json(
+          fields.map((field) => ({
+            id: field.id,
+            key: field.key,
+            name: field.label,
+            fieldType: field.type,
+            editMode: field.editMode,
+            section: field.section ?? null,
+            source: 'manual',
+            active: true,
+          })),
+        ),
+      ),
+    );
+  }
+
+  it('renders a locked field as an editable control before it has a value', async () => {
+    stubFields([
+      { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
+    ]);
+    renderCreate();
+    expect(await screen.findByLabelText('GST Number')).not.toBeDisabled();
+  });
+
+  it('renders a locked field read-only once it already has a value', async () => {
+    stubFields([
+      { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
+    ]);
+    server.use(
+      http.get('/api/v1/leads/:id', () =>
+        HttpResponse.json({
+          id: 'lead-1',
+          name: 'Vantage Retail Co',
+          phone: null,
+          email: null,
+          fieldValues: { 'field-locked': 'GSTIN123' },
+          processInstances: [
+            {
+              processInstanceId: 'pi-lead-1',
+              journeyId: JOURNEY.id,
+              active: true,
+              assignments: [],
+              journey: { id: JOURNEY.id, key: JOURNEY.key, name: JOURNEY.name },
+              currentStatus: {
+                id: 'status-1',
+                key: 'new',
+                name: 'New',
+                outcomeType: 'open',
+                behaviorType: 'default',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderEdit('user-admin', 'lead-1');
+    const input = await screen.findByLabelText('GST Number');
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue('GSTIN123');
+  });
+
+  it('renders calculated and system fields as read-only from the start', async () => {
+    stubFields([
+      {
+        id: 'field-calc',
+        key: 'deal_value',
+        label: 'Deal Value',
+        type: 'number',
+        editMode: 'calculated',
+      },
+      {
+        id: 'field-sys',
+        key: 'created_channel',
+        label: 'Created Channel',
+        type: 'text',
+        editMode: 'system',
+      },
+    ]);
+    renderCreate();
+    expect(await screen.findByLabelText('Deal Value')).toBeDisabled();
+    expect(screen.getByLabelText('Created Channel')).toBeDisabled();
+  });
+
+  it('never renders an editable control for an api-only field', async () => {
+    stubFields([
+      {
+        id: 'field-api',
+        key: 'external_id',
+        label: 'External Id',
+        type: 'text',
+        editMode: 'api-only',
+      },
+      { id: 'field-manual', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
+    ]);
+    renderCreate();
+    await screen.findByLabelText('Notes');
+    expect(screen.queryByLabelText('External Id')).not.toBeInTheDocument();
+  });
+
+  it('groups Additional details by section, matching the read-only Details tab', async () => {
+    stubFields([
+      {
+        id: 'field-a',
+        key: 'field_a',
+        label: 'Field A',
+        type: 'text',
+        editMode: 'manual',
+        section: 'Company',
+      },
+      {
+        id: 'field-b',
+        key: 'field_b',
+        label: 'Field B',
+        type: 'text',
+        editMode: 'manual',
+        section: 'Contact',
+      },
+    ]);
+    renderCreate();
+    await screen.findByLabelText('Field A');
+    expect(screen.getByText('Company')).toBeInTheDocument();
+    expect(screen.getByText('Contact')).toBeInTheDocument();
+  });
+});

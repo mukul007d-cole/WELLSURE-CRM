@@ -128,9 +128,9 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
    * scoped to one journey (a calculated Field can reference any Field, the
    * same way `field_values` itself isn't journey-scoped).
    */
-  async listFieldSummaries(org: string): Promise<
-    Array<{ id: string; fieldType: string; editMode: string; active: boolean }>
-  > {
+  async listFieldSummaries(
+    org: string,
+  ): Promise<Array<{ id: string; fieldType: string; editMode: string; active: boolean }>> {
     return this.prisma.field.findMany({
       where: { organizationId: org, active: true },
       select: { id: true, fieldType: true, editMode: true, active: true },
@@ -144,9 +144,7 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     }) as Promise<ConfigRow[]>;
   }
   async journeyKeyExists(org: string, key: string): Promise<boolean> {
-    return (
-      (await this.prisma.journey.findFirst({ where: { organizationId: org, key } })) !== null
-    );
+    return (await this.prisma.journey.findFirst({ where: { organizationId: org, key } })) !== null;
   }
   createJourney(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.journey.create({ data: input as never }) as Promise<ConfigRow>;
@@ -245,9 +243,7 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
     return result.count;
   }
   async serviceKeyExists(org: string, key: string): Promise<boolean> {
-    return (
-      (await this.prisma.service.findFirst({ where: { organizationId: org, key } })) !== null
-    );
+    return (await this.prisma.service.findFirst({ where: { organizationId: org, key } })) !== null;
   }
   createService(input: Record<string, unknown>): Promise<ConfigRow> {
     return this.prisma.service.create({ data: input as never }) as Promise<ConfigRow>;

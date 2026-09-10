@@ -9,7 +9,11 @@ import {
 
 const revenueField: ReferenceableField = { fieldType: 'number', editMode: 'manual', active: true };
 const companyField: ReferenceableField = { fieldType: 'text', editMode: 'manual', active: true };
-const inactiveField: ReferenceableField = { fieldType: 'number', editMode: 'manual', active: false };
+const inactiveField: ReferenceableField = {
+  fieldType: 'number',
+  editMode: 'manual',
+  active: false,
+};
 const calculatedField: ReferenceableField = {
   fieldType: 'number',
   editMode: 'calculated',

@@ -14,6 +14,7 @@ import { Select } from '../../components/ui/Select';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { configApi, sellersApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
+import { groupFieldsBySection } from '../../lib/field-sections';
 import { qk } from '../../lib/query-keys';
 import { DynamicFieldControl } from './DynamicFieldControl';
 import { defaultFieldValues, leadFormSchema, toFieldValues } from './schema';
@@ -48,6 +49,15 @@ export function LeadFormPage() {
 
   const fields = fieldsQuery.data ?? [];
   const existingProcess = sellerQuery.data?.processInstances[0];
+  // `json` fields have never had a control here; `api-only` ones are new —
+  // hidden from every human-facing form, the same rule the server enforces
+  // for the values themselves (there is no distinct "API caller" identity to
+  // gate on server-side, so the human form simply never offers the control).
+  const formFields = fields.filter(
+    (field) => field.type !== 'json' && field.editMode !== 'api-only',
+  );
+  const formSections = groupFieldsBySection(formFields);
+  const existingFieldValues = sellerQuery.data?.fieldValues;
 
   const {
     register,
@@ -327,12 +337,34 @@ export function LeadFormPage() {
             {fieldsQuery.isPending ? (
               <Skeleton className="h-24 w-full" />
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {fields
-                  .filter((field) => field.type !== 'json')
-                  .map((field) => (
-                    <DynamicFieldControl key={field.id} field={field} register={register} />
-                  ))}
+              <div className="flex flex-col gap-5">
+                {formSections.map((section) => (
+                  <div key={section.name}>
+                    {/* Suppressed when there is only one group, same rule the
+                        read-only Details tab uses — a lone heading over every
+                        field is noise, not structure. */}
+                    {formSections.length > 1 ? (
+                      <Eyebrow as="h4" className="mb-3 border-b border-line-soft pb-1.5">
+                        {section.name}
+                      </Eyebrow>
+                    ) : null}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {section.fields.map((field) => (
+                        <DynamicFieldControl
+                          key={field.id}
+                          field={field}
+                          register={register}
+                          disabled={
+                            field.editMode === 'calculated' ||
+                            field.editMode === 'system' ||
+                            (field.editMode === 'locked' &&
+                              hasValue(existingFieldValues?.[field.id]))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </Card>
@@ -352,5 +384,12 @@ export function LeadFormPage() {
         </form>
       )}
     </div>
+  );
+}
+
+/** Mirrors `validateFieldValues`'s own `isMissing` — a blank string is not a stored value. */
+function hasValue(value: unknown): boolean {
+  return (
+    value !== null && value !== undefined && !(typeof value === 'string' && value.trim() === '')
   );
 }

@@ -683,7 +683,10 @@ export class ConfigurationService {
     }
     if (input.editMode === 'system') {
       const key = requireSystemKey(input.system);
-      validationRule = { ...(isRecordObject(validationRule) ? validationRule : {}), system: { key } };
+      validationRule = {
+        ...(isRecordObject(validationRule) ? validationRule : {}),
+        system: { key },
+      };
     } else if (input.system !== undefined) {
       throw new ConfigurationError(
         'validation_error',

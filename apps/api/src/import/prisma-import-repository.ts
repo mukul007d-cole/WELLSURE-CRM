@@ -2,7 +2,11 @@ import type { RecordPredicate } from '@falcon/permission-engine';
 import type { FalconPrismaClient } from '@falcon/database';
 
 import { buildSellerListQuery } from '../leads/filter-sql.js';
-import { nonImportableEditModes, type ImportFieldDefinition, type ImportStatusDefinition } from './mapping.js';
+import {
+  nonImportableEditModes,
+  type ImportFieldDefinition,
+  type ImportStatusDefinition,
+} from './mapping.js';
 import type { ImportRepository, ImportTransactionClient } from './service.js';
 
 export class PrismaImportRepository implements ImportRepository {

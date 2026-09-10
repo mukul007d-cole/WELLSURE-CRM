@@ -3,9 +3,15 @@ import type { FieldDefinition } from '../../types/domain';
 import { defaultFieldValues, toFieldValues } from './schema';
 
 const FIELDS: FieldDefinition[] = [
-  { id: 'f1', key: 'company_name', label: 'Company Name', type: 'text' },
-  { id: 'f2', key: 'monthly_revenue', label: 'Monthly Revenue', type: 'number' },
-  { id: 'f3', key: 'is_priority', label: 'Priority', type: 'boolean' },
+  { id: 'f1', key: 'company_name', label: 'Company Name', type: 'text', editMode: 'manual' },
+  {
+    id: 'f2',
+    key: 'monthly_revenue',
+    label: 'Monthly Revenue',
+    type: 'number',
+    editMode: 'manual',
+  },
+  { id: 'f3', key: 'is_priority', label: 'Priority', type: 'boolean', editMode: 'manual' },
 ];
 
 describe('defaultFieldValues', () => {

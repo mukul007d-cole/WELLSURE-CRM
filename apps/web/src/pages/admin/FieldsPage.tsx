@@ -13,11 +13,49 @@ import { PurgeDialog } from '../../components/ui/PurgeDialog';
 import { DataCell, DataRow, RowActions } from '../../components/ui/DataTable';
 import { adminApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
-import type { AdminField, FieldAccessLevel, FieldRoleVisibility } from '../../types/domain';
+import type {
+  AdminField,
+  CalculationConfig,
+  FieldAccessLevel,
+  FieldRoleVisibility,
+} from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
-import { useUnsavedDraft } from '../../app/use-unsaved-changes';
+import { useUnsavedChanges, useUnsavedDraft } from '../../app/use-unsaved-changes';
 import { ActiveFilter, AdminTable, activeValue, ADMIN_PAGE_SIZE, loadAllPages } from './shared';
+
+const EDIT_MODES = ['manual', 'locked', 'calculated', 'system', 'api-only'] as const;
+const SOURCES = ['manual', 'system', 'api', 'import', 'calculated'] as const;
+/**
+ * What `source` defaults to when an admin picks an edit mode, so the two
+ * axes don't have to be set independently for the common case — still
+ * freely overridable afterward (e.g. a field whose *initial* value came from
+ * `import` but that reps can hand-edit after is `source: import`,
+ * `editMode: manual`, a combination this suggestion never produces on its
+ * own but doesn't prevent either).
+ */
+const SOURCE_SUGGESTION: Record<string, string> = {
+  manual: 'manual',
+  locked: 'manual',
+  calculated: 'calculated',
+  system: 'system',
+  'api-only': 'api',
+};
+/** The only two fieldTypes a calculated Field can have — arithmetic needs a number, a template needs text. */
+const CALCULABLE_TYPES = new Set(['number', 'text', 'textarea']);
+
+type OperandDraft = { kind: 'field' | 'constant'; fieldId: string; constant: string };
+type CalculationDraft =
+  | { mode: 'arithmetic'; left: OperandDraft; operator: string; right: OperandDraft }
+  | { mode: 'template'; template: string };
+
+const emptyOperand = (): OperandDraft => ({ kind: 'constant', fieldId: '', constant: '' });
+const emptyCalculation = (): CalculationDraft => ({
+  mode: 'arithmetic',
+  left: emptyOperand(),
+  operator: '+',
+  right: emptyOperand(),
+});
 
 type FieldDraft = {
   id?: string;
@@ -28,6 +66,10 @@ type FieldDraft = {
   section: string;
   editMode: string;
   source: string;
+  /** Stops the edit-mode → source auto-suggestion once the admin has picked their own. */
+  sourceManuallySet: boolean;
+  calculation: CalculationDraft;
+  systemKey: string;
   /** Roles granted this Field. Absent from the list means hidden. */
   visibility: FieldRoleVisibility[];
 };
@@ -38,6 +80,9 @@ const emptyField = (): FieldDraft => ({
   section: '',
   editMode: 'manual',
   source: 'manual',
+  sourceManuallySet: false,
+  calculation: emptyCalculation(),
+  systemKey: '',
   // A new Field starts granted to nobody, matching the server's default. The
   // picker must never pre-check anything.
   visibility: [],
@@ -50,10 +95,13 @@ export function FieldsPage() {
   const [active, setActive] = useState('true');
   const [draft, setDraft] = useState<FieldDraft | null>(null);
   const [purging, setPurging] = useState<AdminField | null>(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [order, setOrder] = useState<string[] | null>(null);
   // The draft as it was loaded. Compared against, so merely opening the editor
   // is not treated as unsaved work.
   const [pristine, setPristine] = useState<FieldDraft | null>(null);
   useUnsavedDraft(draft, pristine);
+  useUnsavedChanges(order !== null);
   const canGrant = can('roles_permissions', 'edit');
   const canSeeGrants = canGrant || can('roles_permissions', 'view');
   const query = useQuery({
@@ -74,6 +122,15 @@ export function FieldsPage() {
     queryKey: ['admin', 'field-visibility', draft?.id],
     queryFn: () => adminApi.fieldRoleVisibility(draft?.id ?? ''),
     enabled: Boolean(draft?.id) && canSeeGrants,
+  });
+  // Every active Field, unpaginated — the editor needs it to offer calculation
+  // references and existing Section names, and the reorder panel needs it to
+  // show every Field at once rather than one paginated page's worth. Fetched
+  // only when one of those is actually open.
+  const allFields = useQuery({
+    queryKey: ['admin', 'fields', 'all-active'],
+    queryFn: () => loadAllPages((page, pageSize) => adminApi.fields(page, true, pageSize)),
+    enabled: draft !== null || reorderOpen,
   });
   const [syncedVisibilityFieldId, setSyncedVisibilityFieldId] = useState<string | null>(null);
   if (draft?.id && visibility.data && syncedVisibilityFieldId !== draft.id) {
@@ -138,21 +195,131 @@ export function FieldsPage() {
       await qc.invalidateQueries({ queryKey: ['admin', 'field-visibility'] });
     },
   });
+  const reorder = useMutation({
+    mutationFn: () => adminApi.reorderFields(order ?? []),
+    onSuccess: async () => {
+      setOrder(null);
+      await qc.invalidateQueries({ queryKey: ['admin', 'fields'] });
+    },
+  });
+  const orderedFields = (order ?? (allFields.data ?? []).map((field) => field.id))
+    .map((id) => (allFields.data ?? []).find((field) => field.id === id))
+    .filter((field): field is AdminField => Boolean(field));
+  const moveField = (index: number, direction: -1 | 1) => {
+    const next = [...orderedFields.map((field) => field.id)];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target] as string, next[index] as string];
+    setOrder(next);
+  };
+  const sectionOptions = [
+    ...new Set(
+      (allFields.data ?? [])
+        .map((field) => field.section?.trim())
+        .filter((section): section is string => Boolean(section)),
+    ),
+  ];
+  // Any other active Field the draft's calculation may reference: not itself
+  // (no self-reference) and not another calculated Field (no chaining) —
+  // matches the server's own `parseCalculationConfig` rules exactly, so the
+  // picker never offers something Save would reject anyway.
+  const eligibleCalculationFields = (allFields.data ?? []).filter(
+    (field) => field.id !== draft?.id && field.editMode !== 'calculated',
+  );
   // The purge failure belongs in its dialog beside what is being deleted, not
   // in the page banner.
-  const error = query.error ?? roles.error ?? visibility.error ?? save.error ?? deactivate.error;
+  const error =
+    query.error ??
+    roles.error ??
+    visibility.error ??
+    save.error ??
+    deactivate.error ??
+    reorder.error;
   return (
     <PageBody>
       <PageHeader
         title="Fields"
         description="Manage reusable Field definitions independently from Journeys."
         actions={
-          can('fields', 'create') ? (
-            <Button onClick={() => openDraft(emptyField())}>Create Field</Button>
-          ) : undefined
+          <>
+            {can('fields', 'edit') ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setReorderOpen((open) => !open);
+                  setOrder(null);
+                }}
+              >
+                {reorderOpen ? 'Hide field order' : 'Reorder fields'}
+              </Button>
+            ) : null}
+            {can('fields', 'create') ? (
+              <Button onClick={() => openDraft(emptyField())}>Create Field</Button>
+            ) : undefined}
+          </>
         }
       />
       {error ? <Banner tone="error">{friendlyErrorMessage(error)}</Banner> : null}
+      {reorderOpen ? (
+        <Card className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-display text-lg font-semibold">Field order</h3>
+            <p className="text-xs text-ink-soft">
+              Controls display order on the Details tab, the lead form, and this list — a Section's
+              position follows its first Field's.
+            </p>
+          </div>
+          {allFields.isPending ? (
+            <p className="text-sm text-ink-soft">Loading…</p>
+          ) : (
+            <ol className="flex flex-col gap-1">
+              {orderedFields.map((field, index) => (
+                <li
+                  key={field.id}
+                  className="flex items-center justify-between gap-2 rounded-control border border-line-soft px-3 py-2"
+                >
+                  <span className="text-sm text-ink">
+                    {index + 1}. {field.name}
+                    {field.section ? (
+                      <span className="ml-2 text-xs text-ink-soft">({field.section})</span>
+                    ) : null}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Move ${field.name} up`}
+                      disabled={index === 0}
+                      onClick={() => moveField(index, -1)}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Move ${field.name} down`}
+                      disabled={index === orderedFields.length - 1}
+                      onClick={() => moveField(index, 1)}
+                    >
+                      ↓
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {order ? (
+            <div className="flex gap-2">
+              <Button loading={reorder.isPending} onClick={() => reorder.mutate()}>
+                Save Field order
+              </Button>
+              <Button variant="ghost" onClick={() => setOrder(null)}>
+                Reset
+              </Button>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
       {draft ? (
         <FieldEditor
           draft={draft}
@@ -167,6 +334,8 @@ export function FieldsPage() {
           rolesLoading={roles.isPending || visibilityLoading}
           showVisibility={canSeeGrants}
           canEditVisibility={canGrant && visibilityKnown}
+          sectionOptions={sectionOptions}
+          eligibleCalculationFields={eligibleCalculationFields}
         />
       ) : null}
       <ActiveFilter
@@ -183,6 +352,9 @@ export function FieldsPage() {
           'Name',
           'Type',
           'Options',
+          'Edit mode',
+          'Source',
+          'Section',
           'State',
           { label: 'Actions', align: 'right' as const },
         ]}
@@ -196,6 +368,9 @@ export function FieldsPage() {
             </DataCell>
             <DataCell>{field.fieldType}</DataCell>
             <DataCell>{field.validationRule?.options?.join(', ') ?? '—'}</DataCell>
+            <DataCell>{field.editMode}</DataCell>
+            <DataCell>{field.source}</DataCell>
+            <DataCell>{field.section ?? '—'}</DataCell>
             <DataCell>{field.active ? 'Active' : 'Inactive'}</DataCell>
             <DataCell align="right">
               <RowActions>
@@ -244,6 +419,48 @@ export function FieldsPage() {
     </PageBody>
   );
 }
+
+function operandToConfig(operand: OperandDraft) {
+  return operand.kind === 'field'
+    ? { type: 'field' as const, fieldId: operand.fieldId }
+    : { type: 'constant' as const, value: Number(operand.constant) };
+}
+function calculationToConfig(draft: CalculationDraft) {
+  if (draft.mode === 'template') return { kind: 'template' as const, template: draft.template };
+  return {
+    kind: 'arithmetic' as const,
+    left: operandToConfig(draft.left),
+    operator: draft.operator as '+' | '-' | '*' | '/',
+    right: operandToConfig(draft.right),
+  };
+}
+function operandFromConfig(
+  operand: Extract<CalculationConfig, { kind: 'arithmetic' }>['left'],
+): OperandDraft {
+  return operand.type === 'field'
+    ? { kind: 'field', fieldId: operand.fieldId, constant: '' }
+    : { kind: 'constant', fieldId: '', constant: String(operand.value) };
+}
+function calculationFromField(field: AdminField): CalculationDraft {
+  const calc = field.validationRule?.calculation;
+  if (!calc) return emptyCalculation();
+  if (calc.kind === 'template') return { mode: 'template', template: calc.template };
+  return {
+    mode: 'arithmetic',
+    left: operandFromConfig(calc.left),
+    operator: calc.operator,
+    right: operandFromConfig(calc.right),
+  };
+}
+/** Whether Save should be blocked because the calculation draft can't yet be sent as-is. */
+function calculationIncomplete(calculation: CalculationDraft): boolean {
+  if (calculation.mode === 'template') return calculation.template.trim() === '';
+  const operandIncomplete = (operand: OperandDraft) =>
+    operand.kind === 'field'
+      ? operand.fieldId === ''
+      : operand.constant.trim() === '' || Number.isNaN(Number(operand.constant));
+  return operandIncomplete(calculation.left) || operandIncomplete(calculation.right);
+}
 function fieldBody(draft: FieldDraft) {
   return {
     name: draft.name,
@@ -260,6 +477,10 @@ function fieldBody(draft: FieldDraft) {
     section: draft.section || null,
     editMode: draft.editMode,
     source: draft.source,
+    ...(draft.editMode === 'calculated'
+      ? { calculation: calculationToConfig(draft.calculation) }
+      : {}),
+    ...(draft.editMode === 'system' ? { system: { key: draft.systemKey } } : {}),
   };
 }
 function fromField(field: AdminField): FieldDraft {
@@ -272,6 +493,11 @@ function fromField(field: AdminField): FieldDraft {
     section: field.section ?? '',
     editMode: field.editMode,
     source: field.source,
+    // An existing Field's source was already deliberately set — don't let a
+    // later edit-mode change in this session silently override it.
+    sourceManuallySet: true,
+    calculation: calculationFromField(field),
+    systemKey: field.validationRule?.system?.key ?? '',
     // Filled in by the caller from the Field's stored grants.
     visibility: [],
   };
@@ -320,6 +546,147 @@ function RoleVisibilityRow({
   );
 }
 
+/** One operand of an arithmetic calculation: a Field's value, or a constant. */
+function OperandEditor({
+  label,
+  operand,
+  fields,
+  onChange,
+}: {
+  label: string;
+  operand: OperandDraft;
+  fields: AdminField[];
+  onChange: (operand: OperandDraft) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Field label={label}>
+        {({ inputId }) => (
+          <Select
+            id={inputId}
+            value={operand.kind}
+            onChange={(event) =>
+              onChange({ ...operand, kind: event.target.value as 'field' | 'constant' })
+            }
+          >
+            <option value="constant">Constant</option>
+            <option value="field">Field</option>
+          </Select>
+        )}
+      </Field>
+      {operand.kind === 'constant' ? (
+        <Input
+          aria-label={`${label} constant value`}
+          type="number"
+          value={operand.constant}
+          onChange={(event) => onChange({ ...operand, constant: event.target.value })}
+        />
+      ) : (
+        <Select
+          aria-label={`${label} field`}
+          value={operand.fieldId}
+          onChange={(event) => onChange({ ...operand, fieldId: event.target.value })}
+        >
+          <option value="">Choose a field…</option>
+          {fields.map((field) => (
+            <option key={field.id} value={field.id}>
+              {field.name}
+            </option>
+          ))}
+        </Select>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The config panel for `editMode: 'calculated'`. The mode itself isn't a
+ * choice here — it follows the Field's own type (a number Field can only be
+ * arithmetic, a text/textarea Field can only be a template), matching what
+ * the server's `parseCalculationConfig` accepts — so there is nothing to pick
+ * beyond the operands or the template text.
+ */
+function CalculationEditor({
+  calculation,
+  onChange,
+  eligibleFields,
+}: {
+  calculation: CalculationDraft;
+  onChange: (calculation: CalculationDraft) => void;
+  eligibleFields: AdminField[];
+}) {
+  if (calculation.mode === 'template') {
+    return (
+      <div className="flex flex-col gap-2 rounded-control border border-line-soft p-3 sm:col-span-2">
+        <Field
+          label="Template"
+          hint="Click a field below to insert its value — or type {{field:<id>}} directly."
+        >
+          {({ inputId }) => (
+            <textarea
+              id={inputId}
+              className="min-h-20 rounded-control border bg-surface p-3 text-sm"
+              value={calculation.template}
+              onChange={(event) => onChange({ ...calculation, template: event.target.value })}
+            />
+          )}
+        </Field>
+        {eligibleFields.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {eligibleFields.map((field) => (
+              <button
+                key={field.id}
+                type="button"
+                className="rounded-pill border border-line-strong px-2 py-1 text-xs text-ink-soft hover:border-ink hover:text-ink"
+                onClick={() =>
+                  onChange({
+                    ...calculation,
+                    template: `${calculation.template}{{field:${field.id}}}`,
+                  })
+                }
+              >
+                {field.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  const numericFields = eligibleFields.filter((field) => field.fieldType === 'number');
+  return (
+    <div className="grid grid-cols-1 gap-2 rounded-control border border-line-soft p-3 sm:col-span-2 sm:grid-cols-3">
+      <OperandEditor
+        label="Left"
+        operand={calculation.left}
+        fields={numericFields}
+        onChange={(left) => onChange({ ...calculation, left })}
+      />
+      <Field label="Operator">
+        {({ inputId }) => (
+          <Select
+            id={inputId}
+            value={calculation.operator}
+            onChange={(event) => onChange({ ...calculation, operator: event.target.value })}
+          >
+            {['+', '-', '*', '/'].map((operator) => (
+              <option key={operator} value={operator}>
+                {operator}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <OperandEditor
+        label="Right"
+        operand={calculation.right}
+        fields={numericFields}
+        onChange={(right) => onChange({ ...calculation, right })}
+      />
+    </div>
+  );
+}
+
 function FieldEditor({
   draft,
   setDraft,
@@ -330,6 +697,8 @@ function FieldEditor({
   rolesLoading,
   showVisibility,
   canEditVisibility,
+  sectionOptions,
+  eligibleCalculationFields,
 }: {
   draft: FieldDraft;
   setDraft: (draft: FieldDraft) => void;
@@ -340,8 +709,37 @@ function FieldEditor({
   rolesLoading: boolean;
   showVisibility: boolean;
   canEditVisibility: boolean;
+  sectionOptions: string[];
+  eligibleCalculationFields: AdminField[];
 }) {
   const update = (key: keyof FieldDraft, value: string) => setDraft({ ...draft, [key]: value });
+  const updateFieldType = (nextType: string) => {
+    // Keep the calculation mode valid for the new type rather than leaving a
+    // stale arithmetic/template config the server would refuse on save.
+    const impliedMode =
+      nextType === 'number'
+        ? 'arithmetic'
+        : nextType === 'text' || nextType === 'textarea'
+          ? 'template'
+          : null;
+    const calculation =
+      impliedMode !== null && impliedMode !== draft.calculation.mode
+        ? impliedMode === 'arithmetic'
+          ? emptyCalculation()
+          : ({ mode: 'template', template: '' } as const)
+        : draft.calculation;
+    setDraft({ ...draft, fieldType: nextType, calculation });
+  };
+  const updateEditMode = (nextEditMode: string) =>
+    setDraft({
+      ...draft,
+      editMode: nextEditMode,
+      source: draft.sourceManuallySet
+        ? draft.source
+        : (SOURCE_SUGGESTION[nextEditMode] ?? draft.source),
+    });
+  const updateSource = (value: string) =>
+    setDraft({ ...draft, source: value, sourceManuallySet: true });
   const setRoleLevel = (roleId: string, level: FieldAccessLevel | undefined) =>
     setDraft({
       ...draft,
@@ -350,6 +748,14 @@ function FieldEditor({
         ...(level === undefined ? [] : [{ roleId, accessLevel: level }]),
       ],
     });
+  const calculationUnsupportedType =
+    draft.editMode === 'calculated' && !CALCULABLE_TYPES.has(draft.fieldType);
+  const saveDisabled =
+    !draft.name ||
+    (draft.fieldType === 'select' && !draft.options.trim()) ||
+    (draft.editMode === 'calculated' &&
+      (calculationUnsupportedType || calculationIncomplete(draft.calculation))) ||
+    (draft.editMode === 'system' && !draft.systemKey.trim());
   return (
     <Card className="grid gap-3 p-4 sm:grid-cols-2">
       {draft.id ? (
@@ -374,7 +780,7 @@ function FieldEditor({
           <Select
             id={inputId}
             value={draft.fieldType}
-            onChange={(event) => update('fieldType', event.target.value)}
+            onChange={(event) => updateFieldType(event.target.value)}
           >
             {[
               'text',
@@ -409,9 +815,9 @@ function FieldEditor({
           <Select
             id={inputId}
             value={draft.editMode}
-            onChange={(event) => update('editMode', event.target.value)}
+            onChange={(event) => updateEditMode(event.target.value)}
           >
-            {['manual', 'locked', 'calculated', 'system', 'api-only'].map((mode) => (
+            {EDIT_MODES.map((mode) => (
               <option key={mode}>{mode}</option>
             ))}
           </Select>
@@ -422,23 +828,59 @@ function FieldEditor({
           <Select
             id={inputId}
             value={draft.source}
-            onChange={(event) => update('source', event.target.value)}
+            onChange={(event) => updateSource(event.target.value)}
           >
-            {['manual', 'system', 'api', 'import', 'calculated'].map((source) => (
+            {SOURCES.map((source) => (
               <option key={source}>{source}</option>
             ))}
           </Select>
         )}
       </Field>
-      <Field label="Section">
+      <Field label="Section" hint="Groups this Field with others on the Details tab and lead form.">
         {({ inputId }) => (
-          <Input
-            id={inputId}
-            value={draft.section}
-            onChange={(event) => update('section', event.target.value)}
-          />
+          <>
+            <Input
+              id={inputId}
+              list="field-section-options"
+              value={draft.section}
+              onChange={(event) => update('section', event.target.value)}
+            />
+            <datalist id="field-section-options">
+              {sectionOptions.map((section) => (
+                <option key={section} value={section} />
+              ))}
+            </datalist>
+          </>
         )}
       </Field>
+      {draft.editMode === 'calculated' ? (
+        calculationUnsupportedType ? (
+          <p className="text-sm text-status-lost sm:col-span-2">
+            Calculated fields must be type Number (for an arithmetic calculation) or Text/Textarea
+            (for a template).
+          </p>
+        ) : (
+          <CalculationEditor
+            calculation={draft.calculation}
+            onChange={(calculation) => setDraft({ ...draft, calculation })}
+            eligibleFields={eligibleCalculationFields}
+          />
+        )
+      ) : null}
+      {draft.editMode === 'system' ? (
+        <Field
+          label="System key"
+          hint="Free text for now — no catalog of system-populated values exists yet, so nothing sets this automatically."
+        >
+          {({ inputId }) => (
+            <Input
+              id={inputId}
+              value={draft.systemKey}
+              onChange={(event) => update('systemKey', event.target.value)}
+            />
+          )}
+        </Field>
+      ) : null}
       {showVisibility ? (
         <fieldset className="sm:col-span-2">
           <div className="mb-2 flex items-center justify-between gap-3 border-b border-line pb-1.5">
@@ -492,11 +934,7 @@ function FieldEditor({
         </fieldset>
       ) : null}
       <div className="flex items-end gap-2">
-        <Button
-          loading={loading}
-          disabled={!draft.name || (draft.fieldType === 'select' && !draft.options.trim())}
-          onClick={save}
-        >
+        <Button loading={loading} disabled={saveDisabled} onClick={save}>
           Save Field
         </Button>
         <Button variant="ghost" onClick={cancel}>
