@@ -96,9 +96,9 @@ resource "aws_ecs_task_definition" "oneoff" {
   tags = local.common_tags
 }
 
-output "oneoff_cluster_name"     { value = aws_ecs_cluster.oneoff.name }
-output "oneoff_task_definition"  { value = aws_ecs_task_definition.oneoff.family }
-output "oneoff_log_group"        { value = aws_cloudwatch_log_group.oneoff.name }
+output "oneoff_cluster_name" { value = aws_ecs_cluster.oneoff.name }
+output "oneoff_task_definition" { value = aws_ecs_task_definition.oneoff.family }
+output "oneoff_log_group" { value = aws_cloudwatch_log_group.oneoff.name }
 output "oneoff_network_configuration" {
   value = jsonencode({
     awsvpcConfiguration = {

@@ -137,9 +137,7 @@ export function createRepository(state = createFixtureState()): PermissionReposi
       const rows = state.statusVisibility.filter(
         (row) => row.organizationId === input.organizationId && row.statusId === input.statusId,
       );
-      return Promise.resolve(
-        rows.length === 0 || rows.some((row) => row.roleId === input.roleId),
-      );
+      return Promise.resolve(rows.length === 0 || rows.some((row) => row.roleId === input.roleId));
     },
     listAccessibleJourneyIds(input) {
       return Promise.resolve(

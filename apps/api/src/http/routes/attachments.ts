@@ -54,10 +54,7 @@ export function registerAttachmentRoutes(server: FastifyInstance, deps: ServerDe
     action: string,
     context: { assignmentTypes: string[] },
   ) => {
-    const lead = await deps.leadRepository.findSeller360(
-      request.auth.user.organizationId,
-      leadId,
-    );
+    const lead = await deps.leadRepository.findSeller360(request.auth.user.organizationId, leadId);
     if (lead === null) return false;
     for (const process of lead.processInstances.filter((row) => row.active)) {
       const decision = await resolveAuthorization({

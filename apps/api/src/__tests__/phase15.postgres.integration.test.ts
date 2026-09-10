@@ -1022,6 +1022,18 @@ describe.runIf(shouldRunAdminPostgres)('Phase 15 bulk import and export', () => 
           requirement: 'optional',
         },
       });
+      // Field-visibility EDIT is a separate, per-field grant (see the
+      // `companyField`/`secretField`/`sizeField` grants above) — without one for
+      // this newly created Field, `authorizeImport` denies it with a 403 before
+      // the run ever reaches the mapping-target check this test means to exercise.
+      await prisma.fieldVisibility.create({
+        data: {
+          organizationId: org,
+          fieldId: calculatedField,
+          roleId: adminRole,
+          accessLevel: 'EDIT',
+        },
+      });
 
       const run = await runImport('preview', `${header}\nX,1,x@example.test,Acme,\n`, {
         journeyId: journey,
