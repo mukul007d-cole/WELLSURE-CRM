@@ -25,13 +25,22 @@ const forbidden: RoutingRouteResult = { status: 403, body: { error: 'forbidden' 
 const notFound: RoutingRouteResult = { status: 404, body: { error: 'not_found' } };
 
 /**
- * Two gates, both required.
+ * Two gates, both required — but only one starts closed.
  *
- * The `lead_routing` module action says the role may touch routing at all; the
- * per-Status grant says it may touch *this* Status's routing. Exactly the
- * layering `leads:view` plus a `field_visibility` row already use for Fields,
- * and for the same reason: one journey's statuses are often operated by
- * different groups, which a module-wide action cannot express.
+ * The `lead_routing` module action says the role may touch routing at all,
+ * anywhere; it starts closed, like every module action, and is granted from
+ * Role Management. The per-Status grant narrows that down to *this* Status,
+ * but starts open: `roleHasGrant` treats a (status, action) with no
+ * configured rows as unrestricted, so the module action alone is enough
+ * until an admin opts a Status into a real allow-list by adding at least one
+ * row for that action (see `RoutingRuleService.roleHasGrant`). That mirrors
+ * `status_routing_rules` itself ("no rule means unrouted") and Status
+ * Visibility's routing-derived check, not `field_visibility`'s "absence
+ * hides" — a Status, unlike a brand-new Field, already exists for every
+ * organization and routing is meant to work on it immediately. The allow-list
+ * still exists for the real case ADR-0015 names — one journey's statuses
+ * often operated by different groups — it just has to be turned on
+ * per-Status/action rather than starting engaged everywhere at once.
  */
 async function authorize(
   input: RoutingRouteDeps,

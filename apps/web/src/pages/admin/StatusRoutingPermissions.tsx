@@ -24,8 +24,13 @@ const key = (grant: RoutingGrant) => `${grant.roleId}:${grant.action}`;
  * grant them, including to their own role, which is the rule `field_visibility`
  * already follows.
  *
- * Allow-list semantics: an unchecked box is not a "deny" row, it is the absence
- * of a grant.
+ * Allow-list semantics, but only once this Status has an opinion: leaving an
+ * entire column empty (no role checked for that action) means every role
+ * holding the matching Lead Routing permission reaches this Status — the
+ * grid has nothing to narrow yet. Checking even one box for an action turns
+ * that column into a real allow-list: from then on, only checked roles pass
+ * for that action on this Status, and an unchecked box is a genuine
+ * exclusion rather than "not configured yet".
  */
 export function StatusRoutingPermissions({
   statusId,
@@ -80,8 +85,9 @@ export function StatusRoutingPermissions({
     <fieldset className="border-t pt-3">
       <legend className="text-sm font-bold text-ink">Role permissions for this Status</legend>
       <p className="mb-2 text-xs text-ink-soft">
-        A role also needs the matching Lead Routing permission on its role page. Both are required —
-        this grid decides which Statuses that permission reaches.
+        A role also needs the matching Lead Routing permission on its role page — both are required.
+        Leave a column empty and every role with that permission reaches this Status; check a box
+        and that action narrows to only the roles checked here.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

@@ -246,8 +246,27 @@ export class RoutingRuleService {
    * Does this role hold `action` on this Status?
    *
    * The per-Status half of the decision. The caller must have already resolved
-   * the `lead_routing:<action>` module decision — both are required, exactly as
-   * `leads:view` plus a `field_visibility` row are both required for a Field.
+   * the `lead_routing:<action>` module decision — both are required, but they
+   * compose the way `leads:view` and Status Visibility do (AND, absence
+   * unrestricted), not the way `field_visibility` does (absence hides).
+   *
+   * Originally (Phase 14b) modeled on `field_visibility`: absence of any row
+   * for a (status, action) denied every role outright. That copied a default
+   * that fits a newly-created Field (nobody was seeing it before it existed)
+   * onto a Status, which — like every Status Visibility axis discovered the
+   * same way in Phase 19/20 — already exists in every organization, with
+   * routing meant to work on it immediately. The result: a freshly granted
+   * `lead_routing:configure` role was refused on every Status, forever, until
+   * an admin separately opened each one — with nothing in Role Management to
+   * reveal or fix it, since this axis is per-Status, not per-Role.
+   *
+   * Fixed to match every other per-Status allow-list in this system
+   * (`status_routing_rules`' own "no rule means unrouted", and Status
+   * Visibility both before and after Phase 20): a (status, action) with zero
+   * rows is unrestricted — the module action alone suffices. A row narrows
+   * that action, on that Status, to the Roles it names — still real,
+   * still how "different groups operate different Statuses" (ADR-0015) is
+   * expressed, just opt-in per Status/action rather than opt-in by default.
    */
   async roleHasGrant(input: {
     organizationId: string;
@@ -255,6 +274,15 @@ export class RoutingRuleService {
     roleId: string;
     action: RoutingAction;
   }): Promise<boolean> {
+    const configured = await this.prisma.statusRoutingPermission.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        statusId: input.statusId,
+        action: input.action,
+      },
+      select: { id: true },
+    });
+    if (!configured) return true;
     return (
       (await this.prisma.statusRoutingPermission.findFirst({
         where: {

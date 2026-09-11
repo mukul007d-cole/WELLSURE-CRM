@@ -115,6 +115,31 @@ cannot express.
 must not be able to grant routing rights, including to their own role — the same
 self-escalation `field_visibility` already refuses.
 
+### Amendment (Phase 20 follow-up) — `status_routing_permissions` defaults to unrestricted, not denied-for-everyone
+
+This ADR modeled `status_routing_permissions` on `field_visibility` without
+the scrutiny Phase 19 later gave the identical default-state question for
+Status Visibility (ADR-0019, Decision 1): absence of a row for a
+`(status, action)` denied every Role outright. `field_visibility`'s
+"absence hides" default fits a newly-created Field, which nobody could see
+before it existed. It does not fit a Status, which — exactly like the
+Status Visibility axis ADR-0019 corrected — already exists in every
+organization, with routing meant to work on it immediately. The practical
+result: granting a Role `lead_routing:configure`/`operate` from Role
+Management left it refused on every Status, forever, until an admin
+separately opened each Status's routing panel and added a row — with
+nothing in Role Management surfacing that a second, per-Status gate even
+existed.
+
+Fixed to match every other per-Status allow-list in this system —
+`status_routing_rules`' own "no rule means unrouted" and Status
+Visibility's routing-derived check alike: a `(status, action)` with zero
+rows is unrestricted, and the module action alone suffices. A row still
+narrows that action, on that Status, to the Roles it names — still real,
+still how "different groups operate different Statuses" is expressed
+above, just opt-in per Status/action rather than opt-in by default. See
+`RoutingRuleService.roleHasGrant` (`apps/api/src/routing/rule-service.ts`).
+
 **`statuses.auto_reassign_to_role_id` is retired**, dropped in this phase's
 migration, with `journey-definitions.md` updated in the same change. Leaving a
 dormant column describing this feature beside the tables that implement it is a

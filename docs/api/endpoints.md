@@ -61,11 +61,13 @@ both, and for why a Team is not the `TEAM` data scope.
 
 ### Journeys, Statuses, Services
 
-Routing rules live under a Status. Every routing route needs both the
-`lead_routing` module action **and** a `status_routing_permissions` row for that
-(status, role, action) — the same layering `field_visibility` uses. Editing those
-grants is gated on `roles_permissions:edit`, never on `lead_routing:configure`.
-See ADR-0015.
+Routing rules live under a Status. Every routing route needs the `lead_routing`
+module action; `status_routing_permissions` layers a per-(status, role, action)
+allow-list on top, but — unlike `field_visibility` — that layer starts open: a
+(status, action) with zero rows is unrestricted, and only gains a real
+allow-list once an admin adds at least one row for it. Editing those grants is
+gated on `roles_permissions:edit`, never on `lead_routing:configure`. See
+ADR-0015 (amended).
 
 Status Visibility no longer has its own routes (Phase 20 retired
 `/statuses/:id/visibility`): who may see a lead while it sits in a Status is

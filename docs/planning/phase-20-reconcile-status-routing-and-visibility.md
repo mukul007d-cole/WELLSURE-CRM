@@ -121,6 +121,19 @@ per-Status permission via `PUT .../routing/permissions` succeeds, the same
 `PUT /statuses/:id/routing` then succeeds — so the reachability path is
 pinned permanently, independent of Part 2.
 
+> **Correction, recorded when the mistake was found (see "Amendments found
+> during implementation" below):** the paragraph above treated
+> `status_routing_permissions` starting completely empty and denying
+> everyone as `field_visibility`'s correct, deliberate precedent. That's
+> right for the self-escalation rule (untouched, still correct) but wrong
+> for the default-state question underneath it — this axis needed exactly
+> the correction ADR-0019 had already given Status Visibility's identical
+> mistake, and hadn't received it. The 403 the test above pins at "first
+> `PUT /statuses/:id/routing` 403s with no per-Status grant" only holds
+> once *some other* role already has a per-status row on that action; on a
+> Status with zero rows for that action, the same call now succeeds on the
+> module action alone. The test was updated accordingly, not removed.
+
 ---
 
 ## Part 2 — uniting Status Routing and Status Visibility
@@ -577,6 +590,31 @@ whole allow-list is gone).
   `status_visibility` temp table standing in for the old mechanism.**
   Replaced with a minimal `status_routing_rules` temp table matching what
   the new clause actually queries.
+- **Found after shipping, reported directly by a user: Status Routing was
+  unreachable for everyone but the pre-seeded admin role, with no way to
+  fix it from Role Management.** Not a regression from this phase's own
+  changes — a pre-existing bug in `status_routing_permissions`
+  (`RoutingRuleService.roleHasGrant`), Phase 14b's *other* per-status
+  allow-list, which this plan's Part 1 investigation had already looked at
+  and, in hindsight, dismissed too quickly as "friction by design." It
+  copied `field_visibility`'s "absence of a row denies" default without
+  the scrutiny Phase 19 gave the identical question for Status Visibility
+  (ADR-0019, Decision 1) — a default that fits a brand-new Field but not a
+  Status that already exists in every organization. Granting
+  `lead_routing:configure`/`operate` from Role Management left a role
+  refused on every Status regardless, since nothing in Role Management
+  reveals or fixes a per-*Status* gate. Fixed the same way ADR-0019 fixed
+  Status Visibility's identical default-state mistake: a `(status, action)`
+  with zero `status_routing_permissions` rows is now unrestricted (the
+  module action alone suffices); a row still narrows that action, on that
+  Status, to the Roles it names. See ADR-0015's amendment section,
+  `RoutingRuleService.roleHasGrant`, and the rewritten
+  `phase14b.postgres.integration.test.ts` "requires configure and operate
+  independently" test, which now proves both halves: the open default, and
+  that naming even one role for an action still narrows it for everyone
+  else. This is a correction to this plan's own Part 1 finding, not a new
+  phase — recorded here rather than in a fresh planning doc because it is
+  the same axis this plan already reasoned about and got half right.
 
 ---
 

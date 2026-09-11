@@ -79,11 +79,15 @@ reason: deciding who *may* receive leads at a Status and moving one particular
 lead are different levels of trust. `operate` is an **additional** gate — a
 manual override still passes `leads:edit`, journey access and the operator's own
 record scope. Both are further layered on a per-`(status, role)` row in
-`status_routing_permissions`, exactly as field access is layered on
-`field_visibility`: the module action and the row are both required, so one
-Journey's Statuses can be operated by different groups. Editing those rows is
-gated on `roles_permissions:edit`, never on `lead_routing:configure`. See
-ADR-0015.
+`status_routing_permissions` — but unlike `field_visibility`, that layer
+starts **open**: a `(status, action)` with zero rows is unrestricted, so the
+module action alone reaches every Status until an admin adds at least one
+row for that action, which then narrows it to only the Roles named. This is
+the same default `status_routing_rules` itself uses ("no rule means
+unrouted") and Status Visibility now uses too, not `field_visibility`'s
+"absence hides" — a Status, unlike a brand-new Field, already exists for
+every organization. Editing those rows is gated on `roles_permissions:edit`,
+never on `lead_routing:configure`. See ADR-0015 (amended).
 
 `campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 

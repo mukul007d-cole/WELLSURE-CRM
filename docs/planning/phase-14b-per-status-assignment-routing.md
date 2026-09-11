@@ -559,6 +559,11 @@ Matching 13a's field-visibility replace test, not a single-threaded loop:
   by a `roles_permissions:edit` holder, and a `lead_routing:configure` holder
   **cannot** grant themselves routing rights — the 13a self-escalation test,
   transposed.
+  ([Amended, Phase 20 follow-up](./phase-20-reconcile-status-routing-and-visibility.md):
+  "absence of a row denies" was this phase's own unexamined copy of
+  `field_visibility`'s default, and turned out not to fit a Status the way it
+  fits a brand-new Field — see ADR-0015's amendment section. The self-escalation
+  rule in this bullet is unaffected and still holds.)
 - Every mutation writes `system_audit_logs`; every automatic assignment writes
   `activity_logs`.
 - Tenant isolation: a status, team, or role id from another organization is
