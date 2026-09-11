@@ -812,6 +812,90 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     });
   }, 120_000);
 
+  /**
+   * Phase 20, Part 1: `lead_routing:configure`/`operate` reachability, proved
+   * through the real, catalog-validated grant path — not a hand-inserted
+   * `rolePermission.create` row, which is exactly the shape of check that let
+   * PR #33's `<module>:deactivate` bug (a permission action the catalog never
+   * defined) survive a green suite. If `lead_routing:configure`/`operate` were
+   * ever mistyped or dropped from `permissionCatalog`, `PUT /roles/:id/permissions`
+   * would 400 on `unknown permission or scope` below, not silently succeed.
+   */
+  it('grants configure/operate through the real Role permissions endpoint, and the granted role reaches the feature', async () => {
+    const grantedRole = randomUUID();
+    const grantedUser = randomUUID();
+    await prisma.role.create({
+      data: {
+        id: grantedRole,
+        organizationId: org,
+        key: 'synthetic_routing_admin',
+        name: 'Synthetic routing admin',
+      },
+    });
+    await prisma.user.create({
+      data: {
+        id: grantedUser,
+        organizationId: org,
+        name: 'Synthetic routing admin user',
+        email: 'routing-admin@example.test',
+        roleId: grantedRole,
+        departmentId: department,
+      },
+    });
+
+    // The catalog lists it — proving it is visible to grant, not just that a
+    // hand-built row happens to satisfy the check below.
+    const catalog = await call(asAdmin(), 'GET', '/api/v1/permissions/catalog');
+    const catalogBody = catalog.body;
+    expect(catalogBody).toContain('"module":"lead_routing"');
+    expect(catalogBody).toContain('"configure"');
+    expect(catalogBody).toContain('"operate"');
+
+    // Granted through `PUT /roles/:id/permissions` — the same admin-validated
+    // write path (`isPermissionPair`) every real Role edit goes through.
+    const grantResponse = await call(asAdmin(), 'PUT', `/api/v1/roles/${grantedRole}/permissions`, {
+      permissions: [
+        { module: 'lead_routing', action: 'view', scope: 'ORGANIZATION' },
+        { module: 'lead_routing', action: 'configure', scope: 'ORGANIZATION' },
+        { module: 'leads', action: 'edit', scope: 'ORGANIZATION' },
+      ],
+    });
+    expect(grantResponse.statusCode).toBe(200);
+
+    // Still refused: the module action alone is not enough without the
+    // per-Status grant — proving the test isn't vacuous the way a fixture that
+    // "answers every pair" unconditionally would be.
+    const beforePerStatusGrant = await call(
+      { userId: grantedUser, roleId: grantedRole },
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing`,
+      { assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] },
+    );
+    expect(beforePerStatusGrant.statusCode).toBe(403);
+
+    // The per-Status grant, via the real permissions endpoint too.
+    const grantPerStatus = await call(
+      asAdmin(),
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing/permissions`,
+      { permissions: [{ roleId: grantedRole, action: 'configure' }] },
+    );
+    expect(grantPerStatus.statusCode).toBe(200);
+
+    // Now genuinely reachable.
+    const configure = await call(
+      { userId: grantedUser, roleId: grantedRole },
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing`,
+      { assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] },
+    );
+    expect(configure.statusCode).toBe(200);
+
+    await prisma.statusRoutingPermission.deleteMany({
+      where: { organizationId: org, roleId: grantedRole },
+    });
+  }, 120_000);
+
   it('gates the per-status grant editor on permissions administration, not on routing configuration', async () => {
     // A role that can configure routing but cannot edit permissions must not be
     // able to grant itself routing rights — the self-escalation `field_visibility`
