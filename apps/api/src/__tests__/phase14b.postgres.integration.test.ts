@@ -453,7 +453,16 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     expect(activity?.source).toBe('routing');
   }, 120_000);
 
-  it('leaves a live share intact — the one documented way a previous holder still sees it', async () => {
+  it('a live share no longer keeps a previous holder in once the Status is routed (Phase 20)', async () => {
+    // Before Phase 20, a share (`user_access_grants`) was an independent OR
+    // branch that Status Visibility never touched unless an admin had
+    // explicitly restricted the Status by Role. Phase 20 ties Status
+    // Visibility to routing itself: `routedStatus`, the moment a rule
+    // exists on it (as every test in this file gives it), restricts
+    // visibility to the new assignee and their reporting-hierarchy
+    // ancestors — a share is "explicit visibility to someone else," exactly
+    // what routing now decides instead. `repA` holds a share but is not
+    // `repB`'s manager, so the share no longer bypasses it.
     const lead = await seedLead(repA);
     await putRule({ assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] });
     await prisma.userAccessGrant.create({
@@ -470,11 +479,11 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
 
     // The assignment is gone…
     expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
-    // …but the share is an independent OR branch, so access survives. Asserted
-    // so the boundary is documented by a test rather than found as a surprise.
+    // …and so, now, is the share's own reach — Status Visibility narrows it
+    // below what the grant alone used to permit.
     const after = await repSees(repA, lead.leadId);
-    expect(after.detail.statusCode).toBe(200);
-    expect(after.list.body).toContain(lead.leadId);
+    expect(after.detail.statusCode).toBe(403);
+    expect(after.list.body).not.toContain(lead.leadId);
   }, 120_000);
 
   /* ---------------------------------------------------------------- Firing */

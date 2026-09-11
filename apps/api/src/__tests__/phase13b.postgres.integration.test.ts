@@ -439,7 +439,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
           journeyIds: [journey, otherJourney],
           includeDirectGrantsForUserId: userAll,
           directGrantAction: 'view',
-          roleId: roleAll,
+          hierarchyUserIds: [],
         },
       },
       {
@@ -452,7 +452,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
           journeyIds: [journey, otherJourney],
           includeDirectGrantsForUserId: userLimited,
           directGrantAction: 'view',
-          roleId: roleLimited,
+          hierarchyUserIds: [],
         },
       },
       {
@@ -465,7 +465,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
           journeyIds: [journey],
           includeDirectGrantsForUserId: userLimited,
           directGrantAction: 'view',
-          roleId: roleLimited,
+          hierarchyUserIds: [],
         },
       },
       {
@@ -478,7 +478,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
           journeyIds: [journey],
           includeDirectGrantsForUserId: userOther,
           directGrantAction: 'view',
-          roleId: roleLimited,
+          hierarchyUserIds: [],
         },
       },
     ];
@@ -559,7 +559,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 13b Seller List filter engine', ()
         journeyIds: [journey],
         includeDirectGrantsForUserId: userAll,
         directGrantAction: 'view',
-        roleId: roleAll,
+        hierarchyUserIds: [],
       },
       conditions,
       page: 1,

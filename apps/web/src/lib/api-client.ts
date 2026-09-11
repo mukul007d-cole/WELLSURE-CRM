@@ -34,7 +34,6 @@ import type {
   RoutingGrant,
   RoutingRule,
   RoutingState,
-  StatusVisibilityGrant,
   ImportAnalysis,
   ImportMapping,
   ImportRunResult,
@@ -306,17 +305,9 @@ export const routingApi = {
     ),
 };
 
-/**
- * Status Visibility (Phase 19): which Roles may see a lead while it sits in
- * one Status. A separate endpoint pair from `routingApi`'s grants, despite
- * the identical `roles_permissions:edit`-gated whole-set-replace shape —
- * this axis gates lead visibility itself, not who may operate routing.
- */
-export const statusVisibilityApi = {
-  list: (statusId: string) => request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`),
-  save: (statusId: string, roleIds: string[]) =>
-    request<StatusVisibilityGrant[]>(`/statuses/${statusId}/visibility`, json('PUT', { roleIds })),
-};
+// statusVisibilityApi (Phase 19) retired in Phase 20: a routed Status's
+// visibility is derived from its routing assignment, with no separate
+// endpoint to configure it — see `routingApi` and `StatusRoutingPanel`.
 
 export const campaignsApi = {
   list: () => request<{ total: number; items: Campaign[] }>('/campaigns'),

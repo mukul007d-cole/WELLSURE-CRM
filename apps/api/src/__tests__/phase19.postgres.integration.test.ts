@@ -21,49 +21,63 @@ import {
 } from './fixtures/synthetic-admin.js';
 
 /**
- * Phase 19 — Status Visibility, against real Postgres.
+ * Phase 19/20 — Status Visibility, against real Postgres.
  *
- * The assertion this file exists for: **an admin can make a lead disappear
- * for one Role and stay visible to another, purely by which Status its
- * process instance currently sits in** — on every surface at once, additive
- * on top of ordinary data scope, and with no representable state that hides
- * a lead from every Role at once.
+ * Originally (Phase 19) a Role-level allow-list, independent of Status
+ * Routing. Phase 20 united the two: visibility of a lead sitting in a
+ * Status with an active routing rule is now computed from the routing
+ * assignment itself — the lead's current assignee, plus everyone above the
+ * assignee in the reporting hierarchy (`users.manager_id`, any depth) — and
+ * no one else. There is no more admin-configured allow-list; routing
+ * decides visibility.
+ *
+ * The assertion this file exists for, restated for the new mechanism: **the
+ * assignee of a lead in a routed Status can always see it, and their
+ * manager chain can too, but nobody else can — regardless of how broad
+ * their own Role's DataScope grant otherwise is** — on every surface at
+ * once, additive on top of ordinary data scope, and now structurally
+ * guaranteed rather than admin-configured.
  *
  * Every security assertion is whole-response, per ADR-0011: the denied
  * caller's response body must not contain the lead's id anywhere, in any
- * shape, and a list's `total` must match its `rows.length` on every case —
- * a count that ignored the same restriction its list obeys would leak how
- * many hidden records exist.
+ * shape, and a list's `total` must match its `rows.length` on every case.
  *
  * Every name is synthetic. Nothing here depends on a real Journey, Status,
  * Role, or person name (`AGENTS.md`).
  */
 
-describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
+describe.runIf(shouldRunAdminPostgres)('Phase 19/20 Status Visibility', () => {
   let db: Awaited<ReturnType<typeof createAdminPostgres>>;
   let prisma: FalconPrismaClient;
 
   const org = randomUUID();
-  const otherOrg = randomUUID();
 
   const adminRole = randomUUID();
-  /** ORGANIZATION scope, symmetric with roleNarrow — only Status Visibility differs between them. */
-  const roleWide = randomUUID();
-  const roleNarrow = randomUUID();
-  /** SELF scope, for the AND-not-OR composition test. */
+  /** SELF scope. The assignee whose lead everything else revolves around. */
   const roleSelf = randomUUID();
-  const foreignRole = randomUUID();
+  /** TEAM scope, direct manager of `userSelf`. */
+  const roleManager = randomUUID();
+  /** TEAM scope, manager of `userManager` — proves "any depth". */
+  const roleGrandManager = randomUUID();
+  /** SELF scope, manager of `userReport2` but with inadequate own scope. */
+  const roleManagerSelfOnly = randomUUID();
+  /** SELF scope, a second, unrelated assignee for the AND-not-OR case. */
+  const roleReport2 = randomUUID();
+  /** ORGANIZATION scope, unrelated to anyone's hierarchy below. */
+  const roleWide = randomUUID();
 
   const adminUser = randomUUID();
-  const userWide = randomUUID();
-  const userNarrow = randomUUID();
   const userSelf = randomUUID();
+  const userManager = randomUUID();
+  const userGrandManager = randomUUID();
+  const userManagerSelfOnly = randomUUID();
+  const userReport2 = randomUUID();
+  const userWide = randomUUID();
   const userOtherOwner = randomUUID();
-  const foreignUser = randomUUID();
 
   const journey1 = randomUUID();
   const journey2 = randomUUID();
-  /** Unrestricted for the life of the suite — the "default state" baseline. */
+  /** Unrestricted for the life of the suite — no routing rule ever lands here. */
   const openStatus1 = randomUUID();
   const openStatus2 = randomUUID();
   const assignmentType = 'synthetic_owner';
@@ -133,9 +147,11 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
   };
 
   const asAdmin = () => ({ userId: adminUser, roleId: adminRole });
-  const asWide = () => ({ userId: userWide, roleId: roleWide });
-  const asNarrow = () => ({ userId: userNarrow, roleId: roleNarrow });
   const asSelf = () => ({ userId: userSelf, roleId: roleSelf });
+  const asManager = () => ({ userId: userManager, roleId: roleManager });
+  const asGrandManager = () => ({ userId: userGrandManager, roleId: roleGrandManager });
+  const asManagerSelfOnly = () => ({ userId: userManagerSelfOnly, roleId: roleManagerSelfOnly });
+  const asWide = () => ({ userId: userWide, roleId: roleWide });
 
   const list = (actor: { userId: string; roleId: string }, query = '') =>
     call(actor, 'GET', `/api/v1/leads?assignmentTypes=${assignmentType}${query}`);
@@ -163,13 +179,32 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     return id;
   };
 
-  const putVisibility = (
-    actor: { userId: string; roleId: string },
+  const grantRouting = (statusId: string, roleId: string, actions: readonly string[]) =>
+    prisma.statusRoutingPermission.createMany({
+      data: actions.map((action) => ({ organizationId: org, statusId, roleId, action })),
+    });
+
+  /**
+   * Turns a Status's routing on — the one thing that now flips Status
+   * Visibility from unrestricted to hierarchy-restricted. The pool is a
+   * placeholder (`adminUser`); no test here depends on the algorithm
+   * actually picking anyone, only on the rule being active.
+   */
+  const activateRouting = async (
     statusId: string,
-    roleIds: string[],
-  ) => call(actor, 'PUT', `/api/v1/statuses/${statusId}/visibility`, { roleIds });
-  const getVisibility = (actor: { userId: string; roleId: string }, statusId: string) =>
-    call(actor, 'GET', `/api/v1/statuses/${statusId}/visibility`);
+    poolUserIds: readonly string[] = [adminUser],
+  ) => {
+    await grantRouting(statusId, adminRole, ['configure', 'operate']);
+    const response = await call(asAdmin(), 'PUT', `/api/v1/statuses/${statusId}/routing`, {
+      assignmentType,
+      algorithm: 'round_robin',
+      poolType: 'users',
+      userIds: [...poolUserIds],
+    });
+    expect(response.statusCode).toBe(200);
+  };
+  const deactivateRouting = (statusId: string) =>
+    call(asAdmin(), 'POST', `/api/v1/statuses/${statusId}/routing/deactivate`);
 
   /** A lead with one process instance in `statusId`/`journeyId`, assigned to `ownerId`. */
   const seedLead = async (statusId: string, journeyId: string, ownerId: string) => {
@@ -218,23 +253,10 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     return processInstanceId;
   };
 
-  const moveToStatus = (lead: { leadId: string; processInstanceId: string }, statusId: string) =>
-    call(asAdmin(), 'PATCH', `/api/v1/leads/${lead.leadId}`, {
-      processInstanceId: lead.processInstanceId,
-      journeyId: journey1,
-      statusId,
-      assignmentTypes: [assignmentType],
-    });
-
   const currentOwner = (processInstanceId: string) =>
     prisma.assignment.findFirst({
       where: { organizationId: org, processInstanceId, assignmentType, isCurrent: true },
       select: { userId: true },
-    });
-
-  const grantRouting = (statusId: string, roleId: string, actions: readonly string[]) =>
-    prisma.statusRoutingPermission.createMany({
-      data: actions.map((action) => ({ organizationId: org, statusId, roleId, action })),
     });
 
   beforeAll(async () => {
@@ -242,24 +264,36 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     prisma = db.prisma;
     await applyMigrations(db.sql);
 
-    await prisma.organization.createMany({
-      data: [
-        { id: org, name: 'Synthetic organization' },
-        { id: otherOrg, name: 'Other synthetic organization' },
-      ],
-    });
+    await prisma.organization.create({ data: { id: org, name: 'Synthetic organization' } });
     await prisma.role.createMany({
       data: [
         { id: adminRole, organizationId: org, key: 'synthetic_admin', name: 'Synthetic admin' },
-        { id: roleWide, organizationId: org, key: 'synthetic_wide', name: 'Synthetic wide' },
-        { id: roleNarrow, organizationId: org, key: 'synthetic_narrow', name: 'Synthetic narrow' },
         { id: roleSelf, organizationId: org, key: 'synthetic_self', name: 'Synthetic self' },
         {
-          id: foreignRole,
-          organizationId: otherOrg,
-          key: 'synthetic_foreign',
-          name: 'Synthetic foreign',
+          id: roleManager,
+          organizationId: org,
+          key: 'synthetic_manager',
+          name: 'Synthetic manager',
         },
+        {
+          id: roleGrandManager,
+          organizationId: org,
+          key: 'synthetic_grand_manager',
+          name: 'Synthetic grand manager',
+        },
+        {
+          id: roleManagerSelfOnly,
+          organizationId: org,
+          key: 'synthetic_manager_self_only',
+          name: 'Synthetic manager, self-scoped',
+        },
+        {
+          id: roleReport2,
+          organizationId: org,
+          key: 'synthetic_report_two',
+          name: 'Synthetic report two',
+        },
+        { id: roleWide, organizationId: org, key: 'synthetic_wide', name: 'Synthetic wide' },
       ],
     });
     await prisma.user.createMany({
@@ -272,18 +306,19 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
           roleId: adminRole,
         },
         {
-          id: userWide,
+          id: userGrandManager,
           organizationId: org,
-          name: 'Synthetic wide user',
-          email: 'wide@example.test',
-          roleId: roleWide,
+          name: 'Synthetic grand manager',
+          email: 'grand-manager@example.test',
+          roleId: roleGrandManager,
         },
         {
-          id: userNarrow,
+          id: userManager,
           organizationId: org,
-          name: 'Synthetic narrow user',
-          email: 'narrow@example.test',
-          roleId: roleNarrow,
+          name: 'Synthetic manager',
+          email: 'manager@example.test',
+          roleId: roleManager,
+          managerId: userGrandManager,
         },
         {
           id: userSelf,
@@ -291,6 +326,29 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
           name: 'Synthetic self user',
           email: 'self@example.test',
           roleId: roleSelf,
+          managerId: userManager,
+        },
+        {
+          id: userManagerSelfOnly,
+          organizationId: org,
+          name: 'Synthetic manager, self-scoped',
+          email: 'manager-self-only@example.test',
+          roleId: roleManagerSelfOnly,
+        },
+        {
+          id: userReport2,
+          organizationId: org,
+          name: 'Synthetic report two',
+          email: 'report-two@example.test',
+          roleId: roleReport2,
+          managerId: userManagerSelfOnly,
+        },
+        {
+          id: userWide,
+          organizationId: org,
+          name: 'Synthetic wide user',
+          email: 'wide@example.test',
+          roleId: roleWide,
         },
         {
           id: userOtherOwner,
@@ -299,18 +357,11 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
           email: 'other-owner@example.test',
           roleId: roleWide,
         },
-        {
-          id: foreignUser,
-          organizationId: otherOrg,
-          name: 'Synthetic foreign user',
-          email: 'foreign@example.test',
-          roleId: foreignRole,
-        },
       ],
     });
     await prisma.rolePermission.createMany({
       data: [
-        ...['view', 'create', 'edit', 'delete'].map((action) => ({
+        ...['view', 'create', 'edit', 'delete', 'comment'].map((action) => ({
           organizationId: org,
           roleId: adminRole,
           module: 'leads',
@@ -331,24 +382,30 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
           action,
           scope: 'ORGANIZATION' as const,
         })),
-        // roleWide and roleNarrow are deliberately symmetric — every scope and
-        // feature permission identical — so any difference in what they can
-        // see is attributable only to Status Visibility, never to scope.
-        ...[roleWide, roleNarrow].flatMap((roleId) =>
+        ...[roleSelf, roleReport2, roleManagerSelfOnly].flatMap((roleId) =>
           ['view', 'create', 'edit', 'comment'].map((action) => ({
             organizationId: org,
             roleId,
             module: 'leads',
             action,
-            scope: 'ORGANIZATION' as const,
+            scope: 'SELF' as const,
           })),
         ),
-        ...['view', 'edit'].map((action) => ({
+        ...[roleManager, roleGrandManager].flatMap((roleId) =>
+          ['view', 'create', 'edit', 'comment'].map((action) => ({
+            organizationId: org,
+            roleId,
+            module: 'leads',
+            action,
+            scope: 'TEAM' as const,
+          })),
+        ),
+        ...['view', 'create', 'edit', 'comment'].map((action) => ({
           organizationId: org,
-          roleId: roleSelf,
+          roleId: roleWide,
           module: 'leads',
           action,
-          scope: 'SELF' as const,
+          scope: 'ORGANIZATION' as const,
         })),
       ],
     });
@@ -359,7 +416,15 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
       ],
     });
     await prisma.roleJourneyAccess.createMany({
-      data: [adminRole, roleWide, roleNarrow, roleSelf].flatMap((roleId) =>
+      data: [
+        adminRole,
+        roleSelf,
+        roleManager,
+        roleGrandManager,
+        roleManagerSelfOnly,
+        roleReport2,
+        roleWide,
+      ].flatMap((roleId) =>
         [journey1, journey2].map((journeyId) => ({ organizationId: org, roleId, journeyId })),
       ),
     });
@@ -385,35 +450,78 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
 
   /* ------------------------------------------------------------- Security */
 
-  it('hides a lead end-to-end from a Role with no visibility row, on every surface at once', async () => {
-    const gate = await makeStatus(journey1, 'security_gate');
-    expect((await putVisibility(asAdmin(), gate, [roleWide])).statusCode).toBe(200);
-    const lead = await seedLead(gate, journey1, userWide);
+  it('makes the assignee visible on every surface the instant a Status routes, with no separate configuration step', async () => {
+    const routed = await makeStatus(journey1, 'security_gate');
+    await activateRouting(routed);
+    const lead = await seedLead(routed, journey1, userSelf);
 
-    // Denied role: absent from the list (whole-response, per ADR-0011), 403 on
-    // direct fetch, 403 on the timeline, absent from a name search, and the
-    // list's count matches its rows exactly.
-    const deniedList = await list(asNarrow());
-    expect(deniedList.statusCode).toBe(200);
-    expect(deniedList.body).not.toContain(lead.leadId);
-    const deniedBody = JSON.parse(deniedList.body) as { total: number; rows: unknown[] };
-    expect(deniedBody.total).toBe(deniedBody.rows.length);
-
-    expect((await detail(asNarrow(), lead.leadId)).statusCode).toBe(403);
-    expect((await activity(asNarrow(), lead.leadId)).statusCode).toBe(403);
-
-    const searchResult = await list(asNarrow(), `&search=${lead.leadId.slice(0, 8)}`);
-    const searchBody = JSON.parse(searchResult.body) as { total: number; rows: unknown[] };
-    expect(searchBody.rows).toHaveLength(0);
-    expect(searchBody.total).toBe(0);
-
-    // Not vacuous: the allowed role sees it on every one of the same surfaces.
-    const allowedList = await list(asWide());
+    const allowedList = await list(asSelf());
+    expect(allowedList.statusCode).toBe(200);
     expect(allowedList.body).toContain(lead.leadId);
     const allowedBody = JSON.parse(allowedList.body) as { total: number; rows: unknown[] };
     expect(allowedBody.total).toBe(allowedBody.rows.length);
+    expect((await detail(asSelf(), lead.leadId)).statusCode).toBe(200);
+    expect((await activity(asSelf(), lead.leadId)).statusCode).toBe(200);
+
+    // Not vacuous, and proves this narrows *below* ordinary DataScope: userWide
+    // holds ORGANIZATION scope — would see every lead in the org — but is not
+    // in userSelf's reporting hierarchy, so Status Visibility excludes them.
+    const deniedList = await list(asWide());
+    expect(deniedList.body).not.toContain(lead.leadId);
+    const deniedBody = JSON.parse(deniedList.body) as { total: number; rows: unknown[] };
+    expect(deniedBody.total).toBe(deniedBody.rows.length);
+    expect((await detail(asWide(), lead.leadId)).statusCode).toBe(403);
+    expect((await activity(asWide(), lead.leadId)).statusCode).toBe(403);
+    const searchResult = await list(asWide(), `&search=${lead.leadId.slice(0, 8)}`);
+    const searchBody = JSON.parse(searchResult.body) as { total: number; rows: unknown[] };
+    expect(searchBody.rows).toHaveLength(0);
+    expect(searchBody.total).toBe(0);
+  }, 120_000);
+
+  it('extends visibility up the reporting hierarchy, any depth, but never sideways to an unrelated broad-scope caller', async () => {
+    const routed = await makeStatus(journey1, 'hierarchy_gate');
+    await activateRouting(routed);
+    const lead = await seedLead(routed, journey1, userSelf);
+
+    // userManager (direct) and userGrandManager (two levels up) both reach
+    // userSelf through `manager_id`, transitively — the same relation TEAM
+    // scope already resolves (ADR-0006), just asked from the other end.
+    expect((await detail(asManager(), lead.leadId)).statusCode).toBe(200);
+    expect((await detail(asGrandManager(), lead.leadId)).statusCode).toBe(200);
+    expect((await detail(asWide(), lead.leadId)).statusCode).toBe(403);
+  }, 120_000);
+
+  it('narrows on top of data scope but never substitutes for it (AND, not OR)', async () => {
+    const routed = await makeStatus(journey1, 'scope_and_gate');
+    await activateRouting(routed);
+    const lead = await seedLead(routed, journey1, userReport2);
+
+    // userManagerSelfOnly *is* userReport2's manager — the hierarchy
+    // relation Status Visibility asks about is satisfied — but their own
+    // Role holds only SELF scope, which never reaches a report's lead at
+    // all. Being an ancestor grants no reach beyond what ordinary DataScope
+    // already permits; it only ever narrows.
+    expect((await detail(asManagerSelfOnly(), lead.leadId)).statusCode).toBe(403);
+  }, 120_000);
+
+  it('imposes no restriction while unrouted, restricts once routing activates, and reopens once it deactivates', async () => {
+    const status = await makeStatus(journey1, 'progressive_gate');
+    const lead = await seedLead(status, journey1, userSelf);
+
+    // Baseline: no rule at all — userWide's ORGANIZATION scope applies unchanged.
     expect((await detail(asWide(), lead.leadId)).statusCode).toBe(200);
-    expect((await activity(asWide(), lead.leadId)).statusCode).toBe(200);
+
+    // Activating routing restricts immediately — no caching, per-request
+    // re-evaluation, matching 13a's "immediately after creation" property.
+    await activateRouting(status);
+    const afterActive = await detail(asWide(), lead.leadId);
+    expect(afterActive.statusCode).toBe(403);
+    expect(afterActive.body).not.toContain(lead.leadId);
+
+    // Deactivating returns the Status to unrestricted — not to
+    // denied-for-everyone, matching Phase 19's original default exactly.
+    expect((await deactivateRouting(status)).statusCode).toBe(200);
+    expect((await detail(asWide(), lead.leadId)).statusCode).toBe(200);
   }, 120_000);
 
   it('does not let a direct grant bypass Status Visibility, on the plain list, shared_with_me, or detail', async () => {
@@ -425,7 +533,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     // shared-record OR-arm. Neither routes through `processExists()`, so
     // neither inherited the fix that lives inside it.
     const deniedGate = await makeStatus(journey1, 'grant_gate_denied');
-    expect((await putVisibility(asAdmin(), deniedGate, [roleWide])).statusCode).toBe(200);
+    await activateRouting(deniedGate);
     const deniedLead = await seedLead(deniedGate, journey1, userOtherOwner);
     await prisma.userAccessGrant.create({
       data: {
@@ -437,32 +545,25 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
       },
     });
 
-    // The plain list (`all`, the default): the grant's own OR-arm must
-    // respect Status Visibility too, not just the assignment arm beside it.
+    // userSelf is not userOtherOwner's manager (nor userOtherOwner), so the
+    // hierarchy check excludes them even with a grant in hand.
     const plainDenied = await list(asSelf());
     expect(plainDenied.body).not.toContain(deniedLead.leadId);
 
-    // `shared_with_me`: no assignment-based arm exists here at all, so this
-    // isolates the bug completely — a grant alone used to be sufficient.
     const sharedDenied = await list(asSelf(), '&accessMode=shared_with_me');
     expect(sharedDenied.body).not.toContain(deniedLead.leadId);
     const sharedDeniedBody = JSON.parse(sharedDenied.body) as { total: number; rows: unknown[] };
     expect(sharedDeniedBody.total).toBe(sharedDeniedBody.rows.length);
     expect(sharedDeniedBody.rows).toHaveLength(0);
 
-    // Detail already got this right — decision.ts's `statusVisible` check is
-    // unconditional on how the caller reached the record — so this is the
-    // list query catching up to a rule the single-record path already
-    // enforced, not a new rule.
     expect((await detail(asSelf(), deniedLead.leadId)).statusCode).toBe(403);
 
-    // Not vacuous: the identical shape — same Role, same grant, same wrong
-    // assignee — but a Status that allows roleSelf shows the lead on both
-    // surfaces, proving the absence above is Status Visibility denying it,
-    // not the grant mechanism failing outright.
-    const allowedGate = await makeStatus(journey1, 'grant_gate_allowed');
-    expect((await putVisibility(asAdmin(), allowedGate, [roleSelf])).statusCode).toBe(200);
-    const allowedLead = await seedLead(allowedGate, journey1, userOtherOwner);
+    // Not vacuous: the identical mismatch (grant recipient isn't the
+    // assignee or their manager) — but an *unrouted* Status imposes no
+    // restriction at all, so the grant alone is sufficient. Proves the
+    // absence above is Status Visibility denying it, not the grant
+    // mechanism failing outright.
+    const allowedLead = await seedLead(openStatus1, journey1, userOtherOwner);
     await prisma.userAccessGrant.create({
       data: {
         organizationId: org,
@@ -480,10 +581,10 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
 
   it('keeps a lead visible through an unrestricted process instance when another is denied (multi-Journey union)', async () => {
     const gate = await makeStatus(journey1, 'union_gate');
-    expect((await putVisibility(asAdmin(), gate, [roleWide])).statusCode).toBe(200);
+    await activateRouting(gate);
 
-    const lead = await seedLead(gate, journey1, userNarrow);
-    const openProcess = await addProcess(lead.leadId, journey2, openStatus2, userNarrow);
+    const lead = await seedLead(gate, journey1, userSelf);
+    const openProcess = await addProcess(lead.leadId, journey2, openStatus2, userWide);
     await prisma.activityLog.create({
       data: {
         organizationId: org,
@@ -505,23 +606,23 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
       },
     });
 
-    // roleNarrow cannot see the gated process instance, but the lead survives
-    // through the open one on every surface — the per-process union already
-    // proven for Journey access, now proven for this axis.
-    const listBody = await list(asNarrow());
+    // userWide cannot see the gated process instance (not userSelf's
+    // manager), but the lead survives through the open one — their own
+    // assignment there — the per-process union already proven for Journey
+    // access, now proven for this axis.
+    const listBody = await list(asWide());
     expect(listBody.body).toContain(lead.leadId);
     const parsed = JSON.parse(listBody.body) as { total: number; rows: unknown[] };
     expect(parsed.total).toBe(parsed.rows.length);
 
-    const detailResponse = await detail(asNarrow(), lead.leadId);
+    const detailResponse = await detail(asWide(), lead.leadId);
     expect(detailResponse.statusCode).toBe(200);
     const detailBody = JSON.parse(detailResponse.body) as {
       processInstances: Array<{ processInstanceId: string }>;
     };
     expect(detailBody.processInstances.map((p) => p.processInstanceId)).toEqual([openProcess]);
 
-    // Only the visible process instance's own activity rows appear.
-    const activityResponse = await activity(asNarrow(), lead.leadId);
+    const activityResponse = await activity(asWide(), lead.leadId);
     expect(activityResponse.statusCode).toBe(200);
     const activityBody = JSON.parse(activityResponse.body) as {
       items: Array<{ newValue: unknown }>;
@@ -529,185 +630,99 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
     expect(activityBody.items.map((row) => row.newValue)).toEqual([{ via: 'open process' }]);
   }, 120_000);
 
-  it('imposes no restriction on an unconfigured Status, restricts immediately once a row exists, and reopens fully once cleared', async () => {
-    const status = await makeStatus(journey1, 'progressive');
-    const lead = await seedLead(status, journey1, userNarrow);
-
-    // Baseline: zero rows, ordinary scope applies unchanged.
-    expect((await detail(asNarrow(), lead.leadId)).statusCode).toBe(200);
-
-    // The first row restricts immediately — no caching, per-request
-    // re-evaluation, matching 13a's "immediately after creation" property.
-    expect((await putVisibility(asAdmin(), status, [roleWide])).statusCode).toBe(200);
-    const afterFirstRow = await detail(asNarrow(), lead.leadId);
-    expect(afterFirstRow.statusCode).toBe(403);
-    expect(afterFirstRow.body).not.toContain(lead.leadId);
-
-    // Clearing every row returns to unrestricted — not to denied-for-everyone.
-    expect((await putVisibility(asAdmin(), status, [])).statusCode).toBe(200);
-    expect((await detail(asNarrow(), lead.leadId)).statusCode).toBe(200);
-  }, 120_000);
-
-  it('narrows on top of data scope but never widens it (AND, not OR)', async () => {
-    const status = await makeStatus(journey1, 'scope_and');
-    // roleSelf is allow-listed for this Status…
-    expect((await putVisibility(asAdmin(), status, [roleSelf])).statusCode).toBe(200);
-    // …but the lead belongs to someone else, so SELF scope still excludes it.
-    const lead = await seedLead(status, journey1, userOtherOwner);
-
-    const denied = await list(asSelf());
-    expect(denied.body).not.toContain(lead.leadId);
-    expect((await detail(asSelf(), lead.leadId)).statusCode).toBe(403);
-  }, 120_000);
-
   it('gates a status change against the pre-edit Status, not the destination', async () => {
     const destination = await makeStatus(journey1, 'destination_gate');
-    // roleNarrow cannot see the destination…
-    expect((await putVisibility(asAdmin(), destination, [roleWide])).statusCode).toBe(200);
-    // …but can see and edit the lead in its current, unrestricted Status.
-    const lead = await seedLead(openStatus1, journey1, userNarrow);
+    // The pool is userSelf themselves: entering a routed Status re-fires
+    // the algorithm (round robin over a single-candidate pool always picks
+    // that candidate), so the assignee stays userSelf across the move — what
+    // changes here is purely whether the *mover* (admin, not the assignee)
+    // can still see it.
+    await activateRouting(destination, [userSelf]);
+    const lead = await seedLead(openStatus1, journey1, userSelf);
 
-    const moved = await call(asNarrow(), 'PATCH', `/api/v1/leads/${lead.leadId}`, {
+    const moved = await call(asAdmin(), 'PATCH', `/api/v1/leads/${lead.leadId}`, {
       processInstanceId: lead.processInstanceId,
       journeyId: journey1,
       statusId: destination,
       assignmentTypes: [assignmentType],
     });
-    // The move itself succeeds — checked against the pre-edit Status.
+    // The move itself succeeds — checked against the pre-edit (open, so
+    // unrestricted) Status, not the routed destination.
     expect(moved.statusCode).toBe(200);
 
-    // Immediately after, the mover has lost the lead they just moved.
-    const after = await detail(asNarrow(), lead.leadId);
+    // Immediately after, admin (ORGANIZATION scope, but not userSelf's
+    // manager) has lost visibility of the very lead they just moved.
+    const after = await detail(asAdmin(), lead.leadId);
     expect(after.statusCode).toBe(403);
-    const afterList = await list(asNarrow());
+    const afterList = await list(asAdmin());
     expect(afterList.body).not.toContain(lead.leadId);
+
+    // The assignee themselves, unaffected by the move, still sees it.
+    expect((await detail(asSelf(), lead.leadId)).statusCode).toBe(200);
   }, 120_000);
 
-  it('checks the landing Status on lead creation, both explicit and default-on-create', async () => {
-    const explicitGate = await makeStatus(journey1, 'create_explicit_gate');
-    expect((await putVisibility(asAdmin(), explicitGate, [roleWide])).statusCode).toBe(200);
-
-    const deniedExplicit = await call(asNarrow(), 'POST', '/api/v1/leads', {
+  it('never blocks creating a lead into a routed Status, or moving one into a routed target Journey — there is no assignee yet to check', async () => {
+    // Phase 19 checked the landing Status at creation time. Phase 20 removes
+    // that check's bite entirely: Status Visibility is now derived from an
+    // assignment, and neither `createLead` nor `moveLeadJourney`'s target
+    // check has an existing assignment to test hierarchy reach against, so
+    // both default to unrestricted — the same "no record named" default
+    // `recordAllowed` already used everywhere else in this engine.
+    const createGate = await makeStatus(journey1, 'create_landing_gate');
+    await activateRouting(createGate);
+    const created = await call(asWide(), 'POST', '/api/v1/leads', {
       journeyId: journey1,
-      statusId: explicitGate,
-      name: 'Synthetic denied-at-creation lead',
-      fieldValues: {},
-      assignments: [{ assignmentType, userId: userNarrow }],
-      assignmentTypes: [assignmentType],
-    });
-    expect(deniedExplicit.statusCode).toBe(403);
-
-    const allowedExplicit = await call(asWide(), 'POST', '/api/v1/leads', {
-      journeyId: journey1,
-      statusId: explicitGate,
-      name: 'Synthetic allowed-at-creation lead',
+      statusId: createGate,
+      name: 'Synthetic created-into-routed-status lead',
       fieldValues: {},
       assignments: [{ assignmentType, userId: userWide }],
       assignmentTypes: [assignmentType],
     });
-    expect(allowedExplicit.statusCode).toBe(201);
+    expect(created.statusCode).toBe(201);
 
-    // Default-on-create: its own Journey, so nothing else contends for the
-    // "default" slot.
-    const defaultJourney = randomUUID();
+    const moveTargetJourney = randomUUID();
     await prisma.journey.create({
       data: {
-        id: defaultJourney,
-        organizationId: org,
-        key: 'synthetic_default_journey',
-        name: 'Default-on-create journey',
-      },
-    });
-    await prisma.roleJourneyAccess.createMany({
-      data: [roleWide, roleNarrow].map((roleId) => ({
-        organizationId: org,
-        roleId,
-        journeyId: defaultJourney,
-      })),
-    });
-    const defaultGate = await makeStatus(defaultJourney, 'create_default_gate', true);
-    expect((await putVisibility(asAdmin(), defaultGate, [roleWide])).statusCode).toBe(200);
-
-    const deniedDefault = await call(asNarrow(), 'POST', '/api/v1/leads', {
-      journeyId: defaultJourney,
-      name: 'Synthetic denied-default lead',
-      fieldValues: {},
-      assignments: [{ assignmentType, userId: userNarrow }],
-      assignmentTypes: [assignmentType],
-    });
-    expect(deniedDefault.statusCode).toBe(403);
-
-    const allowedDefault = await call(asWide(), 'POST', '/api/v1/leads', {
-      journeyId: defaultJourney,
-      name: 'Synthetic allowed-default lead',
-      fieldValues: {},
-      assignments: [{ assignmentType, userId: userWide }],
-      assignmentTypes: [assignmentType],
-    });
-    expect(allowedDefault.statusCode).toBe(201);
-  }, 120_000);
-
-  it('checks the landing Status when moving a lead to another Journey', async () => {
-    const targetJourney = randomUUID();
-    await prisma.journey.create({
-      data: {
-        id: targetJourney,
+        id: moveTargetJourney,
         organizationId: org,
         key: 'synthetic_move_target',
         name: 'Move target journey',
       },
     });
     await prisma.roleJourneyAccess.createMany({
-      data: [roleWide, roleNarrow].map((roleId) => ({
+      data: [roleSelf, roleWide].map((roleId) => ({
         organizationId: org,
         roleId,
-        journeyId: targetJourney,
+        journeyId: moveTargetJourney,
       })),
     });
-    const targetGate = await makeStatus(targetJourney, 'move_target_gate', true);
-    expect((await putVisibility(asAdmin(), targetGate, [roleWide])).statusCode).toBe(200);
+    const moveTargetGate = await makeStatus(moveTargetJourney, 'move_target_gate', true);
+    await activateRouting(moveTargetGate);
 
-    const deniedLead = await seedLead(openStatus1, journey1, userNarrow);
-    const deniedMove = await call(
-      asNarrow(),
-      'PATCH',
-      `/api/v1/leads/${deniedLead.leadId}/journey`,
-      {
-        processInstanceId: deniedLead.processInstanceId,
-        journeyId: journey1,
-        targetJourneyId: targetJourney,
-        assignmentTypes: [assignmentType],
-      },
-    );
-    expect(deniedMove.statusCode).toBe(403);
-
-    const allowedLead = await seedLead(openStatus1, journey1, userWide);
-    const allowedMove = await call(
-      asWide(),
-      'PATCH',
-      `/api/v1/leads/${allowedLead.leadId}/journey`,
-      {
-        processInstanceId: allowedLead.processInstanceId,
-        journeyId: journey1,
-        targetJourneyId: targetJourney,
-        assignmentTypes: [assignmentType],
-      },
-    );
-    expect(allowedMove.statusCode).toBe(200);
+    const lead = await seedLead(openStatus1, journey1, userWide);
+    const moved = await call(asWide(), 'PATCH', `/api/v1/leads/${lead.leadId}/journey`, {
+      processInstanceId: lead.processInstanceId,
+      journeyId: journey1,
+      targetJourneyId: moveTargetJourney,
+      assignmentTypes: [assignmentType],
+    });
+    expect(moved.statusCode).toBe(200);
   }, 120_000);
 
-  it('extends the same per-process check to sharing/comment/reassign/deactivate routes', async () => {
+  it('extends the same per-process check to comment routes', async () => {
     const gate = await makeStatus(journey1, 'folded_in_gate');
-    expect((await putVisibility(asAdmin(), gate, [roleWide])).statusCode).toBe(200);
-    const lead = await seedLead(gate, journey1, userOtherOwner);
+    await activateRouting(gate);
+    const lead = await seedLead(gate, journey1, userSelf);
 
-    const denied = await call(asNarrow(), 'POST', `/api/v1/leads/${lead.leadId}/comments`, {
+    const denied = await call(asWide(), 'POST', `/api/v1/leads/${lead.leadId}/comments`, {
       text: 'synthetic comment',
+      assignmentTypes: [assignmentType],
     });
     expect(denied.statusCode).toBe(403);
 
-    const allowed = await call(asWide(), 'POST', `/api/v1/leads/${lead.leadId}/comments`, {
+    const allowed = await call(asSelf(), 'POST', `/api/v1/leads/${lead.leadId}/comments`, {
       text: 'synthetic comment',
+      assignmentTypes: [assignmentType],
     });
     expect(allowed.statusCode).toBe(201);
   }, 120_000);
@@ -715,190 +730,71 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19 Status Visibility', () => {
   /* ---------------------------------------------------------- Routing */
 
   describe('routing interaction', () => {
-    it('excludes a routing candidate whose Role cannot see the Status', async () => {
-      const routed = await makeStatus(journey1, 'routing_gate');
-      await grantRouting(routed, adminRole, ['view', 'configure', 'operate']);
-      await putVisibility(asAdmin(), routed, [roleWide]);
+    it('a manual override grants the new assignee visibility immediately, with no separate visibility step', async () => {
+      const routed = await makeStatus(journey1, 'operate_gate');
+      await activateRouting(routed);
+      // `operate` is an *additional* gate, never a replacement (ADR-0015):
+      // the actor still needs to already see the lead through their own
+      // scope and hierarchy reach before they may reassign it, so the lead
+      // starts out assigned to the actor themselves (admin, trivially
+      // visible to admin).
+      const lead = await seedLead(routed, journey1, adminUser);
 
-      const put = await call(asAdmin(), 'PUT', `/api/v1/statuses/${routed}/routing`, {
+      // userSelf cannot see it yet — not the current assignee, not their manager.
+      expect((await detail(asSelf(), lead.leadId)).statusCode).toBe(403);
+
+      const override = await call(
+        asAdmin(),
+        'POST',
+        `/api/v1/leads/${lead.leadId}/routing-assign`,
+        {
+          processInstanceId: lead.processInstanceId,
+          statusId: routed,
+          assignmentTypes: [assignmentType],
+          userId: userSelf,
+        },
+      );
+      expect(override.statusCode).toBe(200);
+      expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: userSelf });
+
+      // The instant they're assigned, they can see it — no admin action
+      // beyond the assignment itself. This is the manual-override gap Phase
+      // 19's own candidate filter never covered; uniting the two features
+      // closes it structurally rather than with a second check.
+      expect((await detail(asSelf(), lead.leadId)).statusCode).toBe(200);
+      // The previous holder, in turn, has lost it — an ordinary consequence
+      // of losing the assignment, not a new rule.
+      expect((await detail(asAdmin(), lead.leadId)).statusCode).toBe(403);
+    }, 120_000);
+
+    it('round robin still distributes across the pool — visibility plays no part in candidate selection anymore', async () => {
+      const routed = await makeStatus(journey1, 'routing_pool_gate');
+      await grantRouting(routed, adminRole, ['configure', 'operate']);
+      await call(asAdmin(), 'PUT', `/api/v1/statuses/${routed}/routing`, {
         assignmentType,
         algorithm: 'round_robin',
         poolType: 'users',
-        userIds: [userWide, userNarrow],
+        userIds: [userWide, userOtherOwner],
       });
-      expect(put.statusCode).toBe(200);
 
       const leads = await Promise.all(
         [1, 2, 3, 4].map(() => seedLead(openStatus1, journey1, adminUser)),
       );
-      const responses = await Promise.all(leads.map((lead) => moveToStatus(lead, routed)));
+      const responses = await Promise.all(
+        leads.map((lead) =>
+          call(asAdmin(), 'PATCH', `/api/v1/leads/${lead.leadId}`, {
+            processInstanceId: lead.processInstanceId,
+            journeyId: journey1,
+            statusId: routed,
+            assignmentTypes: [assignmentType],
+          }),
+        ),
+      );
       expect(responses.map((r) => r.statusCode)).toEqual([200, 200, 200, 200]);
-
       const owners = await Promise.all(leads.map((lead) => currentOwner(lead.processInstanceId)));
-      // Every assignment landed on the visible candidate; the excluded one
-      // never received a lead, even though round robin would ordinarily
-      // alternate between the two.
-      expect(owners.every((owner) => owner?.userId === userWide)).toBe(true);
-    }, 120_000);
-
-    it('skips without assigning when every candidate is excluded, and still commits the status change', async () => {
-      const routed = await makeStatus(journey1, 'routing_empty_gate');
-      await grantRouting(routed, adminRole, ['view', 'configure', 'operate']);
-      // Restricted to a Role that is not in the routing pool at all.
-      await putVisibility(asAdmin(), routed, [roleSelf]);
-
-      await call(asAdmin(), 'PUT', `/api/v1/statuses/${routed}/routing`, {
-        assignmentType,
-        algorithm: 'round_robin',
-        poolType: 'users',
-        userIds: [userWide, userNarrow],
-      });
-
-      const lead = await seedLead(openStatus1, journey1, userOtherOwner);
-      const moved = await moveToStatus(lead, routed);
-      expect(moved.statusCode).toBe(200);
-      expect(
-        await prisma.processInstance.findFirst({
-          where: { organizationId: org, id: lead.processInstanceId },
-          select: { currentStatusId: true },
-        }),
-      ).toEqual({ currentStatusId: routed });
-      // No assignment made; the lead keeps whatever it had.
-      expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: userOtherOwner });
-      const skip = await prisma.activityLog.findFirst({
-        where: { organizationId: org, leadId: lead.leadId, actionType: 'routing_skipped' },
-      });
-      expect(skip?.newValue).toEqual({ reason: 'no_visible_candidate' });
-    }, 120_000);
-
-    it('does not filter routing candidates when the Status has no visibility rows configured', async () => {
-      const routed = await makeStatus(journey1, 'routing_open_gate');
-      await grantRouting(routed, adminRole, ['view', 'configure', 'operate']);
-      // Deliberately no putVisibility call: this Status stays unconfigured.
-
-      await call(asAdmin(), 'PUT', `/api/v1/statuses/${routed}/routing`, {
-        assignmentType,
-        algorithm: 'round_robin',
-        poolType: 'users',
-        userIds: [userWide, userNarrow],
-      });
-
-      const leads = await Promise.all(
-        [1, 2, 3, 4].map(() => seedLead(openStatus1, journey1, adminUser)),
-      );
-      for (const lead of leads) expect((await moveToStatus(lead, routed)).statusCode).toBe(200);
-      const owners = await Promise.all(leads.map((lead) => currentOwner(lead.processInstanceId)));
-      // Both candidates receive leads — proving the filter is a no-op until
-      // the feature is actually configured for this Status.
       expect(new Set(owners.map((owner) => owner?.userId))).toEqual(
-        new Set([userWide, userNarrow]),
+        new Set([userWide, userOtherOwner]),
       );
-    }, 120_000);
-  });
-
-  /* ------------------------------------------------------ Configuration */
-
-  describe('configuration CRUD', () => {
-    it('replaces the allow-list wholesale, round-trips, and bumps every affected role including one that lost its row', async () => {
-      const status = await makeStatus(journey1, 'crud_replace');
-      const before = await prisma.role.findFirst({
-        where: { organizationId: org, id: roleNarrow },
-        select: { version: true },
-      });
-
-      const first = await putVisibility(asAdmin(), status, [roleWide, roleNarrow]);
-      expect(first.statusCode).toBe(200);
-      const afterFirst = await getVisibility(asAdmin(), status);
-      const expectedSorted = [roleWide, roleNarrow]
-        .map((roleId) => ({ roleId }))
-        .sort((a, b) => a.roleId.localeCompare(b.roleId));
-      expect(JSON.parse(afterFirst.body)).toEqual(expectedSorted);
-
-      // A second PUT replaces wholesale — roleNarrow drops out rather than
-      // being merged alongside the new set.
-      const second = await putVisibility(asAdmin(), status, [roleWide]);
-      expect(second.statusCode).toBe(200);
-      const afterSecond = await getVisibility(asAdmin(), status);
-      expect(JSON.parse(afterSecond.body)).toEqual([{ roleId: roleWide }]);
-
-      const after = await prisma.role.findFirst({
-        where: { organizationId: org, id: roleNarrow },
-        select: { version: true },
-      });
-      expect(after!.version).toBeGreaterThan(before!.version);
-    }, 120_000);
-
-    it('gates the editor on roles_permissions, never on routing or journey configuration, preventing self-escalation', async () => {
-      const status = await makeStatus(journey1, 'crud_escalation');
-      const configuratorRole = randomUUID();
-      const configurator = randomUUID();
-      await prisma.role.create({
-        data: {
-          id: configuratorRole,
-          organizationId: org,
-          key: 'synthetic_configurator',
-          name: 'Synthetic configurator',
-        },
-      });
-      await prisma.rolePermission.createMany({
-        data: [
-          {
-            organizationId: org,
-            roleId: configuratorRole,
-            module: 'journeys_statuses',
-            action: 'edit',
-            scope: 'ORGANIZATION' as const,
-          },
-          {
-            organizationId: org,
-            roleId: configuratorRole,
-            module: 'lead_routing',
-            action: 'configure',
-            scope: 'ORGANIZATION' as const,
-          },
-        ],
-      });
-      await prisma.user.create({
-        data: {
-          id: configurator,
-          organizationId: org,
-          name: 'Synthetic configurator user',
-          email: 'configurator@example.test',
-          roleId: configuratorRole,
-        },
-      });
-      const asConfigurator = { userId: configurator, roleId: configuratorRole };
-
-      expect((await getVisibility(asConfigurator, status)).statusCode).toBe(403);
-      const escalation = await putVisibility(asConfigurator, status, [configuratorRole]);
-      expect(escalation.statusCode).toBe(403);
-      expect(
-        await prisma.statusVisibility.count({
-          where: { organizationId: org, statusId: status, roleId: configuratorRole },
-        }),
-      ).toBe(0);
-    }, 120_000);
-
-    it('audits every replace and isolates tenants', async () => {
-      const status = await makeStatus(journey1, 'crud_audit');
-      expect((await putVisibility(asAdmin(), status, [roleWide])).statusCode).toBe(200);
-      expect((await putVisibility(asAdmin(), status, [])).statusCode).toBe(200);
-
-      const audits = await prisma.systemAuditLog.findMany({
-        where: { organizationId: org, entityType: 'status_visibility', entityId: status },
-        orderBy: { timestamp: 'asc' },
-      });
-      expect(audits.map((row) => row.action)).toEqual(['replace', 'replace']);
-      expect(audits[0]?.oldValue).toEqual([]);
-      expect(audits[0]?.newValue).toEqual([{ roleId: roleWide }]);
-      expect(audits[1]?.oldValue).toEqual([{ roleId: roleWide }]);
-      expect(audits[1]?.newValue).toEqual([]);
-
-      const foreignRoleReplace = await putVisibility(asAdmin(), status, [foreignRole]);
-      expect(foreignRoleReplace.statusCode).toBe(400);
-
-      const foreignStatus = await putVisibility(asAdmin(), randomUUID(), [roleWide]);
-      expect(foreignStatus.statusCode).toBe(404);
     }, 120_000);
   });
 });

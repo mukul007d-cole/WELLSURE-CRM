@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveAuthorization } from '../decision.js';
 import {
+  assignmentPrimary,
   createFixtureState,
   createRepository,
   journeyA,
+  leadA,
   moduleLeads,
   orgA,
   statusOpen,
@@ -12,15 +14,16 @@ import {
 } from './fixtures.js';
 
 /**
- * Phase 19 — the whole feature turns on one default: a Status with zero
- * `status_visibility` rows is unrestricted, and a Status with any row at all
- * restricts to the Roles it names. Table-driven against the engine directly,
- * no database — `permission-matrix.test.ts`'s own style, one axis at a time.
+ * Phase 20 — Status Visibility is no longer a Role allow-list; routing
+ * decides it. A Status with no active routing rule is unrestricted
+ * (Phase 19's original default, re-keyed); one with an active rule
+ * restricts visibility to the lead's current assignee and that assignee's
+ * reporting-hierarchy ancestors — no Role plays any part in the check.
+ * `leadA` is fixture-assigned to `user-child`, whose manager is `user-root`
+ * (`user-root`'s own manager is null — the top of this fixture's tree).
  */
 describe('status visibility', () => {
   it('is unrestricted when the caller names no Status at all', async () => {
-    // `statusId` omitted entirely — the bulk/list shape, checked separately
-    // via RecordPredicate.roleId, not this per-request clause.
     const decision = await resolveAuthorization({
       repository: createRepository(),
       request: {
@@ -34,24 +37,37 @@ describe('status visibility', () => {
     expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
   });
 
+  it('is unrestricted when a Status is named but no specific lead is (create-style checks)', async () => {
+    const decision = await resolveAuthorization({
+      repository: createRepository(),
+      request: {
+        organizationId: orgA,
+        userId: 'user-sibling',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+      },
+    });
+    expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
+  });
+
   const cases = [
-    { userId: 'user-root', roleId: 'role-team', statusId: statusOpen, allowed: true },
-    { userId: 'user-child', roleId: 'role-self', statusId: statusOpen, allowed: true },
-    // A Status with zero rows denies nobody, regardless of Role.
-    { userId: 'user-no-dept', roleId: 'role-department', statusId: statusOpen, allowed: true },
-    // `statusRestricted`'s one fixture row names `role-self` only.
-    { userId: 'user-child', roleId: 'role-self', statusId: statusRestricted, allowed: true },
-    { userId: 'user-root', roleId: 'role-team', statusId: statusRestricted, allowed: false },
-    {
-      userId: 'user-no-dept',
-      roleId: 'role-department',
-      statusId: statusRestricted,
-      allowed: false,
-    },
+    // No active routing rule at all — unrestricted regardless of who asks.
+    { userId: 'user-child', statusId: statusOpen, allowed: true },
+    { userId: 'user-sibling', statusId: statusOpen, allowed: true },
+    // `statusRestricted` has an active rule; `leadA` is assigned to
+    // `user-child`.
+    { userId: 'user-child', statusId: statusRestricted, allowed: true }, // the assignee
+    { userId: 'user-root', statusId: statusRestricted, allowed: true }, // the assignee's manager
+    { userId: 'user-grandchild', statusId: statusRestricted, allowed: false }, // the assignee's own report, not an ancestor
+    { userId: 'user-sibling', statusId: statusRestricted, allowed: false }, // unrelated
+    { userId: 'user-other-dept', statusId: statusRestricted, allowed: false }, // unrelated, different department
+    { userId: 'user-no-dept', statusId: statusRestricted, allowed: false }, // unrelated
   ] as const;
 
   it.each(cases)(
-    '$roleId on $statusId is allowed=$allowed',
+    '$userId on $statusId is allowed=$allowed',
     async ({ userId, statusId, allowed }) => {
       const decision = await resolveAuthorization({
         repository: createRepository(),
@@ -62,6 +78,8 @@ describe('status visibility', () => {
           action: 'action.synthetic.view',
           journeyId: journeyA,
           statusId,
+          leadId: leadA,
+          assignmentTypes: [assignmentPrimary],
         },
       });
       expect(decision.deniedReasons.includes('STATUS_VISIBILITY_DENIED')).toBe(!allowed);
@@ -69,9 +87,9 @@ describe('status visibility', () => {
   );
 
   it('adds STATUS_VISIBILITY_DENIED alongside other denials rather than in place of them — AND, never OR', async () => {
-    // No Role is granted `action.synthetic.missing`, and `user-no-dept`
-    // (role-department) is also outside `statusRestricted`'s one row
-    // (role-self only). Neither denial substitutes for the other.
+    // No Role is granted `action.synthetic.missing`, and `user-no-dept` is
+    // also outside `leadA`'s assignee-plus-hierarchy set on `statusRestricted`.
+    // Neither denial substitutes for the other.
     const decision = await resolveAuthorization({
       repository: createRepository(),
       request: {
@@ -81,6 +99,8 @@ describe('status visibility', () => {
         action: 'action.synthetic.missing',
         journeyId: journeyA,
         statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
       },
     });
     expect(decision.deniedReasons).toEqual(
@@ -88,32 +108,36 @@ describe('status visibility', () => {
     );
   });
 
-  it('carries the caller’s Role id on the record predicate, for the list/SQL form of this same rule', async () => {
+  it('carries the caller’s reporting-hierarchy user ids on the record predicate, for the list/SQL form of this same rule', async () => {
     const decision = await resolveAuthorization({
       repository: createRepository(),
-      request: {
-        organizationId: orgA,
-        userId: 'user-child',
-        module: moduleLeads,
-        action: 'action.synthetic.view',
-        journeyId: journeyA,
-      },
-    });
-    expect(decision.recordPredicate?.roleId).toBe('role-self');
-  });
-
-  it('clearing every row for a Status returns it to unrestricted, not to denied-for-everyone', async () => {
-    const state = createFixtureState();
-    state.statusVisibility = []; // no rows anywhere, including for statusRestricted
-    const decision = await resolveAuthorization({
-      repository: createRepository(state),
       request: {
         organizationId: orgA,
         userId: 'user-root',
         module: moduleLeads,
         action: 'action.synthetic.view',
         journeyId: journeyA,
+      },
+    });
+    expect(decision.recordPredicate?.hierarchyUserIds).toEqual(
+      expect.arrayContaining(['user-root', 'user-child', 'user-grandchild']),
+    );
+  });
+
+  it('deactivating the routing rule returns the Status to unrestricted, not to denied-for-everyone', async () => {
+    const state = createFixtureState();
+    state.activeRoutingRuleStatusIds = []; // no active rule anywhere, including for statusRestricted
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-sibling',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
         statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
       },
     });
     expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');

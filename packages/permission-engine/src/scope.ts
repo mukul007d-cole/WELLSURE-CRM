@@ -67,7 +67,7 @@ export function buildRecordPredicate(input: {
   journeyIds: readonly string[];
   userId: string;
   action: string;
-  roleId: string;
+  hierarchyUserIds: readonly string[];
 }): RecordPredicate {
   return {
     organizationId: input.organizationId,
@@ -77,7 +77,7 @@ export function buildRecordPredicate(input: {
     journeyIds: input.journeyIds,
     includeDirectGrantsForUserId: input.userId,
     directGrantAction: input.action,
-    roleId: input.roleId,
+    hierarchyUserIds: input.hierarchyUserIds,
   };
 }
 

@@ -65,16 +65,19 @@ describe.runIf(shouldRunPostgresIntegration)(
         async hasJourneyAccess() {
           return true;
         },
+        async hasActiveRoutingRule() {
+          return false;
+        },
         async getLeadScope() {
           return null;
         },
-        async listAssignments() {
+        async listCurrentAssignments() {
           return [];
         },
-        async getDirectGrant() {
+        async getActiveDirectGrant() {
           return null;
         },
-        async listReportUserIds() {
+        async listReports() {
           return [];
         },
         async listDepartmentUserIds() {

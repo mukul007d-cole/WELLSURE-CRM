@@ -115,12 +115,13 @@ function whereClause(input: SellerListQueryInput, params: Params): string {
  * filter can reach a record the caller's scope excludes.
  *
  * All three branches must independently enforce Status Visibility (Phase
- * 19): `resolveAuthorization`'s `statusVisible` check
+ * 19, reworked Phase 20): `resolveAuthorization`'s `statusVisible` check
  * (packages/permission-engine/src/decision.ts) is unconditional — it denies
  * regardless of *how* the caller reached the record, assignment or direct
- * grant alike — so a lead shared directly with a denied Role must not stay
- * visible here just because it arrived through `user_access_grants` rather
- * than `processExists()`'s assignment path. Only `processExists()` itself
+ * grant alike — so a lead shared directly with someone this check excludes
+ * must not stay visible here just because it arrived through
+ * `user_access_grants` rather than `processExists()`'s assignment path.
+ * Only `processExists()` itself
  * (the `mine` branch, and the first half of the `all` OR) got this in the
  * original pass; `shared_with_me` and the `all` branch's own shared-record
  * arm are two independent lookups against `process_instances` and each needs
@@ -141,10 +142,10 @@ function accessClause(input: SellerListQueryInput, params: Params): string {
   const process = processExists(input, params);
   if (input.accessMode === 'mine') return process;
   // Default 'all': assigned records, or records shared directly with the caller
-  // that still sit inside a Journey the role can see *and* a Status the role
-  // isn't denied in — the same (journey, status) pair `processExists()`
-  // requires of an assigned record, checked against the same process
-  // instance rather than two independent ones.
+  // that still sit inside a Journey the caller can see *and* a Status
+  // Visibility doesn't exclude them from — the same (journey, status) pair
+  // `processExists()` requires of an assigned record, checked against the
+  // same process instance rather than two independent ones.
   const shared = grantExists(input, params, input.predicate.directGrantAction);
   const journeyIds = params.bind([...input.predicate.journeyIds], '::uuid[]');
   const sharedProcessVisible = `EXISTS (SELECT 1 FROM process_instances pj WHERE pj.organization_id = l.organization_id AND pj.lead_id = l.id AND pj.active AND pj.journey_id = ANY(${journeyIds}) AND ${statusVisibilityClause(input, params, 'pj')})`;
@@ -161,11 +162,12 @@ function processExists(input: SellerListQueryInput, params: Params): string {
     'p.lead_id = l.id',
     'p.active',
     `p.journey_id = ANY(${journeyIds})`,
-    // Status Visibility (Phase 19) — *inside* this per-process EXISTS, not a
-    // sibling clause on `leads`. A lead with two process instances, one in a
-    // Status denied to the caller's Role and one in an open or allowed one,
-    // must stay visible through the surviving process, exactly as Journey
-    // access already works across multiple Journeys. Moving this clause
+    // Status Visibility (Phase 19, reworked Phase 20) — *inside* this
+    // per-process EXISTS, not a sibling clause on `leads`. A lead with two
+    // process instances, one in a Status this check excludes the caller
+    // from and one in an open or allowed one, must stay visible through the
+    // surviving process, exactly as Journey access already works across
+    // multiple Journeys. Moving this clause
     // outside the per-process EXISTS would instead require *every* process
     // instance to pass, silently inverting that rule — see
     // `phase19.postgres.integration.test.ts`'s multi-Journey test, which
@@ -202,11 +204,17 @@ function processExists(input: SellerListQueryInput, params: Params): string {
 }
 
 /**
- * Status Visibility (Phase 19): `NOT EXISTS (any row for this Status) OR
- * EXISTS (a row for this Status naming the caller's Role)` — a Status with
- * no `status_visibility` rows at all imposes no restriction (the default,
- * unconfigured state); one with any rows narrows visibility to the Roles
- * listed.
+ * Status Visibility (Phase 19, reworked Phase 20): `NOT EXISTS (an active
+ * routing rule for this process's current Status) OR EXISTS (a current
+ * assignment on this process instance held by the caller or one of the
+ * caller's active reports, any depth)` — a Status with no active routing
+ * rule imposes no restriction (the default, unrouted state); one with an
+ * active rule narrows visibility to the lead's current assignee and that
+ * assignee's reporting-hierarchy ancestors. No Role plays any part in this
+ * check — `input.predicate.hierarchyUserIds` is the caller's own id plus
+ * every active user reachable downward through `manager_id`
+ * (`expandScopeUserIds(..., 'TEAM')`, computed once per request regardless
+ * of the caller's own granted scope for this action).
  *
  * `alias` names the `process_instances` row this is correlated against —
  * `p` inside `processExists()`, `pj` inside the `all` branch's shared-record
@@ -220,17 +228,22 @@ function statusVisibilityClause(
   params: Params,
   alias: string,
 ): string {
-  const roleId = params.bind(input.predicate.roleId, '::uuid');
-  return `(NOT EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = ${alias}.organization_id AND v.status_id = ${alias}.current_status_id) OR EXISTS (SELECT 1 FROM status_visibility v WHERE v.organization_id = ${alias}.organization_id AND v.status_id = ${alias}.current_status_id AND v.role_id = ${roleId}))`;
+  const hierarchyUserIds = params.bind([...input.predicate.hierarchyUserIds], '::uuid[]');
+  const assignmentTypeFilter =
+    input.predicate.assignmentTypes.length > 0
+      ? ` AND a.assignment_type = ANY(${params.bind([...input.predicate.assignmentTypes], '::text[]')})`
+      : '';
+  return `(NOT EXISTS (SELECT 1 FROM status_routing_rules r WHERE r.organization_id = ${alias}.organization_id AND r.status_id = ${alias}.current_status_id AND r.active) OR EXISTS (SELECT 1 FROM assignments a WHERE a.organization_id = ${alias}.organization_id AND a.process_instance_id = ${alias}.id AND a.is_current AND a.user_id = ANY(${hierarchyUserIds})${assignmentTypeFilter}))`;
 }
 
 /**
- * Status Visibility (Phase 19) for the `shared_with_me` view: does this lead
- * have at least one active process instance whose current Status does not
- * deny the caller's Role? `resolveAuthorization`'s `statusVisible` check is
- * unconditional (packages/permission-engine/src/decision.ts) — it does not
- * care whether the caller reached the record through ordinary scope or a
- * direct grant — so a share must not bypass it.
+ * Status Visibility (Phase 19, reworked Phase 20) for the `shared_with_me`
+ * view: does this lead have at least one active process instance whose
+ * current Status does not exclude the caller? `resolveAuthorization`'s
+ * `statusVisible` check is unconditional
+ * (packages/permission-engine/src/decision.ts) — it does not care whether
+ * the caller reached the record through ordinary scope or a direct grant —
+ * so a share must not bypass it.
  *
  * Deliberately no Journey filter here: `shared_with_me` already runs with no
  * Journey restriction today (`grantExists()` alone, unchanged by this fix),

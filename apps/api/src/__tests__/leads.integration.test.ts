@@ -178,10 +178,11 @@ async function setupLeadSchema(sql: postgres.Sql): Promise<void> {
   await sql`CREATE TEMP TABLE fields (id uuid NOT NULL, organization_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, field_type text NOT NULL, validation_rule jsonb, active boolean NOT NULL, PRIMARY KEY (organization_id, id))`;
   await sql`CREATE TEMP TABLE field_journey_settings (organization_id uuid NOT NULL, field_id uuid NOT NULL, journey_id uuid NOT NULL, requirement text NOT NULL, required_from_status_id uuid, active boolean NOT NULL)`;
   await sql`CREATE TEMP TABLE field_visibility (organization_id uuid NOT NULL, field_id uuid NOT NULL, role_id uuid NOT NULL, access_level "FieldAccessLevel" NOT NULL)`;
-  // Empty by default: an unconfigured Status imposes no restriction (Phase 19),
-  // so `filter-sql.ts`'s Status Visibility clause is a no-op against this
-  // table until a test inserts a row into it.
-  await sql`CREATE TEMP TABLE status_visibility (organization_id uuid NOT NULL, status_id uuid NOT NULL, role_id uuid NOT NULL)`;
+  // Empty by default: a Status with no active routing rule imposes no
+  // restriction (Phase 19, reworked Phase 20), so `filter-sql.ts`'s Status
+  // Visibility clause is a no-op against this table until a test activates
+  // routing for a Status.
+  await sql`CREATE TEMP TABLE status_routing_rules (organization_id uuid NOT NULL, status_id uuid NOT NULL, active boolean NOT NULL DEFAULT true)`;
   await sql`CREATE TEMP TABLE leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, name text NOT NULL, phone text, email text, field_values jsonb NOT NULL DEFAULT '{}'::jsonb, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TEMP TABLE process_instances (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, lead_id uuid NOT NULL, journey_id uuid NOT NULL, current_status_id uuid NOT NULL, is_primary boolean NOT NULL DEFAULT false, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE UNIQUE INDEX process_instances_active_membership_uq_test ON process_instances (organization_id, lead_id, journey_id) WHERE active`;
@@ -241,8 +242,8 @@ function permissionRepository(input: {
     async hasJourneyAccess(request) {
       return journeys.includes(request.journeyId);
     },
-    async hasStatusVisibility() {
-      return true;
+    async hasActiveRoutingRule() {
+      return false;
     },
     async listAccessibleJourneyIds() {
       return journeys;

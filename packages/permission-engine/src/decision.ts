@@ -1,5 +1,10 @@
 import { resolveFieldDecision } from './fields.js';
-import { assignmentScopeAllowsLead, buildRecordPredicate, expandScopeUserIds } from './scope.js';
+import {
+  assignmentScopeAllowsLead,
+  buildRecordPredicate,
+  expandScopeUserIds,
+  expandTeamUserIds,
+} from './scope.js';
 import type {
   AuthorizationDecision,
   AuthorizationRequest,
@@ -92,14 +97,55 @@ export async function resolveAuthorization(input: {
     deniedReasons.push('JOURNEY_DENIED');
   }
 
-  const statusVisible =
-    input.request.statusId === undefined
-      ? true
-      : await input.repository.hasStatusVisibility({
-          roleId: role.id,
-          organizationId: input.request.organizationId,
-          statusId: input.request.statusId,
-        });
+  /*
+   * Status Visibility (Phase 19, reworked Phase 20): routing decides
+   * visibility. A Status with no active routing rule is unrestricted,
+   * exactly Phase 19's "absence means unrestricted" default, now keyed off
+   * routing rather than a separate allow-list. Once a Status has an active
+   * rule, only the lead's current assignee and that assignee's
+   * reporting-hierarchy ancestors (any depth, via `manager_id` — the same
+   * relation `TEAM` scope already resolves, ADR-0006) may see it — no Role
+   * plays any part in this check. `assignments`/`hierarchyUserIds` are
+   * computed lazily and shared with the `recordAllowed` block below so a
+   * request naming both a Status and a lead pays for each lookup once.
+   */
+  let assignmentsPromise: Promise<
+    Awaited<ReturnType<PermissionRepository['listCurrentAssignments']>>
+  > | null = null;
+  const loadCurrentAssignments = () => {
+    assignmentsPromise ??=
+      input.request.leadId === undefined
+        ? Promise.resolve([])
+        : input.repository.listCurrentAssignments({
+            organizationId: input.request.organizationId,
+            assignmentTypes,
+            journeyIds: predicateJourneyIds,
+          });
+    return assignmentsPromise;
+  };
+  let hierarchyUserIdsPromise: Promise<readonly string[]> | null = null;
+  const loadHierarchyUserIds = () => {
+    hierarchyUserIdsPromise ??= expandTeamUserIds(input.repository, user);
+    return hierarchyUserIdsPromise;
+  };
+
+  const statusVisible = await (async () => {
+    if (input.request.statusId === undefined) return true;
+    const hasActiveRoutingRule = await input.repository.hasActiveRoutingRule({
+      organizationId: input.request.organizationId,
+      statusId: input.request.statusId,
+    });
+    if (!hasActiveRoutingRule) return true;
+    if (input.request.leadId === undefined) return true;
+    return assignmentScopeAllowsLead({
+      assignments: await loadCurrentAssignments(),
+      leadId: input.request.leadId,
+      organizationId: input.request.organizationId,
+      assignmentTypes,
+      allowedUserIds: await loadHierarchyUserIds(),
+      journeyIds: predicateJourneyIds,
+    });
+  })();
   if (!statusVisible) {
     deniedReasons.push('STATUS_VISIBILITY_DENIED');
   }
@@ -128,11 +174,14 @@ export async function resolveAuthorization(input: {
   let recordPredicate: RecordPredicate | null = null;
 
   if (effectiveScope !== null) {
-    const allowedUserIds = await expandScopeUserIds({
-      repository: input.repository,
-      user,
-      scope: effectiveScope,
-    });
+    const allowedUserIds =
+      effectiveScope === 'TEAM'
+        ? await loadHierarchyUserIds()
+        : await expandScopeUserIds({
+            repository: input.repository,
+            user,
+            scope: effectiveScope,
+          });
     recordPredicate = buildRecordPredicate({
       organizationId: input.request.organizationId,
       scope: effectiveScope,
@@ -141,15 +190,11 @@ export async function resolveAuthorization(input: {
       journeyIds: predicateJourneyIds,
       userId: user.id,
       action: input.request.action,
-      roleId: role.id,
+      hierarchyUserIds: await loadHierarchyUserIds(),
     });
 
     if (input.request.leadId !== undefined) {
-      const assignments = await input.repository.listCurrentAssignments({
-        organizationId: input.request.organizationId,
-        assignmentTypes,
-        journeyIds: predicateJourneyIds,
-      });
+      const assignments = await loadCurrentAssignments();
       recordAllowed = assignmentScopeAllowsLead({
         assignments,
         leadId: input.request.leadId,

@@ -26,7 +26,7 @@ interface PrismaPermissionClient {
     findUnique(args: unknown): Promise<JourneyAccessRow | null>;
     findMany(args: unknown): Promise<JourneyAccessRow[]>;
   };
-  statusVisibility: { findMany(args: unknown): Promise<StatusVisibilityRow[]> };
+  statusRoutingRule: { findFirst(args: unknown): Promise<StatusRoutingRuleRow | null> };
   fieldVisibility: { findMany(args: unknown): Promise<FieldVisibilityRow[]> };
   lead: { findUnique(args: unknown): Promise<LeadScopeRow | null> };
   assignment: { findMany(args: unknown): Promise<AssignmentRow[]> };
@@ -55,8 +55,8 @@ interface RolePermissionRow {
 interface JourneyAccessRow {
   journeyId: string;
 }
-interface StatusVisibilityRow {
-  roleId: string;
+interface StatusRoutingRuleRow {
+  id: string;
 }
 interface FieldVisibilityRow {
   fieldId: string;
@@ -134,23 +134,25 @@ export class PrismaPermissionRepository implements PermissionRepository {
   }
 
   /**
-   * Phase 19's one consequential default, encoded in exactly one place: a
-   * Status with zero rows here denies nobody; once it has any row, only a
-   * Role a row names passes. Every caller of this method — the single-record
-   * decision here and the SQL/Prisma list predicates in
+   * Phase 20's one consequential default, encoded in exactly one place: a
+   * Status with no active routing rule imposes no restriction; one with an
+   * active rule restricts visibility to the lead's current assignee and
+   * that assignee's reporting-hierarchy ancestors, computed in
+   * `decision.ts` from `listCurrentAssignments`/`expandScopeUserIds`, not
+   * here. Every caller of this method — the single-record decision here and
+   * the SQL/Prisma list predicates in
    * `apps/api/src/leads/{filter-sql,prisma-lead-repository}.ts` — must agree
    * with this same rule or the surfaces would disagree about one lead.
    */
-  async hasStatusVisibility(input: {
-    roleId: string;
+  async hasActiveRoutingRule(input: {
     organizationId: string;
     statusId: string;
   }): Promise<boolean> {
-    const rows = await this.prisma.statusVisibility.findMany({
-      where: { organizationId: input.organizationId, statusId: input.statusId },
-      select: { roleId: true },
+    const rule = await this.prisma.statusRoutingRule.findFirst({
+      where: { organizationId: input.organizationId, statusId: input.statusId, active: true },
+      select: { id: true },
     });
-    return rows.length === 0 || rows.some((row) => row.roleId === input.roleId);
+    return rule !== null;
   }
 
   async listAccessibleJourneyIds(input: {

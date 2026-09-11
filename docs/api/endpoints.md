@@ -67,13 +67,12 @@ Routing rules live under a Status. Every routing route needs both the
 grants is gated on `roles_permissions:edit`, never on `lead_routing:configure`.
 See ADR-0015.
 
-Status Visibility (`/statuses/:id/visibility`) is a separate axis from routing
-permissions, easily confused for it since both are per-`(status, role)`
-allow-lists edited under `roles_permissions`: routing permissions gate who may
-*configure or operate* a Status's assignment routing, while Status Visibility
-gates who may *see a lead at all* while it sits in that Status. A Status with
-zero `status_visibility` rows is unrestricted — see `docs/permissions/access-model.md`'s
-item E for the full default-state rule.
+Status Visibility no longer has its own routes (Phase 20 retired
+`/statuses/:id/visibility`): who may see a lead while it sits in a Status is
+now derived from the routing assignment itself — the current assignee plus
+their reporting-hierarchy ancestors — the moment a Status has an active
+routing rule, with nothing left to configure separately. See
+`docs/permissions/access-model.md`'s item E for the full rule.
 ```
 GET    /journeys
 POST   /journeys
@@ -90,8 +89,8 @@ GET    /statuses/:id/routing/permissions  -- roles_permissions:view
 PUT    /statuses/:id/routing/permissions  -- roles_permissions:edit; whole-set replace
 POST   /leads/:id/routing-assign          -- lead_routing:operate AND the caller's normal leads:edit + record scope
 
-GET    /statuses/:id/visibility           -- roles_permissions:view
-PUT    /statuses/:id/visibility           -- roles_permissions:edit; whole-set replace, body { roleIds: [...] }
+# GET/PUT /statuses/:id/visibility retired (Phase 20) — Status Visibility is
+# now derived from the routing assignment above, not a separate endpoint.
 
 GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses

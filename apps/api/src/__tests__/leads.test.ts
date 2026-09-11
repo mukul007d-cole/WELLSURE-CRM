@@ -994,8 +994,8 @@ function permissionRepository(
     async hasJourneyAccess(request) {
       return (input.journeys ?? [journeyA]).includes(request.journeyId);
     },
-    async hasStatusVisibility() {
-      return true;
+    async hasActiveRoutingRule() {
+      return false;
     },
     async listAccessibleJourneyIds() {
       return input.journeys ?? [journeyA];

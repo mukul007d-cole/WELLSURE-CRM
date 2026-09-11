@@ -1,8 +1,11 @@
 # Phase 20 — Reconcile Status Routing and Status Visibility
 
-Status: **Part 1 investigated (see finding — no code mismatch reproduced;
-regression test added). Part 2 proposed, awaiting approval. Nothing in Part 2
-is implemented.**
+Status: **implemented.** Part 1: no code mismatch reproduced; regression
+test added regardless. Part 2: design decided directly with the task's
+requester (see below — it supersedes the three-option analysis this plan
+originally presented, kept in the appendix for the record) and implemented
+in full — schema, permission engine, API, web, and both ADR-0019
+(recorded retroactively) and ADR-0020.
 
 ## Goal
 
@@ -10,30 +13,43 @@ Part 1: make Status Routing's `configure`/`operate` reachable if — after
 investigation — they are actually ungrantable, and prove it with a
 regression test either way.
 
-Part 2: stop Status Routing (`status_routing_rules`, User/Team-scoped) and
-Status Visibility (`status_visibility`, Role-scoped) from being configurable
-into a state where a lead is routed to someone whose Role can't see it —
-without making Status Visibility's checks understand Team membership
-(ADR-0014).
+Part 2: **unite Status Routing and Status Visibility into one feature.**
+Per the approved decision: visibility of a lead sitting in a routed Status
+is no longer a separately admin-configured, Role-level allow-list. It is
+computed entirely from the routing assignment itself — the lead's current
+assignee, plus that assignee's management chain ("TLs etc."), and no one
+else. Routing decides visibility; there is no more explicit grant for
+anyone else to configure.
 
 ## Docs read
 
 `AGENTS.md`, `PLANS.md`, `docs/requirements/source-of-truth.md`,
+`docs/architecture/decisions/0006-team-scope-from-hierarchy.md`,
 `docs/architecture/decisions/0014-teams-are-not-team-scope.md`,
 `docs/architecture/decisions/0015-per-status-assignment-routing.md`,
 `docs/planning/phase-14b-per-status-assignment-routing.md` (in full),
 `docs/planning/phase-19-status-scoped-role-visibility.md` (in full, including
 its amendments section), `docs/permissions/access-model.md`,
-`docs/api/endpoints.md`, `docs/workflows/journey-definitions.md`.
+`docs/api/endpoints.md`, `docs/workflows/journey-definitions.md`,
+`docs/requirements/glossary.md`.
 
-Code read: `packages/permission-engine/src/{catalog,decision,scope,types}.ts`;
-`apps/api/src/routes/routing.ts`, `apps/api/src/http/routes/routing.ts`,
+Code read: `packages/permission-engine/src/{catalog,decision,scope,types}.ts`
+and `__tests__/fixtures.ts`; `apps/api/src/routes/routing.ts`,
+`apps/api/src/http/routes/routing.ts`,
 `apps/api/src/routing/{service,rule-service,validation,algorithms}.ts`;
-`apps/api/src/statuses/status-visibility-service.ts`; `apps/api/src/routes/leads.ts`
-(`resolveLeadAccess`, `getLeadById`); `apps/api/src/admin/{bootstrap,validation}.ts`;
-`apps/web/src/pages/admin/{JourneyDetailPage,StatusRoutingPanel,StatusRoutingPermissions,RoleDetailPage}.tsx`;
-`apps/web/src/lib/api-client.ts`; `apps/web/src/app/AuthContext.tsx`;
-`apps/api/src/__tests__/{phase14b,phase19}.postgres.integration.test.ts`,
+`apps/api/src/statuses/{status-visibility-service,errors,validation}.ts`,
+`apps/api/src/routes/status-visibility.ts`,
+`apps/api/src/http/routes/status-visibility.ts`;
+`apps/api/src/leads/{filter-sql,prisma-lead-repository}.ts`;
+`apps/api/src/routes/leads.ts` (`resolveLeadAccess`, `getLeadById`,
+`editLead`, `createLead`, `moveLeadJourney`);
+`apps/api/src/permissions/prisma-permission-repository.ts`;
+`apps/api/src/admin/{bootstrap,validation}.ts`;
+`packages/database/prisma/schema.prisma` (`Status`, `StatusRoutingRule`,
+`StatusVisibility`, `Assignment`, `User`);
+`apps/web/src/pages/admin/{JourneyDetailPage,StatusRoutingPanel,StatusRoutingPermissions,StatusVisibilityPanel,RoleDetailPage}.tsx`;
+`apps/web/src/lib/api-client.ts`; `apps/web/src/types/domain.ts`;
+`apps/api/src/__tests__/{phase14b,phase19,phase13b}.postgres.integration.test.ts`,
 `apps/api/src/__tests__/permission-wiring.test.ts`.
 
 ---
@@ -91,15 +107,10 @@ all. This is friction, and it is confusing, but it is the **documented,
 deliberate self-escalation rule** ADR-0015 states explicitly ("a routing
 administrator who cannot edit permissions must not be able to grant routing
 rights, including to their own role") — the same rule `field_visibility`
-already follows. Changing it would be a real (and separate) product decision,
-not a bug fix, and is out of scope here unless you say otherwise.
-
-**Recommendation:** no code change for Part 1 beyond the regression test
-below. If you have a specific role/permission snapshot from the production
-report that contradicts this (e.g. a role that holds `lead_routing:configure`
-*and* a `status_routing_permissions` row for the Status in question, and
-still gets refused), that would point at a real, different bug and I want to
-see it before closing this out.
+already follows. This part of Status Routing's own permission model
+(`status_routing_permissions`, who may *configure/operate* routing) is
+untouched by Part 2 below, which only changes who may *see* a lead —
+Status Visibility.
 
 **Regression test added regardless** (the task asked for one either way):
 `apps/api/src/__tests__/phase14b.postgres.integration.test.ts` gains a case
@@ -112,330 +123,460 @@ pinned permanently, independent of Part 2.
 
 ---
 
-## Part 2 — the real design question
+## Part 2 — uniting Status Routing and Status Visibility
 
-### The two systems, confirmed from the code (not assumed)
+### The decision, as given
 
-- **Status Routing** (`status_routing_rules` + `status_routing_rule_members`):
-  a pool is either a Phase 14a **Team** (`poolType: 'team'`, resolved via
-  `team_members`) or a named list of **Users** (`poolType: 'users'`, resolved
-  via `status_routing_rule_members`). `RoutingRuleService.validatePool`
-  checks only that a Team is active or that every named user is an active
-  user in the organization — **no Role concept at all** at configuration
-  time. `StatusRoutingService.choose()` resolves the pool to
-  `{id, roleId}` pairs before picking a candidate.
-- **Status Visibility** (`status_visibility`): a bare `(status, role)`
-  allow-list. Nothing about Users, Teams, or routing.
-- **The mapping from a pool to a set of Roles is many-valued and can change
-  after the rule is saved**, on both sides: a Team's membership changes
-  (14a), a user's Role can be reassigned, and — this is the point — nothing
-  requires a Team's members to share one Role. A single Team pool can
-  legitimately span several Roles.
+Discussed directly with the task's requester after presenting three options
+(validation-only coupling, derived Role visibility, and a merged
+configuration surface — the first version of this plan below the fold has
+the full analysis, kept for the record). The requester's answer changes the
+shape of the problem rather than picking from the three:
 
-### The load-bearing fact, proved against real Postgres
+> Visibility only for those they're assigned to, while ensuring they're
+> visible to the hierarchical parent of that employee so TLs etc. can see
+> them. No explicit visibility for anyone else. Routing decides visibility.
 
-**Confirmed, empirically, not assumed:** `STATUS_VISIBILITY_DENIED` blocks a
-user from seeing/acting on a lead **even when they are its current
-assignee**, if their Role isn't on that Status's Visibility allow-list.
-`decision.ts` pushes `STATUS_VISIBILITY_DENIED` into `deniedReasons`
-unconditionally on `hasStatusVisibility`'s result — it does not check
-`recordAllowed`/`effectiveScope` first — and every caller in `routes/leads.ts`
-treats every denial reason except `FIELD_VIEW_DENIED` as blocking. I proved
-this by temporarily adding a case to `phase19.postgres.integration.test.ts`
-reusing its own fixtures (`roleSelf`/`userSelf`, `SELF` scope): a lead
-assigned to `userSelf` returns `200` on `GET /leads/:id` before any
-Visibility row exists for its Status, and `403` immediately after an admin
-restricts that Status's Visibility to a different Role — with no change to
-the assignment. (Not left in the tree — reverted after confirming; the
-permanent version of this test is part of Part 2's test plan below, since it
-is the exact scenario the resolved design must guarantee against.)
+This is not Role-based at all. It is: **the assignee, plus everyone above
+the assignee in the reporting hierarchy (any depth), and no one else** — for
+whichever Status the routing rule governs. Concretely:
 
-### The gap this phase actually needs to close, and one part of it already isn't a gap
+- "Those they're assigned to" is `SELF` — a lead's current assignee sees it.
+- "Hierarchical parent... TLs etc." is exactly `TEAM` scope's existing
+  relation (ADR-0006): "the requesting User plus every active User reachable
+  downward through `users.manager_id`," evaluated from the *manager's*
+  side — a manager already reaches every report below them, transitively,
+  with no depth limit. Confirmed with the requester this means the
+  reporting line (`manager_id`), not Phase 14a's Team entity — "TL" here is
+  the requester's own name for "the assignee's manager," not
+  `team_members.is_leader`. This is the exact distinction ADR-0014 wrote a
+  whole ADR to keep separate, so it is called out explicitly here too rather
+  than assumed.
+- "No explicit visibility for anyone else" retires the Role-based allow-list
+  entirely — `status_visibility`, `StatusVisibilityService`, its two
+  endpoints, and its admin panel all go away. There is no longer a
+  configuration surface where an admin lists which Roles may see a Status's
+  leads.
 
-Reading `routing/service.ts` in full turned up something the task brief's
-framing ("nothing prevents it, warns about it, or catches it") doesn't quite
-match: **Phase 19 already closed half of this.** `StatusRoutingService.choose()`
-calls `visibleCandidates()`, which filters the pool down to users whose Role
-has Status Visibility for the target Status (no-op if the Status has no
-Visibility rows at all) *before* picking one, exactly the "filter at
-evaluation time, not configuration time" resolution
-`docs/planning/phase-19-status-scoped-role-visibility.md` already argued for
-and shipped. If every remaining candidate is filtered out, routing skips
-(`no_visible_candidate`) rather than assigning — the lead's existing
-assignee, who by construction could already see it, is left alone. **So the
-*automatic* routing path cannot currently produce the broken state the task
-describes.** I confirmed this by reading `choose()`'s call graph, not by
-assuming the plan doc's claim carried through to code.
+### Why this is a better fit than any of the three original options
 
-**What Phase 19 did *not* cover: the manual override.** `routingAssign`
-(`lead_routing:operate`, `POST /leads/:id/routing-assign` with an explicit
-`userId`) calls `StatusRoutingService.route()` with `overrideUserId` set,
-which **bypasses `choose()` — and therefore `visibleCandidates()` — entirely**
-(`route()`: `input.overrideUserId === undefined ? await this.choose(rule) :
-{ userId: input.overrideUserId, reason: null }`). The only authorization
-check on this path (`routes/routing.ts`'s `routingAssign`) evaluates the
-*actor's* access to the lead (`leads:edit` + the actor's own scope +
-Status Visibility, via `resolveAuthorization`) — it never asks whether the
-Status is visible to the *target* (`overrideUserId`)'s Role. This is a live,
-reachable gap: an operator holding `lead_routing:operate` can manually
-route any lead to any pool member, including one whose Role cannot see the
-Status — reproducing the exact "assigned to someone who then can't see or
-act on their own assignment" outcome the task describes, today, independent
-of any of the three options below.
+Re-examined against ADR-0014's constraint (Status Visibility must not
+require reading Team membership) and against the actual bug the task
+opened with (an assignee who can't see their own lead):
 
-**This gap gets closed regardless of which option is chosen below** — it is
-a straight continuation of Phase 19's own evaluation-time precedent, applied
-to the one path that didn't get it the first time, and it is what actually
-makes the "no longer occurs" guarantee (not just "can no longer be
-configured") true for automatic *and* manual assignment. Concretely:
-`routingAssign` resolves `overrideUserId`'s Role and status, and refuses
-(a new, specific error — not a bare 403 — e.g. `routing_target_not_visible`)
-when Visibility excludes it. This is additive to `route()`'s existing
-`choose()`/override branch, not a rewrite of it.
+- **It needs no new coupling to `teams`/`team_members` at all.** The
+  relation it needs — walking `users.manager_id` from a given user, any
+  depth, active users only, same organization — is `expandTeamUserIds` in
+  `packages/permission-engine/src/scope.ts`, which already exists, already
+  has no dependency on the Team entity, and is exactly what `TEAM` scope
+  has used since ADR-0006. This phase calls it one more way (from the
+  would-be *viewer*, to build their downward-reachable set, then checks
+  whether the *assignee* is in it) — it does not add a new algorithm.
+- **It makes the specific broken state structurally impossible, not just
+  harder to configure.** Under a Role-based allow-list (any of the three
+  original options), an admin could still, in principle, misconfigure
+  things. Under this design, visibility for a routed Status *is* "assignee
+  or assignee's manager chain" by definition — there is no longer a second,
+  independently-configured allow-list that could drift out of sync with who
+  is actually assigned. The assignee can never fail to see their own lead,
+  because seeing it and being assigned it are now the same fact.
+- **It closes the manual-override gap for free.** Investigation (kept
+  below) found `StatusRoutingService.choose()` already filters routing
+  candidates by the old Role-based Visibility before picking one, but the
+  manual override path (`lead_routing:operate` /
+  `POST /leads/:id/routing-assign` with an explicit target) bypassed that
+  filter entirely — a real, live gap under the old design. Under the new
+  one there is nothing to bypass: whoever ends up assigned, by algorithm or
+  by override, is visible to themselves by construction. `visibleCandidates()`
+  becomes dead code and is removed along with it.
+- **It is a genuine simplification, matching "unite" literally.** One
+  fewer table, one fewer admin screen, one fewer thing for an admin to
+  remember to keep in sync. Status Routing's own configuration (pool,
+  algorithm) is now the *only* thing that determines both who gets the lead
+  and who can see it.
 
-### The actual decision: how configuration-time drift gets caught
+### The real cost, stated plainly
 
-With the live-assignment gap closed above, what's left is **not** "can a bad
-assignment happen" (it can't, once the fix above lands) but **"can an admin
-build a routing pool that is silently useless — or, before this phase, was
-silently dangerous — without any signal at configuration time."** This is
-where the three options genuinely differ, and where I want to be explicit
-about cost the way 14a's plan was for `TEAM` scope.
+This is a materially bigger change than any of the three original options,
+and worth naming precisely:
 
-**(a) Validation-only coupling.** At `PUT /statuses/:id/routing` (pool
-save), resolve the pool to its members' Roles (the routing service already
-does this — `choose()`'s own first two steps) and check each Role against
-`status_visibility` for that Status (no-op if the Status has zero Visibility
-rows — unrestricted, matching Phase 19's default). Block the save, or return
-a warning the UI surfaces (`docs/planning/phase-14b`'s and Phase 19's own
-"warn, don't silently proceed" precedent for configuration mistakes),
-listing which pool members' Roles aren't covered.
+- **It removes a shipped, tested Phase 19 feature** — the ability for an
+  admin to grant a Role (e.g. Ops, or a QA reviewer) visibility into a
+  Status's leads *without* that Role being anyone's manager or the assignee.
+  The task's own example of the feature this replaces — a lead visible only
+  to Ops once it reaches "Ready For Onboarding," regardless of who is
+  assigned or where they sit in the org chart — is no longer expressible.
+  If any oversight/QA use of Status Visibility exists in practice beyond
+  the routing-vs-visibility mismatch this phase was scoped to fix, it loses
+  its mechanism. Confirmed acceptable by the requester ("no explicit
+  visibility to anyone" is the explicit instruction, not a gap they missed).
+- **Visibility for a routed Status no longer follows a Role's own configured
+  scope at all**, even where that scope is broader. A Role granted
+  `leads:view` at `ORGANIZATION` scope — who would ordinarily see every
+  lead in the org — is narrowed down to just their own assigned leads and
+  their reports' assigned leads, for any Status that has an active routing
+  rule. This is a bigger narrowing than Phase 19 ever did (Phase 19 only
+  ever *added* a Role-allow-list restriction on top of whatever scope
+  already permitted; this replaces the restriction with a specific,
+  hierarchy-shaped one that can cut below `DEPARTMENT`/`ORGANIZATION` scope
+  for *any* Role, including ones an admin never thought about in relation
+  to this Status). This is the explicit intent ("no explicit visibility to
+  anyone else"), not an oversight, but it means turning routing on for a
+  Status is a bigger visibility change than admins configuring it today may
+  expect, and the UI should say so plainly (see below).
+- **A Status with no active routing rule is unaffected** — ordinary
+  `DataScope`/Journey access apply exactly as before this phase, preserving
+  Phase 19's safe default in spirit (now keyed off "no active routing rule"
+  rather than "no visibility rows," which is the identical shape ADR-0015
+  already established for `status_routing_rules` itself: "a Status with no
+  rule is simply unrouted").
+- **Every current assignment counts, not only the routing rule's own
+  assignment type.** A lead can carry more than one `assignmentType`
+  (e.g. `owner` and `verifier`). Visibility is granted if the caller is, or
+  manages, the holder of *any* current assignment on the process instance —
+  matching how `SELF` scope already treats "assigned to me" (any current
+  assignment matching the request's own `assignmentTypes`, not one specific
+  type), rather than inventing a narrower rule tied to one routing rule's
+  configured type.
 
-- *Cost, stated plainly*: this is a point-in-time check, and it can go stale
-  exactly the way `validatePool`'s existing "pool member is an active user"
-  check already can — a Team's membership changes, or a user's Role is
-  reassigned, after the rule is saved, and the warning doesn't re-fire. This
-  is not a new kind of staleness this codebase hasn't already accepted
-  (14b's own `validatePool` and the "team-deactivation-after-rule-creation"
-  case in the Phase 19 plan are the identical shape), and it is why the
-  manual-override fix above is not optional — it is what keeps the
-  *guarantee* (assignee can always see their own lead) true even when this
-  warning goes stale, while this check is what keeps the *configuration*
-  honest at the moment an admin acts.
-- Requires zero change to `packages/permission-engine` or to
-  `status-visibility-service.ts`. The only new code is in
-  `routing/rule-service.ts` (which already resolves pools to Roles for
-  `choose()`) and its route/UI surface. Visibility stays exactly what Phase
-  19 defined it as: a Role-level allow-list nobody but its own admin screen
-  writes to.
+### Design
 
-**(b) Derived visibility.** `hasStatusVisibility` becomes "explicit row OR
-role is currently a role of any active member of this Status's routing
-pool." Rejected. This requires the read path Status Visibility uses inside
-`decision.ts` — the permission engine's own decision function — to resolve a
-Team-based pool to its members' Roles, i.e. to read `teams`/`team_members`
-(or a routing-specific projection of them) from inside (or immediately
-beside) the same function ADR-0014 was written specifically to keep
-Team-membership-free: *"The permission engine does not read `teams` or
-`team_members`."* ADR-0014's own three reasons for rejecting a
-membership-based `TEAM` scope apply here with only the names changed: the
-question "why can this Role see this record?" would no longer have one
-deterministic answer sourced from one table — it would depend on a second
-table's membership resolved through a different feature's configuration.
-I don't think this case is different enough from the one ADR-0014 already
-ruled on to justify the reintroduction, and the task explicitly asks that
-question to be answered, not skipped. There's a second, independent problem
-with (b) even ignoring the coupling: Status Visibility is a
-**per-Status, whole-Role, every-lead** grant, but the actual need here is
-narrower — one assignee seeing one lead. Deriving visibility from pool
-membership grants the *entire* Role blanket visibility into *every* lead
-currently in that Status, including ones no pool member is anywhere near —
-and, because Roles are reused across Teams and Departments, it can grant
-that visibility to Role-holders who were never in the routing pool at all
-(anyone else carrying that same Role, anywhere in the org). That is a
-materially broader, silent widening of what Status Visibility grants, as an
-automatic side effect of a routing change — which cuts against "Status
-Visibility is `AND`ed on top, never widens reach," the composition rule
-Phase 19 built the whole feature on.
+**`decision.ts`.** `hasStatusVisibility` is replaced by a check computed
+from two existing primitives, not a table lookup:
 
-**(c) Merge into one configuration surface.** Attractive on the UI side —
-and I understand why it reads as the natural answer, since the two panels
-already sit stacked on the same Status in `JourneyDetailPage.tsx` precisely
-because they interact. But worked through to an implementation, it resolves
-to one of two things, and neither is clean:
-  - **Computed live**, the same way (b) is — same coupling, same over-grant,
-    same rejection above, with a merged UI on top.
-  - **Written at save time** (pool membership auto-writes `status_visibility`
-    rows for the pool's Roles, as an ordinary side-effecting write — the
-    same shape `grantJourneyAccessToConfigRoles` already uses for Journey
-    creation) — which avoids the permission-engine coupling entirely (the
-    write happens in `routing/rule-service.ts`, which already legitimately
-    resolves pools to Roles for `choose()`; `decision.ts` never changes) and
-    is honestly the most defensible version of "unite" if that's the
-    direction you want. But it now needs to answer a question Phase 19
-    deliberately avoided by keeping the row shape a bare allow-list: which
-    `status_visibility` rows came from routing and which were granted by
-    hand, so that removing a Role from the pool can retract the derived
-    grant without silently revoking a Role an admin explicitly added for
-    oversight (a manager who should see but never be assigned — the task's
-    own example). That's a provenance column Phase 19's schema doesn't have
-    and didn't need. And it still doesn't solve staleness for a Team pool on
-    its own: membership changing via the Departments/Teams screen wouldn't
-    retro-write `status_visibility` unless Teams' own admin flows are taught
-    to call into Status Routing/Visibility on every membership edit — a new
-    dependency in the *opposite* direction (Team administration depending on
-    a routing/visibility side-effect), which ADR-0014 also didn't want
-    Team administration entangled with permission concerns beyond
-    `users:edit` governing it.
+1. `repository.hasActiveRoutingRule({organizationId, statusId})` — does this
+   Status have an active `status_routing_rules` row? If not, unrestricted
+   (`true`), exactly Phase 19's default, re-keyed.
+2. If it does, and a specific `leadId` is named: `expandScopeUserIds({user:
+   caller, scope: 'TEAM'})` (the caller's self-plus-every-active-report set,
+   unconditional on the caller's own Role's configured scope for this
+   action) and `assignmentScopeAllowsLead({assignments, leadId,
+   allowedUserIds: <that set>, assignmentTypes, journeyIds})` — reusing
+   `assignmentScopeAllowsLead` unchanged, just fed the hierarchy set instead
+   of the Role's own resolved scope. `assignments` is the same
+   `listCurrentAssignments` call `decision.ts` already makes for
+   `recordAllowed`, hoisted so it runs whenever a `leadId` is present rather
+   than only when `effectiveScope !== null` — Status Visibility must be
+   computable independently of whether the caller's Role has *any* granted
+   scope, exactly as before.
+3. No `leadId` (a general/create-style check): `true` — nothing is assigned
+   yet to compare against, matching `recordAllowed`'s own existing "no
+   record named → true" default. This also **removes** Phase 19's
+   `createLead`/`moveLeadJourney` "landing Status" judgment call entirely:
+   there is no assignee to check visibility against until an assignment
+   exists, so the question Phase 19 flagged as a judgment call no longer
+   arises.
 
-### Recommendation
+**List/count/search (`filter-sql.ts`, `prisma-lead-repository.ts`).** The
+`(status, role)` `EXISTS`/`NOT EXISTS` pair becomes: `NOT EXISTS (an active
+routing rule for this process's current Status) OR EXISTS (a current
+assignment on this process instance whose user is the caller or one of the
+caller's active reports, any depth)`. The caller's reachable-user-id array
+is computed once per request (the same `expandTeamUserIds` call, run
+unconditionally rather than only when the caller's own scope is `TEAM`) and
+bound into the query exactly the way `allowedUserIds` already is for
+ordinary `TEAM`-scope callers — no per-row recursion in SQL, since the set
+is already a concrete array. All three `accessClause()` branches
+(`processExists()`, `shared_with_me`, the `all` branch's own shared-record
+arm) get the identical clause, in the identical places, that Phase 19's own
+post-delivery correction already established — this phase changes what the
+clause *computes*, not where it lives.
 
-**(a), plus the manual-override fix above, unconditionally.** The
-manual-override fix is what actually makes "an assignee can always see their
-own lead" true, for both routing paths, all the time — it needs no
-configuration-time cooperation from an admin and doesn't degrade with
-staleness. (a) is what keeps an admin from building an obviously-broken
-routing rule in the first place, using exactly the pool→Role resolution
-`choose()` already performs, adding no new table, no new coupling to
-`packages/permission-engine`, and no change to what Status Visibility means
-or how it's read. Both keep Phase 19's default (absence of Visibility
-configuration = unrestricted) completely intact — the pool-validation check
-in (a) is a no-op the moment a Status has zero Visibility rows, exactly
-like `visibleCandidates()` already is.
+**`packages/permission-engine`:**
+- `types.ts`: `PermissionRepository.hasStatusVisibility` → removed, replaced
+  by `hasActiveRoutingRule`. `RecordPredicate.roleId` → removed (nothing
+  needs the caller's Role for this anymore); add
+  `RecordPredicate.hierarchyUserIds: readonly string[]`.
+- `scope.ts`: `buildRecordPredicate` takes `hierarchyUserIds` instead of
+  `roleId`.
+- `decision.ts`: as above.
+- `__tests__/fixtures.ts`: the in-memory double gets an `activeRoutingRuleStatusIds`
+  set instead of a `statusVisibility` array.
 
-I'm not asking you to just take this — (b) and (c)'s "computed live" form is
-what "unite" naturally means, and it's a real, defensible position if you
-value one visible source of truth over avoiding the coupling; I think the
-coupling and the over-grant are the wrong trade for what's actually a narrow
-problem (one assignee, one lead), but say so if you'd rather have it and I'll
-plan that instead.
+**Routing (`apps/api/src/routing/service.ts`):** `visibleCandidates()` and
+the `no_visible_candidate` `SkipReason` are removed — dead code once
+visibility is derived from the assignment itself rather than checked
+against it. `choose()` goes back to exactly Phase 14b's original shape
+(active-user filter, then load, then pick). The manual-override path needs
+no new check: an override target becomes visible to themselves the instant
+they're assigned, by the same mechanism as everyone else.
 
----
+**Retired outright:** `status_visibility` table (new migration, `DROP
+TABLE`), `StatusVisibility` Prisma model and its three relations
+(`Organization.statusVisibility`, `Role.statusVisibility`,
+`Status.visibilityRoles`), `apps/api/src/statuses/status-visibility-service.ts`
+and its errors/validation, `apps/api/src/routes/status-visibility.ts`,
+`apps/api/src/http/routes/status-visibility.ts` (and their registration in
+`build-server.ts`), `apps/web/src/pages/admin/StatusVisibilityPanel.tsx`,
+the "Visibility" button/panel/indicator in `JourneyDetailPage.tsx`,
+`statusVisibilityApi` in `apps/web/src/lib/api-client.ts`, the
+`StatusVisibilityGrant` type in `apps/web/src/types/domain.ts`, and the
+corresponding MSW mock handlers.
 
-## Files to touch (Part 2, once approved)
+**UI addition, replacing what's removed:** `JourneyDetailPage.tsx`'s
+Statuses list gains a plain, read-only note on any Status with an active
+routing rule — "Visible only to the assigned user and their manager chain"
+— so an admin turning on routing for a Status is told, at the point they do
+it, that this also narrows who can see its leads. No configuration control,
+since there is nothing left to configure; a `journeys_statuses:view`-visible
+note, not gated on `roles_permissions` (nothing here is a grant).
 
-**Backend**
-- `apps/api/src/routing/service.ts` — `route()`'s override branch gains a
-  Status Visibility check on `overrideUserId`'s Role before assigning;
-  a new `RoutingError` code (e.g. `routing_target_not_visible`) distinct
-  from the ordinary `forbidden`, since the actor *is* authorized to operate
-  routing — the target simply cannot receive this assignment.
-- `apps/api/src/routing/rule-service.ts` — `replace()`/`validatePool` gains
-  the pool→Role Visibility check; a new `RoutingError` (`validation_error`
-  or a dedicated code) naming the uncovered Role(s) when blocking, or a
-  non-blocking warning field on the response if you'd rather warn than
-  block (open question below).
-- `apps/api/src/routing/errors.ts` — new error code(s).
-- `apps/api/src/routes/routing.ts` — surfaces the new error(s) with the
-  right HTTP status.
+### Files to touch
 
-**Frontend**
-- `apps/web/src/pages/admin/StatusRoutingPanel.tsx` — renders the new
-  validation error/warning when saving a pool.
-- `apps/web/src/lib/api-error.ts` — a friendly message for the new error
-  code(s).
+**Database**
+- `packages/database/prisma/schema.prisma` — drop `StatusVisibility` and
+  its three relation fields.
+- New migration `00000000000003_retire_status_visibility` — `DROP TABLE
+  status_visibility`; paired `rollback.sql` that recreates it (structure
+  only — Phase 19's own rows, if any exist in a real deployment, are not
+  recoverable, named explicitly in the migration's own comment and in
+  §Rollback below).
+
+**Permission engine**
+- `packages/permission-engine/src/types.ts`,
+  `packages/permission-engine/src/decision.ts`,
+  `packages/permission-engine/src/scope.ts`,
+  `packages/permission-engine/src/__tests__/fixtures.ts`,
+  `packages/permission-engine/src/__tests__/status-visibility.test.ts`
+  (rewritten for the new semantics; renamed if that reads better once
+  written).
+
+**API**
+- `apps/api/src/permissions/prisma-permission-repository.ts` —
+  `hasStatusVisibility` → `hasActiveRoutingRule`.
+- `apps/api/src/leads/filter-sql.ts`, `apps/api/src/leads/prisma-lead-repository.ts`
+  — the new clause, in all three branches, kept in lockstep per
+  `phase13b.postgres.integration.test.ts`'s parity check.
+- `apps/api/src/routing/service.ts` — remove `visibleCandidates()` and
+  `no_visible_candidate`.
+- Removed: `apps/api/src/statuses/status-visibility-service.ts`,
+  `apps/api/src/statuses/errors.ts` (or the subset specific to visibility),
+  `apps/api/src/routes/status-visibility.ts`,
+  `apps/api/src/http/routes/status-visibility.ts`.
+- `apps/api/src/http/build-server.ts` — remove the visibility route
+  registration.
+- `apps/api/src/routes/leads.ts` — no signature changes expected; re-checked
+  once the above lands, since Status Visibility remains "additive when
+  `statusId` is present," unchanged in shape.
+
+**Web**
+- Removed: `apps/web/src/pages/admin/StatusVisibilityPanel.tsx`.
+- `apps/web/src/pages/admin/JourneyDetailPage.tsx` — remove the Visibility
+  button/panel/indicator/`canSeeVisibility`; add the read-only note above.
+- `apps/web/src/lib/api-client.ts`, `apps/web/src/types/domain.ts` — remove
+  `statusVisibilityApi`/`StatusVisibilityGrant`.
+- `apps/web/src/mocks/handlers.ts` — remove the visibility mock handlers.
+
+**Tests** — see §Test plan.
 
 **Docs**
-- `docs/architecture/decisions/0020-status-routing-visibility-reconciliation.md`
-  — written once approved and implemented, per this project's own practice
-  (ADR-0014/0015/Phase-19's ADR follow this rule; not written before
-  approval).
-- `docs/api/endpoints.md`, `docs/permissions/access-model.md` — the new
-  error code(s) and the pool-validation rule.
-- This plan, updated with implementation findings, per every prior phase's
+- `docs/permissions/access-model.md` — item E rewritten: Status Visibility
+  is no longer a Role allow-list; it is derived from the Status's routing
+  assignment plus the reporting hierarchy.
+- `docs/api/endpoints.md` — remove the two visibility routes; note the
+  `lead_routing`-only surface.
+- `docs/workflows/journey-definitions.md` — update the one sentence
+  describing Status Visibility.
+- `docs/requirements/glossary.md` — update the "Status" row's Visibility
+  sentence.
+- New ADR-0020, recorded once implemented and this plan's amendments
+  section is filled in — not written before then, per this project's
   practice.
 
 ## Out of scope
 
-- Any change to `packages/permission-engine`, `status_visibility`'s schema,
-  or `hasStatusVisibility`'s read path — Part 2's recommendation touches
-  only routing's configuration and assignment code.
-- Redefining what a Team is or how `TEAM` scope resolves — ADR-0006/0014
-  stand untouched.
-- A UI for "view-only, never auto-assigned" oversight access — that's
-  already Status Visibility's existing per-Role checkbox; nothing new is
-  needed for a manager who should see a Status's leads without being in its
-  routing pool, since Visibility and Routing already write independently
-  today. This only becomes a missing feature under option (c), which is not
-  what's being proposed.
-- Revisiting the algorithms, skip-reason taxonomy beyond the one addition,
-  or anything else about Phase 14b/19 not directly touched by this
-  reconciliation.
+- Phase 14b's own routing-configuration permission model
+  (`lead_routing:view/configure/operate`, `status_routing_permissions`) —
+  untouched. Part 1's finding about its friction stands as a separate,
+  undecided question.
+- Redefining `TEAM`/`DEPARTMENT`/`ORGANIZATION` scope, or anything about
+  ADR-0006/0014 — this phase calls `expandTeamUserIds` one more way; it
+  does not change what it computes.
+- Phase 14a's Team entity or Team membership in any way — deliberately not
+  read by anything in this design, confirmed above.
+- A configuration surface for "view-only, never assigned" oversight access
+  (e.g. a QA role that should see a Status's leads without being anyone's
+  manager). Retired along with the rest of Status Visibility, per the
+  explicit "no explicit visibility to anyone else" instruction. If this
+  turns out to be needed later, it is new product scope, not a gap in this
+  phase.
 
 ## Risks / open questions
 
-1. **Block vs. warn on the pool-configuration check.** Recommended: block
-   (a `validation_error`, same taxonomy as every other admin write
-   rejection in this codebase) — a routing pool that can never route
-   automatically for lack of visible candidates is not a useful
-   configuration to allow silently, and a warning an admin can click past
-   without reading recreates the exact blind spot this phase exists to
-   close. Say so if you'd rather warn (matching the "cosmetic, not a
-   correctness requirement" framing Phase 19 used for a similar,
-   deliberately-skipped warning) — the manual-override fix still holds the
-   safety guarantee either way.
-2. **Whether the pool-validation check should also run on Team-membership
-   changes** (adding/removing a member via Departments/Teams), not just on
-   `PUT /statuses/:id/routing`. Recommended: no — this would couple Team
-   administration to routing/visibility lookups on every membership edit,
-   which is its own cost or a new ADR, and the manual-override fix already
-   guarantees the safety property regardless of drift. Flagged, not
-   silently decided.
-3. **Error taxonomy for the manual-override refusal.** Whether
-   `routing_target_not_visible` needs its own HTTP status distinct from the
-   existing `forbidden`/`validation_error`/`conflict`/`not_found` shape
-   `RoutingRouteResult` already uses, or fits into `validation_error` (400)
-   since it's a property of the *request* (this specific override target),
-   not of the actor's authorization. Leaning `validation_error`.
+1. **All current assignments count, not just the routing rule's own
+   assignment type** (decided above) — flagged in case the intent was
+   narrower (visible only via the specific assignment type the rule
+   manages). Say so if you want it scoped that way instead; the change is
+   a one-line difference in what gets passed as `assignmentTypes`.
+2. **Whatever real deployment data exists in `status_visibility` today is
+   lost** on this migration (the table is dropped, not migrated into
+   anything, since there is no equivalent state to migrate it to — an
+   explicit Role/Status pairing has no hierarchy-shaped analogue).
+   Confirmed acceptable given the instruction that no explicit visibility
+   should remain configurable at all; named here so it isn't a silent
+   side-effect of the migration.
+3. **A Role with no `leads:view` grant at any scope still sees nothing**,
+   including their own reports' routed leads — this new mechanism narrows
+   what a Role can see, it never grants `leads:view` itself. Worth
+   confirming this matches intent: a manager who should see their team's
+   routed leads still needs `leads:view` (at whatever scope) on their Role
+   first; this phase does not change that any Role needs the ordinary
+   grant before Status Visibility's narrowing (or, now, its hierarchy rule)
+   even applies.
 
 ## Test plan
 
 Real-Postgres integration tests, synthetic fixtures only (`AGENTS.md`).
+`apps/api/src/__tests__/phase19.postgres.integration.test.ts` is rewritten
+in place (same file, new semantics) rather than superseded by a new
+`phase20` file, since it is testing the same axis (`STATUS_VISIBILITY_DENIED`)
+under a new definition, not a new axis.
 
-**Part 1** — see above: a bootstrap-to-configure round trip in
-`phase14b.postgres.integration.test.ts` (already specified).
-
-**Part 2**, added to a new `apps/api/src/__tests__/phase20.postgres.integration.test.ts`
-(or folded into `phase14b`'s file — decided at implementation time):
-
-- **The load-bearing fact, made permanent.** The exact scenario proved
-  above during investigation: a lead's current assignee, in a Status with
-  no Visibility rows (visible, `200`), then denied (`403`) the instant an
-  admin restricts that Status's Visibility to a different Role, with no
-  change to the assignment — pinning the fact this whole phase is built on
-  so it can't silently stop being true.
-- **Manual override refuses an invisible target.** A routing rule with a
-  pool containing a candidate whose Role is excluded by the Status's
-  Visibility rows; `POST /leads/:id/routing-assign` with that candidate as
-  `overrideUserId` is refused, and the lead's current assignment is
-  unchanged. The identical call with a visible candidate succeeds — not
-  vacuous.
-- **The originally-described broken state no longer occurs.** Configure a
-  routing rule whose pool is a Team (or user list) with a member whose Role
-  isn't on the target Status's Visibility list, drive a lead into that
-  Status so automatic routing fires, and confirm that member is never the
-  result (this already passes today, per the investigation above — this
-  test is what keeps it that way) *and* that the same member cannot be
-  manually routed to via override either (the new fix).
-- **Pool-configuration validation** (per whichever of block/warn resolves
-  risk 1): saving a routing pool with an uncovered Role is rejected (or
-  flagged) with the specific Role(s) named; the identical save succeeds
-  once the Status's Visibility list is extended to cover them, or once the
-  Status has no Visibility rows at all (unrestricted — proving the check is
-  a no-op on an unconfigured Status, matching every other Phase 19 default
-  test).
-- **Least-loaded and round-robin both respect the override fix identically**
-  — the fix lives in `route()`'s shared override branch, not in either
-  algorithm, but both are exercised once each to confirm neither bypasses
-  it.
+- **The assignee always sees their own lead in a routed Status** — the
+  exact scenario the task opened with, now proved as a guarantee rather
+  than a bug: a lead assigned to a synthetic user, in a Status with an
+  active routing rule, is visible to that user on every surface (list,
+  detail, activity, search) — with **no** separate visibility configuration
+  step required, unlike the old design's need for an admin to add a row.
+- **The assignee's manager, and their manager's manager (two levels), see
+  it too** — proving "any depth," matching `TEAM` scope's own multi-level
+  test shape. A user in a *different* reporting line, holding a broad
+  `ORGANIZATION`-scope grant on `leads:view`, does **not** see it — proving
+  this narrows below ordinary `DataScope`, not just adds to it.
+- **A Status with no active routing rule is unrestricted** — ordinary
+  `DataScope` applies unchanged, the preserved safe default.
+- **Deactivating the routing rule reopens the Status** — matches "no rule
+  means unrouted" for both routing and, now, visibility.
+- **Manual override (`operate`) grants visibility immediately, with no
+  extra code path** — the new assignee sees the lead right after an
+  override, proving the fix that used to need its own check now falls out
+  of the design for free.
+- **Multi-Journey union, and the two direct-grant branches
+  (`shared_with_me`, the `all` branch's shared-record arm)** — re-run
+  against the new clause, since `filter-sql.ts`'s three-branch shape is
+  unchanged; only what each branch's clause computes is different.
+- **Round-robin and least-loaded** both still route correctly with
+  `visibleCandidates()` removed — `routing-algorithms.test.ts` and
+  `phase14b.postgres.integration.test.ts`'s routing-interaction tests
+  updated to drop the now-nonexistent visibility-filtering assertions.
 
 ## Rollback plan
 
-No schema changes proposed (recommendation (a) adds no table or column —
-the check is computed from existing `status_routing_rule_members`/
-`team_members`/`status_visibility` rows at request time, and the
-manual-override fix adds a code-level check, not a data model change). A
-revert is a plain `git revert` of the service/route changes.
+The migration drops one table with no equivalent replacement — real
+`status_visibility` data in any existing deployment does not survive a
+rollback either (`rollback.sql` recreates the empty table, not its rows).
+Every other change (permission engine, `filter-sql.ts`, routing service,
+removed routes/UI) is a plain `git revert`, with the caveat that reverting
+without also restoring the table (and, in a live deployment, its data from
+a backup) would leave the reverted code querying a table that no longer
+exists.
+
+---
+
+## Appendix: the three originally-analyzed options
+
+Kept for the record, since the task asked that real options be presented
+and reasoned about, not just the final answer. Superseded by the design
+above.
+
+**(a) Validation-only coupling.** At routing-pool save time, resolve the
+pool to its members' Roles and check each against `status_visibility` for
+that Status; block or warn if any aren't covered. Cost: a point-in-time
+check that can go stale as Team membership or a user's Role changes later
+— the same staleness `validatePool`'s existing active-user check already
+accepts, but real. Needed no permission-engine change and no new coupling.
+
+**(b) Derived visibility.** A Role automatically has visibility if it's the
+Role of any active routing-pool member, unioned with explicit grants.
+Rejected: requires `decision.ts` to resolve Team membership to compute
+visibility — the exact coupling ADR-0014 wrote itself to avoid, without a
+case that this feature is different enough to justify it — and over-grants,
+handing an entire Role blanket visibility into every lead in the Status
+(including leads no pool member is near, and Role-holders who were never in
+the pool at all), which cuts against Status Visibility's own "narrows,
+never widens" rule.
+
+**(c) Merge into one configuration surface.** One screen for both, pool
+membership implying visibility by construction. Resolves to either (b)'s
+coupling if computed live, or a write-time snapshot needing a provenance
+column (to tell derived rows from explicit ones) and no answer for
+Team-membership drift without coupling Team administration to
+routing/visibility in the opposite direction.
+
+The design actually adopted differs from all three: instead of coupling
+Visibility to routing's *pool configuration* (Users/Teams, a
+configuration-time concept prone to drift), it computes Visibility from the
+routing rule's *live effect* — the current assignment — plus the reporting
+hierarchy the permission engine already resolves for `TEAM` scope. That is
+what makes it immune to the staleness problem (a); avoids (b)'s
+Team-membership coupling and over-grant, since it reads `manager_id`, not
+`team_members`, and grants exactly one assignee's chain rather than a whole
+Role; and needs no provenance tracking (c) would (there is no longer a
+persisted allow-list row to distinguish "derived" from "explicit" — the
+whole allow-list is gone).
+
+---
+
+## Amendments found during implementation
+
+- **The manual-override fix this plan called for is unnecessary under the
+  approved design.** The original analysis (kept in the appendix) planned
+  to add a Status Visibility check to `routingAssign`'s override branch,
+  matching Phase 19's `choose()` filter. Once visibility is derived from
+  the assignment itself, there is nothing for an override to bypass —
+  `visibleCandidates()` and the `no_visible_candidate` skip reason were
+  removed instead of matched, and a test proves the override target gains
+  visibility immediately with no extra check (`phase19.postgres.integration.test.ts`,
+  "a manual override grants the new assignee visibility immediately").
+- **A latent bug in `moveLeadJourney`'s target-Journey check, found while
+  reasoning through the new design, not observed as a test failure first.**
+  The target check already passed `leadId`, which — once Status Visibility
+  began consulting the lead's *current* assignments — would look for an
+  assignment in the *target* Journey that cannot exist yet (the process
+  instance isn't created there until the move succeeds), denying every
+  caller on any Status with an active routing rule, not narrowing it for
+  anyone in particular. Fixed by omitting `leadId` from the target check
+  entirely, matching `createLead`'s own treatment of a landing Status (see
+  ADR-0020). Caught during implementation and fixed before it could ship as
+  a regression; recorded in `routes/leads.ts`'s own comment at the fix.
+- **Turning routing on for a Status is a bigger visibility change than
+  admins configuring it may expect, confirmed by test failures during
+  implementation, not just reasoned about in advance.** Two existing tests
+  broke for exactly this reason and were updated rather than worked around:
+  `phase14b.postgres.integration.test.ts`'s "leaves a live share intact"
+  test found that a Lead Share to a previous holder no longer survives a
+  move into a routed Status (the share is "explicit visibility to someone
+  else," which routing now decides instead) — renamed and re-asserted as
+  `403`, with a comment explaining why. A `phase19` comment-route test
+  needed `assignmentTypes` added to its request bodies once Status
+  Visibility began depending on assignment identity rather than a
+  Role-only check that ORGANIZATION scope could bypass regardless.
+- **`hierarchyUserIds` is computed unconditionally whenever a caller holds
+  any granted scope for the action in question** (inside `buildRecordPredicate`,
+  not gated on the caller's own scope being `TEAM`), so a repository double
+  that never implemented `listReports` correctly — several test fixtures
+  did not, `hasStatusVisibility` never having exercised that path before —
+  now must. Every repository double in `apps/api`'s test suite was
+  audited and fixed as part of this phase (`leads.test.ts`,
+  `leads.integration.test.ts`, `permission-wiring.test.ts`,
+  `fixtures/synthetic-configuration.ts`,
+  `http/web-api.postgres.e2e.test.ts` — the last of which had several
+  method names already stale relative to the real `PermissionRepository`
+  interface, predating this phase, fixed alongside the rename). Named here
+  as a real cost: this is one more query on every scoped list/detail
+  request now, not only ones a `TEAM`-scoped caller already paid for.
+  Acceptable for the guarantee it buys, but real, and worth watching
+  against the Seller List's own p95 target if it's ever measured and found
+  wanting — no attempt was made in this phase to short-circuit it (e.g., by
+  first checking whether the organization has any active routing rule at
+  all before resolving the hierarchy), since correctness came first and the
+  common case (an individual contributor with no reports) resolves it in
+  one query.
+- **A hand-rolled Postgres schema in `leads.integration.test.ts` (not the
+  real migrations, a minimal one built for that file alone) had a
+  `status_visibility` temp table standing in for the old mechanism.**
+  Replaced with a minimal `status_routing_rules` temp table matching what
+  the new clause actually queries.
 
 ---
 
@@ -449,12 +590,11 @@ revert is a plain `git revert` of the service/route changes.
   layer) and was corrected to `Status: **implemented.**` in the very next
   commit (`1d2e6e6`, the admin UI). On the current tree it already reads
   correctly — there was nothing stale to fix by the time this phase started.
-  What *is* still missing, and is this phase's actual bookkeeping debt: the
-  Phase 19 plan's own "Docs to touch" section promised
-  `docs/architecture/decisions/0019-*.md`, "recorded once approved and
-  implemented" — and it never was; there is no ADR-0019 in the tree. Writing
-  it (documenting Status Visibility's default-state decision and the
-  routing-pool interaction resolution, matching how 14a/14b's decisions
-  became ADR-0014/0015) is folded into this phase, alongside the new
-  ADR-0020 for Part 2's reconciliation decision once that's approved and
-  implemented.
+  Its own "Docs to touch" section promised `docs/architecture/decisions/0019-*.md`,
+  "recorded once approved and implemented" — and it never was; there was no
+  ADR-0019 in the tree. Written as part of this phase's own bookkeeping
+  (`docs/architecture/decisions/0019-status-visibility-default-state.md`),
+  documenting the decisions Phase 19 actually shipped, with an amendment
+  noting Phase 20 replaces the mechanism (not the two default-state
+  decisions it records, which still hold in spirit — see ADR-0020 once
+  written).

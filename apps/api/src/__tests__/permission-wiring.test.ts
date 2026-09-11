@@ -152,8 +152,8 @@ function createPermissionRepository(): PermissionRepository {
     async hasJourneyAccess() {
       return true;
     },
-    async hasStatusVisibility() {
-      return true;
+    async hasActiveRoutingRule() {
+      return false;
     },
     async listAccessibleJourneyIds() {
       return [journeyA];

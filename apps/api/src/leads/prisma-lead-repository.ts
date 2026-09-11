@@ -625,23 +625,41 @@ export class PrismaLeadRepository
 }
 
 /**
- * Status Visibility (Phase 19), the Prisma-oracle transpose of
- * `filter-sql.ts`'s `statusVisibilityClause`: a Status with no
- * `status_visibility` rows at all is unrestricted (`none: {}` — no row
- * anywhere names *this* current Status); one with rows narrows to the Roles
- * listed (`some: { roleId }`). Shared by every `processInstances` filter
- * below that stands in for `processExists()` or one of its two direct-grant
- * counterparts — `resolveAuthorization`'s `statusVisible` check
- * (packages/permission-engine/src/decision.ts) is unconditional, so neither
- * an assignment nor a direct grant may bypass it. All three call sites must
- * stay in lockstep with `filter-sql.ts`'s SQL form or
- * `phase13b.postgres.integration.test.ts`'s scope-parity test catches the
+ * Status Visibility (Phase 19, reworked Phase 20), the Prisma-oracle
+ * transpose of `filter-sql.ts`'s `statusVisibilityClause`: a Status with no
+ * active routing rule is unrestricted (`none: { active: true }` — no active
+ * rule names *this* current Status); one with an active rule narrows
+ * visibility to the lead's current assignee and that assignee's
+ * reporting-hierarchy ancestors (`some: { isCurrent: true, userId: { in:
+ * hierarchyUserIds } }`) — no Role plays any part in this check. Shared by
+ * every `processInstances` filter below that stands in for `processExists()`
+ * or one of its two direct-grant counterparts — `resolveAuthorization`'s
+ * `statusVisible` check (packages/permission-engine/src/decision.ts) is
+ * unconditional, so neither an assignment nor a direct grant may bypass it.
+ * All three call sites must stay in lockstep with `filter-sql.ts`'s SQL form
+ * or `phase13b.postgres.integration.test.ts`'s scope-parity test catches the
  * drift.
  */
-function statusVisibleOr(roleId: string) {
+function statusVisibleOr(input: {
+  organizationId: string;
+  assignmentTypes: readonly string[];
+  hierarchyUserIds: readonly string[];
+}) {
   return [
-    { currentStatus: { visibilityRoles: { none: {} } } },
-    { currentStatus: { visibilityRoles: { some: { roleId } } } },
+    { currentStatus: { routingRules: { none: { active: true } } } },
+    {
+      currentStatus: { routingRules: { some: { active: true } } },
+      assignments: {
+        some: {
+          organizationId: input.organizationId,
+          isCurrent: true,
+          ...(input.assignmentTypes.length === 0
+            ? {}
+            : { assignmentType: { in: [...input.assignmentTypes] } }),
+          userId: { in: [...input.hierarchyUserIds] },
+        },
+      },
+    },
   ];
 }
 
@@ -688,7 +706,11 @@ export function sellerWhere(
               some: {
                 organizationId: input.organizationId,
                 active: true,
-                OR: statusVisibleOr(input.recordPredicate.roleId),
+                OR: statusVisibleOr({
+                  organizationId: input.organizationId,
+                  assignmentTypes: input.recordPredicate.assignmentTypes,
+                  hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+                }),
               },
             },
           }
@@ -710,7 +732,11 @@ export function sellerWhere(
                     organizationId: input.organizationId,
                     active: true,
                     journeyId: { in: [...input.recordPredicate.journeyIds] },
-                    OR: statusVisibleOr(input.recordPredicate.roleId),
+                    OR: statusVisibleOr({
+                      organizationId: input.organizationId,
+                      assignmentTypes: input.recordPredicate.assignmentTypes,
+                      hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+                    }),
                   },
                 },
               },
@@ -730,8 +756,12 @@ export function processWhere(
       in: input.journeyId === undefined ? [...input.recordPredicate.journeyIds] : [input.journeyId],
     },
     ...(input.statusId === undefined ? {} : { currentStatusId: input.statusId }),
-    // Status Visibility (Phase 19) — see `statusVisibleOr` above.
-    OR: statusVisibleOr(input.recordPredicate.roleId),
+    // Status Visibility (Phase 19, reworked Phase 20) — see `statusVisibleOr` above.
+    OR: statusVisibleOr({
+      organizationId: input.organizationId,
+      assignmentTypes: input.recordPredicate.assignmentTypes,
+      hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+    }),
     assignments: {
       some: {
         organizationId: input.organizationId,

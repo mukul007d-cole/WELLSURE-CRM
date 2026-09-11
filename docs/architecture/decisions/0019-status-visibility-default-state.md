@@ -1,9 +1,9 @@
 # ADR-0019: Status Visibility's default state, and its routing-pool interaction
 
-**Status:** Accepted (recorded retroactively — Phase 19 shipped in
-`7c0593b`/`1d2e6e6`/`49119bb`; this ADR was owed by that phase's own plan and
-is being recorded now, per Phase 20's bookkeeping, rather than left
-permanently missing)
+**Status:** Accepted, then superseded by ADR-0020 (recorded retroactively —
+Phase 19 shipped in `7c0593b`/`1d2e6e6`/`49119bb`; this ADR was owed by that
+phase's own plan and is being recorded now, per Phase 20's bookkeeping,
+alongside the amendment below rather than left permanently missing)
 
 ## Context
 
@@ -63,13 +63,18 @@ saved, so a one-time check at save time would go stale the same way any
 upfront check in this codebase already does. Filtering at evaluation time
 stays correct automatically as either configuration changes.
 
-### Amendment (Phase 20)
+### Amendment (Phase 20) — superseded, not merely extended
 
 Phase 20 found this evaluation-time filter covers only `choose()` — the
 automatic path. The manual-override path (`lead_routing:operate`,
 `POST /leads/:id/routing-assign` with an explicit target user) bypassed it
-entirely, since it never calls `choose()`. Phase 20 extends the identical
-evaluation-time check to that path; see
+entirely, since it never calls `choose()` — a real, live gap under this
+ADR's design. Rather than adding a matching check to the override path,
+Phase 20 removed the need for one: Status Visibility no longer reads a
+Role-based allow-list at all (Decision 1 and this candidate filter both go
+away), so there is nothing left for the override to bypass — whoever ends
+up assigned, by algorithm or by override, is visible to themselves and
+their manager chain by construction. See
 `docs/architecture/decisions/0020-status-routing-visibility-reconciliation.md`.
 
 ## Consequences

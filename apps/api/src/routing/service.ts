@@ -9,12 +9,7 @@ import {
 import { pick, type Candidate, type RoutingAlgorithm } from './algorithms.js';
 
 export type SkipReason =
-  | 'no_rule'
-  | 'inactive_team'
-  | 'empty_pool'
-  | 'no_active_candidate'
-  | 'no_visible_candidate'
-  | 'unknown_process';
+  'no_rule' | 'inactive_team' | 'empty_pool' | 'no_active_candidate' | 'unknown_process';
 
 export interface RoutingOutcome {
   assignedUserId: string;
@@ -136,50 +131,24 @@ export class StatusRoutingService implements TriggerConsumer {
     });
     if (active.length === 0) return { userId: null, reason: 'no_active_candidate' };
 
-    // Status Visibility (Phase 19): a pool member whose Role cannot see the
-    // Status they'd be routed into is not a candidate either — evaluated at
-    // routing time, not validated at rule-configuration time, so it stays
-    // correct as Team membership and Role assignment change after the rule
-    // is saved (see docs/planning/phase-19-status-scoped-role-visibility.md).
-    const visible = await this.visibleCandidates(rule.organizationId, rule.statusId, active);
-    if (visible.length === 0) return { userId: null, reason: 'no_visible_candidate' };
-
+    /*
+     * Phase 19 filtered candidates here by Status Visibility (a pool member
+     * whose Role couldn't see the Status wasn't a candidate). Phase 20
+     * retired that filter along with the Role-based allow-list it read from:
+     * visibility of a routed Status is now computed *from* the assignment
+     * (the assignee, plus their reporting-hierarchy ancestors, see
+     * `packages/permission-engine/src/decision.ts`), so whoever this picks
+     * becomes visible to themselves the instant they're assigned — there is
+     * no longer a separate check that could exclude a candidate here.
+     */
     const candidates = await this.withLoad(
       rule,
-      visible.map((user) => user.id),
+      active.map((user) => user.id),
     );
     return {
       userId: pick(rule.algorithm as RoutingAlgorithm, candidates, rule.cursorUserId),
       reason: null,
     };
-  }
-
-  /**
-   * Filters candidates by Status Visibility, the same "skip, don't fail"
-   * shape as the deactivated-member filter above.
-   *
-   * An unconfigured Status (no `status_visibility` rows at all) excludes
-   * nobody — matching this feature's default-state rule everywhere else.
-   * Once any row exists for the Status, only candidates whose Role appears
-   * in it remain.
-   */
-  private async visibleCandidates(
-    organizationId: string,
-    statusId: string,
-    candidates: ReadonlyArray<{ id: string; roleId: string }>,
-  ): Promise<Array<{ id: string; roleId: string }>> {
-    const configured = await this.prisma.statusVisibility.findFirst({
-      where: { organizationId, statusId },
-      select: { id: true },
-    });
-    if (!configured) return [...candidates];
-    const roleIds = [...new Set(candidates.map((user) => user.roleId))];
-    const allowed = await this.prisma.statusVisibility.findMany({
-      where: { organizationId, statusId, roleId: { in: roleIds } },
-      select: { roleId: true },
-    });
-    const allowedRoleIds = new Set(allowed.map((row) => row.roleId));
-    return candidates.filter((user) => allowedRoleIds.has(user.roleId));
   }
 
   /** Null means the pool cannot be resolved at all (an inactive Team). */

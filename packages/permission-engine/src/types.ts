@@ -87,20 +87,19 @@ export interface PermissionRepository {
     journeyId: string;
   }): Promise<boolean>;
   /**
-   * Phase 19 — may this Role see a lead currently sitting in this Status?
+   * Phase 20 — does this Status have an active routing rule?
    *
-   * A Status with zero `status_visibility` rows is unrestricted (this must
-   * return `true` for every Role); once a Status has any row at all, this
-   * returns `true` only for a Role a row names. See
-   * docs/planning/phase-19-status-scoped-role-visibility.md — this is the
-   * one consequential default-state decision the whole feature turns on, and
-   * every implementation of this method must encode it identically.
+   * Status Visibility (originally Phase 19, reworked in Phase 20) no longer
+   * reads a separate allow-list: a Status with no active routing rule is
+   * unrestricted (ordinary DataScope/Journey rules apply, exactly Phase 19's
+   * "absence means unrestricted" default, now keyed off routing instead of a
+   * table of rows); one with an active rule restricts visibility to the
+   * lead's current assignee and that assignee's reporting-hierarchy
+   * ancestors — computed in `decision.ts` from `listCurrentAssignments` and
+   * `expandScopeUserIds(..., 'TEAM')`, not from this repository method. See
+   * docs/planning/phase-20-reconcile-status-routing-and-visibility.md.
    */
-  hasStatusVisibility(input: {
-    roleId: string;
-    organizationId: string;
-    statusId: string;
-  }): Promise<boolean>;
+  hasActiveRoutingRule(input: { organizationId: string; statusId: string }): Promise<boolean>;
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
@@ -147,9 +146,9 @@ export interface AuthorizationRequest {
   leadId?: string;
   /**
    * The Status a specific record currently sits in — parallel to `journeyId`,
-   * checked via `hasStatusVisibility` only when present. Bulk/list-style
-   * callers with no single Status in view leave this unset and rely on
-   * `RecordPredicate.roleId` instead (see there).
+   * checked only when present. Bulk/list-style callers with no single Status
+   * in view leave this unset and rely on `RecordPredicate.hierarchyUserIds`
+   * instead (see there).
    */
   statusId?: string;
   requestedFieldIds?: readonly string[];
@@ -174,14 +173,17 @@ export interface RecordPredicate {
   includeDirectGrantsForUserId: string;
   directGrantAction: string;
   /**
-   * Phase 19 — the caller's own Role id, so a many-row query (the Seller
-   * List, export, bulk import matching) can apply the same
-   * `hasStatusVisibility` rule `AuthorizationRequest.statusId` applies to a
-   * single record, per process instance, in SQL: unrestricted unless the
-   * instance's current Status has any `status_visibility` row, in which case
-   * only a row naming this Role passes.
+   * Phase 20 — the caller's own id plus every active user reachable
+   * downward through `users.manager_id` (i.e. `expandScopeUserIds(...,
+   * 'TEAM')`, computed unconditionally regardless of the caller's own
+   * granted scope for this action), so a many-row query (the Seller List,
+   * export, bulk import matching) can apply the same Status Visibility rule
+   * `AuthorizationRequest.statusId` applies to a single record, per process
+   * instance, in SQL: unrestricted unless the instance's current Status has
+   * an active routing rule, in which case only a process instance with a
+   * current assignment to someone in this set passes.
    */
-  roleId: string;
+  hierarchyUserIds: readonly string[];
 }
 
 export interface AuthorizationDecision {
