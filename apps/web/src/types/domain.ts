@@ -499,6 +499,12 @@ export interface PermissionCatalog {
 /** Flat, machine-readable API error-code body. */
 export interface ApiErrorBody {
   error: string;
+  /**
+   * A short, human-safe explanation some routes send alongside `error`
+   * (e.g. lead mutations: "required field is missing", "field is locked
+   * and cannot be changed") — not every error code carries one.
+   */
+  reason?: string | undefined;
   details?: Record<string, unknown> | undefined;
 }
 

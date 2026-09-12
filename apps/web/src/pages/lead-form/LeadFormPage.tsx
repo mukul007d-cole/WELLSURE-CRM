@@ -13,13 +13,26 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { configApi, sellersApi } from '../../lib/api-client';
-import { friendlyErrorMessage } from '../../lib/api-error';
+import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { groupFieldsBySection } from '../../lib/field-sections';
 import { qk } from '../../lib/query-keys';
+import type { FieldDefinition } from '../../types/domain';
 import { DynamicFieldControl } from './DynamicFieldControl';
 import { defaultFieldValues, leadFormSchema, toFieldValues } from './schema';
 import type { LeadFormValues } from './schema';
 import { usePageChrome } from '../../app/page-chrome';
+
+/**
+ * A newly-created lead has no owner-type ambiguity to resolve — this
+ * product's own bulk-import screen already calls the concept "owner", and a
+ * Journey with no leads yet has never had *any* assignment type, so there is
+ * nothing more canonical to fall back on than the name the rest of the app
+ * already uses. Naming a genuinely different first type for a Journey is an
+ * admin-shaped decision (bulk import's own free-text "Owner type" field
+ * already covers it) — not something a day-to-day rep creating one seller
+ * should ever be asked to invent.
+ */
+const defaultAssignmentType = 'owner';
 
 export function LeadFormPage() {
   usePageChrome('Seller', []);
@@ -106,9 +119,19 @@ export function LeadFormPage() {
   const journeyHasNoStatuses =
     Boolean(selectedJourneyId) && statusesQuery.isSuccess && activeStatuses.length === 0;
   const assignmentTypes = assignmentTypesQuery.data ?? [];
-  // A Journey with no leads yet has no assignment types to offer. Rather than
-  // invent one, let the user name the first — the column is free text by design.
-  const knownAssignmentTypes = assignmentTypes.length > 0;
+  /**
+   * A Journey using exactly one assignment type (the overwhelmingly common
+   * case — a single "owner" slot) or none yet has nothing to ask a rep to
+   * decide: the new seller is assigned to them, under that one type or
+   * `defaultAssignmentType` if the Journey has never had one. A Journey
+   * that has genuinely used more than one type at once (e.g. "owner" and a
+   * separate "referrer") keeps a real picker, because that is an actual
+   * choice with more than one right answer — see `assignmentTypeToUse`.
+   */
+  const needsAssignmentChoice = assignmentTypes.length >= 2;
+  const assignmentTypeToUse = needsAssignmentChoice
+    ? undefined
+    : (assignmentTypes[0] ?? defaultAssignmentType);
 
   async function onSubmit(values: LeadFormValues) {
     setSubmitError(null);
@@ -142,7 +165,7 @@ export function LeadFormPage() {
           setSubmitError('Choose a status — this journey has no default to fall back on.');
           return;
         }
-        const assignmentType = values.assignmentType?.trim();
+        const assignmentType = assignmentTypeToUse ?? values.assignmentType?.trim();
         if (!assignmentType) {
           setSubmitError('Choose who this seller is assigned as before saving.');
           return;
@@ -154,15 +177,17 @@ export function LeadFormPage() {
           phone: values.phone || null,
           email: values.email || null,
           fieldValues: toFieldValues(fields, values.fields),
-          // Configured, never a literal: the API defines no canonical owner
-          // type and assignment_type is free text per journey.
+          // Always the creator — a new seller belongs to whoever adds it.
+          // `assignmentType` is still free text at the API (nothing here
+          // makes "owner" a canonical enum value), just no longer a
+          // decision this form asks a rep to make in the common case.
           assignments: [{ assignmentType, userId: user.id }],
         });
         await queryClient.invalidateQueries({ queryKey: ['sellers'] });
         void navigate(`/sellers/${created.lead.id}`);
       }
     } catch (error) {
-      setSubmitError(friendlyErrorMessage(error));
+      setSubmitError(saveErrorMessage(error, fields));
     }
   }
 
@@ -284,48 +309,47 @@ export function LeadFormPage() {
               {/*
                 Create only. An edit keeps whatever assignments the lead
                 already has, so there is nothing to choose.
+
+                A new seller belongs to whoever creates it — no picker for
+                the common case where this Journey has at most one
+                assignment type in use, only a plain statement of what will
+                happen. A picker only appears when the Journey has
+                genuinely used more than one type at once (e.g. "owner" and
+                a separate "referrer"), because that's a real choice with
+                more than one right answer; a higher-level person (a TL,
+                a manager) can still move a seller to someone else
+                afterward from its own page — see `ReassignDialog`.
               */}
-              {isEditMode ? null : (
+              {isEditMode ? null : needsAssignmentChoice ? (
                 <Field
-                  label="Assign as"
+                  label="Assignment role"
                   required
-                  hint={
-                    !selectedJourneyId
-                      ? 'Choose a journey first'
-                      : knownAssignmentTypes
-                        ? 'How this seller is assigned to you on this journey.'
-                        : 'No assignment types exist on this journey yet — name the first one.'
-                  }
+                  hint="This journey uses more than one assignment role — choose which one applies to you."
                   {...(submitError && !watch('assignmentType')?.trim()
-                    ? { error: 'Choose who this seller is assigned as' }
+                    ? { error: 'Choose an assignment role' }
                     : {})}
                 >
-                  {({ inputId, describedBy }) =>
-                    knownAssignmentTypes ? (
-                      <Select
-                        id={inputId}
-                        aria-describedby={describedBy}
-                        disabled={!selectedJourneyId}
-                        {...register('assignmentType')}
-                      >
-                        <option value="">Choose an assignment type</option>
-                        {assignmentTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : (
-                      <Input
-                        id={inputId}
-                        aria-describedby={describedBy}
-                        disabled={!selectedJourneyId || assignmentTypesQuery.isPending}
-                        placeholder="e.g. the role this person plays on the lead"
-                        {...register('assignmentType')}
-                      />
-                    )
-                  }
+                  {({ inputId, describedBy }) => (
+                    <Select
+                      id={inputId}
+                      aria-describedby={describedBy}
+                      disabled={!selectedJourneyId}
+                      {...register('assignmentType')}
+                    >
+                      <option value="">Choose an assignment role</option>
+                      {assignmentTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </Field>
+              ) : (
+                <div className="flex flex-col justify-center gap-0.5">
+                  <span className="text-sm font-medium text-ink">Owner</span>
+                  <span className="text-xs text-ink-soft">This seller will belong to you.</span>
+                </div>
               )}
             </div>
           </Card>
@@ -392,4 +416,21 @@ function hasValue(value: unknown): boolean {
   return (
     value !== null && value !== undefined && !(typeof value === 'string' && value.trim() === '')
   );
+}
+
+/**
+ * `friendlyErrorMessage` already turns a lead mutation's `validation_error`
+ * into its real reason (e.g. "Required field is missing.") instead of the
+ * generic "some fields need a second look" every code shares. This form has
+ * one thing that generic version doesn't: the Field catalogue, so a
+ * `details.fieldId` can be resolved to the name on the label rather than
+ * left as an id no one filling out the form would recognize.
+ */
+function saveErrorMessage(error: unknown, fields: FieldDefinition[]): string {
+  if (error instanceof ApiError && error.code === 'validation_error' && error.reason) {
+    const fieldId = typeof error.details?.fieldId === 'string' ? error.details.fieldId : undefined;
+    const field = fieldId ? fields.find((row) => row.id === fieldId) : undefined;
+    if (field) return `“${field.label}” — ${error.reason}.`;
+  }
+  return friendlyErrorMessage(error);
 }

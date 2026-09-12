@@ -1,5 +1,6 @@
 import { ApiError } from './api-error';
 import type {
+  ApiErrorBody,
   CreateLeadInput,
   EditLeadInput,
   FieldDefinition,
@@ -59,10 +60,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body: unknown = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      body as { error: string; details?: Record<string, unknown> },
-    );
+    throw new ApiError(response.status, body as ApiErrorBody);
   }
 
   return body as T;
@@ -83,10 +81,7 @@ async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
   });
   const body: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      body as { error: string; details?: Record<string, unknown> },
-    );
+    throw new ApiError(response.status, body as ApiErrorBody);
   }
   return body as T;
 }
@@ -99,10 +94,7 @@ async function requestBlob(path: string): Promise<{ blob: Blob; fileName: string
   const response = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => ({}));
-    throw new ApiError(
-      response.status,
-      body as { error: string; details?: Record<string, unknown> },
-    );
+    throw new ApiError(response.status, body as ApiErrorBody);
   }
   const disposition = response.headers.get('content-disposition') ?? '';
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];

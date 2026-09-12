@@ -129,7 +129,10 @@ export interface SellerListInput {
 
 export type LeadRouteResult =
   | { status: 200 | 201; body: unknown }
-  | { status: 400 | 403 | 404 | 409; body: { error: string; details?: Record<string, unknown> } };
+  | {
+      status: 400 | 403 | 404 | 409;
+      body: { error: string; reason?: string; details?: Record<string, unknown> };
+    };
 
 export async function createLead(input: {
   auth: AuthenticatedContext;
@@ -667,6 +670,17 @@ function toResponse(error: LeadError): LeadRouteResult {
     status,
     body: {
       error: error.code,
+      // Every `LeadError` message is a short, developer-authored constant
+      // ("required field is missing", "field is locked and cannot be
+      // changed", …) — never user input, so there is nothing to leak.
+      // `error: 'validation_error'` alone doesn't distinguish any of those
+      // from each other; without this the client's only honest option is
+      // the same generic "some fields need a second look" for every one of
+      // them. `details.fieldId` (present for most, absent for a few, e.g.
+      // "at least one assignment is required") narrows further when it's
+      // there. The same `reason` field the import row-outcome shape
+      // already sends for an identical purpose.
+      reason: error.message,
       ...(Object.keys(error.details).length === 0 ? {} : { details: error.details }),
     },
   };

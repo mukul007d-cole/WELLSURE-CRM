@@ -71,7 +71,10 @@ describe('Lead/Seller core route and service behavior', () => {
       assignments: [],
       now,
     });
-    expect(response).toEqual({ status: 400, body: { error: 'validation_error' } });
+    expect(response).toEqual({
+      status: 400,
+      body: { error: 'validation_error', reason: 'at least one assignment is required' },
+    });
   });
 
   it('uses exact-match required_from_status_id semantics and ignores status sort order', async () => {
@@ -103,7 +106,11 @@ describe('Lead/Seller core route and service behavior', () => {
     });
     expect(blocked).toEqual({
       status: 400,
-      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+      body: {
+        error: 'validation_error',
+        reason: 'required field is missing',
+        details: { fieldId: fieldVisible },
+      },
     });
   });
 
@@ -151,7 +158,11 @@ describe('Lead/Seller core route and service behavior', () => {
     });
     expect(response).toEqual({
       status: 400,
-      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+      body: {
+        error: 'validation_error',
+        reason: 'field is locked and cannot be changed',
+        details: { fieldId: fieldVisible },
+      },
     });
     // Not merely rejected — the lead's real stored value has to be
     // untouched, not partially overwritten before the rejection.
@@ -204,7 +215,11 @@ describe('Lead/Seller core route and service behavior', () => {
     });
     expect(response).toEqual({
       status: 400,
-      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+      body: {
+        error: 'validation_error',
+        reason: 'required field is missing',
+        details: { fieldId: fieldVisible },
+      },
     });
     expect(repo.activities).toHaveLength(0);
   });
@@ -516,7 +531,11 @@ describe('Moving a lead between journeys', () => {
 
     expect(response).toEqual({
       status: 400,
-      body: { error: 'validation_error', details: { fieldId: fieldVisible } },
+      body: {
+        error: 'validation_error',
+        reason: 'required field is missing',
+        details: { fieldId: fieldVisible },
+      },
     });
     // Nothing moved.
     expect(repo.processes[0]?.journeyId).toBe(journeyA);

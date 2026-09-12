@@ -3,12 +3,14 @@ import type { ApiErrorBody } from '../types/domain';
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly reason?: string | undefined;
   readonly details?: Record<string, unknown> | undefined;
 
   constructor(status: number, body: ApiErrorBody) {
     super(body.error);
     this.status = status;
     this.code = body.error;
+    this.reason = body.reason;
     this.details = body.details;
   }
 }
@@ -27,12 +29,26 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
 
 export function friendlyErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    // `validation_error` covers many distinct reasons ("required field is
+    // missing", "field is locked and cannot be changed", an invalid
+    // status, …) behind one code — a route that names which one
+    // (`error.reason`, e.g. lead mutations) lets this say something a
+    // person can act on instead of the same generic sentence for all of
+    // them. Every `reason` this project sends is a short, developer-
+    // authored constant, never user input, so showing it verbatim is safe.
+    if (error.code === 'validation_error' && error.reason) {
+      return `${capitalize(error.reason)}.`;
+    }
     return FRIENDLY_MESSAGES[error.code] ?? error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
   return 'Something unexpected happened.';
+}
+
+function capitalize(text: string): string {
+  return text.length === 0 ? text : text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 const PASSWORD_POLICY_MESSAGES: Record<string, string> = {
