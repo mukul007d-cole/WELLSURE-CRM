@@ -84,6 +84,22 @@ export function Seller360Page() {
     enabled: Boolean(selectedProcess),
     retry: false,
   });
+  /**
+   * The Fields mapped to the journey currently in context (admin "Journey
+   * fields" screen), for the Details tab — not the organization's whole
+   * catalogue. Activity and the PDF export still use the full catalogue
+   * (`fields` below): they read history that can span a journey this record
+   * has since moved off of, where narrowing to the *current* journey would
+   * make a legitimate past entry or export row look unresolved instead.
+   * Details has no such history to lose — it already only shows a Field with
+   * a real value (see `DetailsTab`) — so scoping it to the same journey
+   * context the page's other actions already use is a plain improvement.
+   */
+  const journeyFieldsQuery = useQuery({
+    queryKey: ['journey-fields', selectedProcess?.journeyId],
+    queryFn: () => configApi.journeyFields(selectedProcess!.journeyId),
+    enabled: Boolean(selectedProcess),
+  });
   const sharesQuery = useQuery({
     queryKey: ['lead-shares', sellerId],
     queryFn: () => sellersApi.shares(sellerId!, journeyContext!),
@@ -248,6 +264,9 @@ export function Seller360Page() {
   }
 
   const fields = fieldsQuery.data ?? [];
+  // Falls back to the full catalogue when there is no journey to scope to
+  // (a lead with no process instance at all) rather than showing nothing.
+  const detailsFields = selectedProcess ? (journeyFieldsQuery.data ?? []) : fields;
   const orderedProcesses = selectedProcess
     ? [
         selectedProcess,
@@ -386,9 +405,12 @@ export function Seller360Page() {
               />
             ) : tab === 'details' ? (
               <DetailsTab
-                fields={fields}
+                fields={detailsFields}
                 fieldValues={seller.fieldValues}
-                isPending={fieldsQuery.isPending}
+                isPending={
+                  fieldsQuery.isPending ||
+                  (Boolean(selectedProcess) && journeyFieldsQuery.isPending)
+                }
               />
             ) : tab === 'documents' ? (
               <DocumentLockerTab leadId={seller.id} journeyContext={journeyContext} />

@@ -197,6 +197,28 @@ describe('seller record workspace', () => {
 
       expect(await screen.findByText('Synthetic Category Value')).toBeInTheDocument();
     });
+
+    /**
+     * A real, previously-saved value is not enough on its own — e.g. after a
+     * move off the journey that used to map this Field. Details now follows
+     * the same "Journey fields" mapping the rest of the page's journey
+     * context already uses, rather than showing every Field the org has ever
+     * defined with a value on this record.
+     */
+    it('hides a Field the current journey has not mapped, even with a real saved value', async () => {
+      grantLeads(['view']);
+      stubActivity([]);
+      stubDetailHonoringRequestedFieldIds({ [VISIBLE_FIELD.id]: 'Synthetic Category Value' });
+      server.use(
+        http.get(`/api/v1/journeys/${JOURNEYS[0]!.id}/fields`, () => HttpResponse.json([])),
+      );
+      renderRecord();
+
+      fireEvent.click(await screen.findByRole('tab', { name: 'Details' }));
+
+      expect(await screen.findByText('No details to show')).toBeInTheDocument();
+      expect(screen.queryByText('Synthetic Category Value')).not.toBeInTheDocument();
+    });
   });
 
   it('names the actor as System on rows with no author', async () => {

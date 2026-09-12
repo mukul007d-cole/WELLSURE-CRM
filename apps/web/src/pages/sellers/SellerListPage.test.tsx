@@ -390,4 +390,26 @@ describe('seller list data-heavy columns', () => {
       ).not.toBeInTheDocument(),
     );
   });
+
+  /**
+   * The actual complaint: this used to show every organization Field as a
+   * column once a journey was picked, whether or not that journey had ever
+   * mapped it via the admin "Journey fields" screen — a column of nothing
+   * but dashes, and a `requestedFieldIds` list padded with ids the journey
+   * has no use for.
+   */
+  it('never shows a column for a Field the selected journey has not mapped', async () => {
+    const revenueField = FIELDS.find((field) => field.key === 'monthly_revenue')!;
+    const journeyId = LEADS[0]!.processInstances[0]!.journeyId;
+    // Leaves `/api/v1/leads` on its default handler (real fixture rows) —
+    // only what this journey maps changes.
+    server.use(http.get(`/api/v1/journeys/${journeyId}/fields`, () => HttpResponse.json([])));
+
+    renderPage(`/sellers?journeyId=${journeyId}`);
+
+    await screen.findByRole('columnheader', { name: 'Owner' });
+    expect(
+      screen.queryByRole('columnheader', { name: revenueField.label }),
+    ).not.toBeInTheDocument();
+  });
 });
