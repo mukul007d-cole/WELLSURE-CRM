@@ -479,7 +479,20 @@ export interface RoutingState {
 // ancestors), shown as a note in `StatusRoutingPanel` rather than a
 // separate configurable grant.
 export interface PermissionCatalog {
-  modules: Array<{ module: string; label: string; actions: string[] }>;
+  modules: Array<{
+    module: string;
+    label: string;
+    actions: string[];
+    /**
+     * ADR-0022 — which of this module's actions actually consult the
+     * granted DataScope. Absent (or an action missing from it) means that
+     * action's scope is never checked — it behaves identically no matter
+     * which of SELF/TEAM/DEPARTMENT/ORGANIZATION is stored, so the Role
+     * editor shows a fixed "Always organization-wide" label instead of a
+     * selector that would otherwise silently do nothing.
+     */
+    scopedActions?: string[];
+  }>;
   supportedScopes: DataScope[];
 }
 

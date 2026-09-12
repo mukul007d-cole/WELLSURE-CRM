@@ -778,6 +778,14 @@ export const handlers = [
     HttpResponse.json({
       modules: [
         {
+          module: 'leads',
+          label: 'Leads',
+          actions: ['view', 'create', 'edit', 'export'],
+          // `view`/`edit` are scoped (checked against a real lead); `create`
+          // and `export` are not — ADR-0022.
+          scopedActions: ['view', 'edit'],
+        },
+        {
           module: 'users',
           label: 'Users & Departments',
           actions: ['view', 'create', 'edit', 'deactivate'],

@@ -21,17 +21,25 @@ ALLOW =
 
 | Module | Actions |
 |---|---|
-| Leads | view, create, edit, comment, delete, export, import, bulk_reassign, bulk_status_change, bypass_status_visibility |
+| Leads | view, create, edit, comment, delete, export, import, bypass_status_visibility |
 | Fields | view, create, edit, delete, purge |
 | Journeys & Statuses | view, create, edit, delete, purge |
 | Services | view, create, edit, purge |
 | Users | view, create, edit, deactivate, purge |
 | Roles & Permissions | view, create, edit, purge |
-| Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
 | Campaigns | view, create, edit, send |
 | Lead Routing | view, configure, operate |
 | Integrations | configure |
+
+`leads:bulk_reassign`/`leads:bulk_status_change` and the entire `reports`
+module (`view_standard`/`view_financial`/`build_custom`, a Phase 2
+placeholder) were grantable here once but honoured by no route — an admin
+could check the box and nothing would happen. Retired outright (ADR-0022)
+rather than left as permissions with no observable effect; a real bulk
+lead-action or reporting feature adds its own catalog entry back when it
+ships, rather than reactivating one that was never actually wired to
+anything.
 
 The immutable runtime source for these identifiers is
 `packages/permission-engine/src/catalog.ts`. **An action absent from that file
@@ -102,6 +110,25 @@ never on `lead_routing:configure`. See ADR-0015 (amended).
 - `DEPARTMENT`: all active users sharing the requester's `department_id`,
   regardless of reporting branch or depth.
 - `ORGANIZATION`: all records in the requester's organization.
+
+**Not every action's scope is enforced (ADR-0022).** A `DataScope` answers
+"whose record is this," which is only a real question for an action the
+server actually checks against a specific existing Lead —
+`leads:view/edit/comment/delete` and `attachments:upload/download/delete`
+(checked against the Lead the attachment belongs to). Every other action
+in the catalog has no such record to ask about: a configuration entity
+(Field, Journey, Status, Service, Role, User, Campaign, a routing rule
+itself) isn't owned by one person the way a Lead is assigned to one,
+`leads:create` has no *existing* record yet to scope against, and
+`leads:export`/`leads:import`/`campaigns:send` each deliberately reuse
+`leads:view`'s own scope instead of consulting their own (ADR-0016). For
+all of these, every one of SELF/TEAM/DEPARTMENT/ORGANIZATION behaves
+identically — picking a narrower one restricts nothing. The Role editor
+reflects this directly: `packages/permission-engine/src/catalog.ts`'s
+`scopedActions` names exactly the actions above, per module, and the UI
+shows a real selector only for those, a plain "Always organization-wide"
+label everywhere else — rather than offering a control that would
+silently do nothing for roughly three-quarters of the catalog.
 
 **C. Journey access** — explicit allow-list per role. A role with no access to a Journey doesn't see it in the UI at all, not greyed out.
 

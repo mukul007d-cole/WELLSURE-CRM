@@ -38,10 +38,18 @@ export const permissionCatalog = [
       'delete',
       'export',
       'import',
-      'bulk_reassign',
-      'bulk_status_change',
       'bypass_status_visibility',
     ],
+    // Which of this module's actions actually consult the granted DataScope
+    // — see `scoped()`'s doc comment below for what that means and why most
+    // actions in this catalog aren't listed here at all. `create` is absent
+    // deliberately: there is no existing lead yet to check "whose is this"
+    // against, so scope cannot mean anything for it. `export`/`import` are
+    // absent because each reuses `view`'s own scope instead of its own
+    // (ADR-0016) — a deliberate, documented substitution, not an oversight.
+    // `bypass_status_visibility` is absent because it is a role-level
+    // boolean, never a per-record question. See ADR-0022.
+    scopedActions: ['view', 'edit', 'comment', 'delete'],
   },
   {
     module: 'fields',
@@ -82,16 +90,23 @@ export const permissionCatalog = [
     withheldFromBootstrap: ['purge'],
   },
   {
-    module: 'reports',
-    label: 'Reports',
-    actions: ['view_standard', 'view_financial', 'build_custom'],
+    module: 'attachments',
+    label: 'Attachments',
+    actions: ['upload', 'download', 'delete'],
+    // Every action here is checked against the lead the attachment belongs
+    // to (`http/routes/attachments.ts`'s `allowedOnLead`), so all three are
+    // genuinely scoped — the same record-ownership question `leads` asks.
+    scopedActions: ['upload', 'download', 'delete'],
   },
-  { module: 'attachments', label: 'Attachments', actions: ['upload', 'download', 'delete'] },
   {
     module: 'campaigns',
     label: 'Campaigns',
     // `send` is deliberately separate from `edit`: composing an email and
-    // actually mailing customers are different levels of trust.
+    // actually mailing customers are different levels of trust. Neither
+    // action's own scope is consulted, though — a Campaign is a global
+    // configuration entity like a Journey, not a per-lead record, and
+    // `send`'s recipient set is bounded by the sender's own `leads:view`
+    // scope instead (ADR-0016), the same substitution `leads:export` uses.
     actions: ['view', 'create', 'edit', 'send'],
   },
   {
@@ -101,7 +116,9 @@ export const permissionCatalog = [
     // one particular lead. Different levels of trust, so neither implies the
     // other — the same split as `campaigns:send` against `campaigns:edit`.
     // `operate` is an additional gate on top of the normal lead checks, never a
-    // replacement for them.
+    // replacement for them — and that normal check (`leads:edit`) is where a
+    // record is actually named and its own scope actually applies; none of
+    // these three actions' own scope is ever consulted.
     actions: ['view', 'configure', 'operate'],
   },
   { module: 'integrations', label: 'Integrations', actions: ['configure'] },
@@ -125,6 +142,38 @@ export function isPermissionPair(module: string, action: string): boolean {
 
 function withheld(entry: (typeof permissionCatalog)[number]): readonly string[] {
   return 'withheldFromBootstrap' in entry ? entry.withheldFromBootstrap : [];
+}
+
+function scoped(entry: (typeof permissionCatalog)[number]): readonly string[] {
+  return 'scopedActions' in entry ? entry.scopedActions : [];
+}
+
+/**
+ * ADR-0022 — does this Role's granted `DataScope` for `module:action`
+ * actually decide anything?
+ *
+ * `resolveAuthorization` computes and returns a `RecordPredicate` for
+ * every granted action, unconditionally, because the engine treats every
+ * `(module, action, scope)` triple uniformly — one shape, one validation
+ * function, one admin UI. But the *scope* half of that triple only changes
+ * observable behaviour for an action some caller actually checks against
+ * a specific record (`AuthorizationRequest.leadId`, or the equivalent
+ * `RecordPredicate` a list/export/campaign query builds from it). Every
+ * other action's real behaviour is identical no matter which of
+ * SELF/TEAM/DEPARTMENT/ORGANIZATION is stored — picking `SELF` for, say,
+ * `users:deactivate` deactivates every User in the organization exactly
+ * as `ORGANIZATION` would, because nothing ever asks "whose User is this."
+ *
+ * An entry with no `scopedActions` at all means *none* of its actions are
+ * scoped — most of the catalog. Listed here so the Role editor can show a
+ * real, functioning scope selector only where the choice is real, and a
+ * plain "Organization-wide" label everywhere else, rather than offering a
+ * control that silently does nothing for roughly three-quarters of the
+ * catalog.
+ */
+export function isScopedAction(module: string, action: string): boolean {
+  const entry = permissionCatalog.find((candidate) => candidate.module === module);
+  return entry !== undefined && scoped(entry).includes(action);
 }
 
 /**

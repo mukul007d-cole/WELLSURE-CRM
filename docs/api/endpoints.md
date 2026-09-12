@@ -200,8 +200,11 @@ POST   /leads/:id/shares
 PUT    /leads/:id/shares/:shareId
 DELETE /leads/:id/shares/:shareId
 POST   /leads/:id/deactivate
-POST   /leads/bulk/reassign            -- NOT IMPLEMENTED (leads:bulk_reassign is grantable but honoured by no route)
-POST   /leads/bulk/status              -- NOT IMPLEMENTED (leads:bulk_status_change is grantable but honoured by no route)
+-- Bulk reassign/status-change routes and the leads:bulk_reassign/
+-- leads:bulk_status_change permissions that would have gated them were
+-- never built past the placeholder stage; the permissions were retired
+-- (ADR-0022) rather than left grantable with no route to honour them. A
+-- real bulk feature designs its own permission and route together.
 GET    /leads/export                   -- CSV of the Seller List under the same query parameters as GET /leads; leads:export
 POST   /leads/import/analyze           -- multipart; returns the file's columns, samples and fill rates. leads:import
 POST   /leads/import/preview           -- multipart; runs the real creation path and rolls it back. Writes nothing. leads:import + leads:create
@@ -316,7 +319,7 @@ POST   /invoices/:id/payments
 
 ### Reports
 
-**Not implemented.** No route file exists. The dashboard derives its counts from scoped `GET /leads` totals instead. Paths below are the V1 target, not the current surface.
+**Not implemented.** No route file exists. The dashboard derives its counts from scoped `GET /leads` totals instead. Paths below are the V1 target, not the current surface. The `reports` permission module (`view_standard`/`view_financial`/`build_custom`) that would have gated these was retired from the catalog (ADR-0022) rather than left grantable for a feature that doesn't exist — it returns when these routes do.
 
 ```
 GET    /reports/dashboard

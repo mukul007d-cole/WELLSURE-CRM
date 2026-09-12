@@ -8,6 +8,7 @@ export {
   isDataScope,
   isGrantedOnBootstrap,
   isPermissionPair,
+  isScopedAction,
   permissionCatalog,
   withheldFromBootstrapPairs,
 } from './catalog.js';
