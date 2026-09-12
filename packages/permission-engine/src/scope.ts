@@ -33,7 +33,25 @@ export async function expandTeamUserIds(
   repository: PermissionRepository,
   user: UserSnapshot,
 ): Promise<readonly string[]> {
-  const seen = new Set<string>([user.id]);
+  // Two different sets, deliberately not one. `visited` is the traversal
+  // guard — every id the BFS has already queued, active or not, so a cycle
+  // (already rejected at write time, but defended here too) still
+  // terminates. `included` is the answer this function actually returns —
+  // only active users belong in a scope's member list.
+  //
+  // Collapsing them into one set (as an earlier version did) meant a
+  // deactivated manager's own exclusion from `included` also stopped the
+  // BFS from ever visiting *their* reports: `queue.push` only ran for rows
+  // that passed the `report.active` check, so the traversal silently
+  // stopped at the first inactive link and everyone still active beneath it
+  // became unreachable from anyone above. A manager going on leave or being
+  // offboarded before their reports are reassigned must not sever the
+  // reports' own manager chain — they are still active employees, still
+  // reachable through the org chart, and (per ADR-0020) their assignee's
+  // manager chain is now what decides whether a lead in a routed Status is
+  // visible at all, not only who gets TEAM-scope access.
+  const included = new Set<string>([user.id]);
+  const visited = new Set<string>([user.id]);
   const queue = [user.id];
 
   while (queue.length > 0) {
@@ -48,15 +66,18 @@ export async function expandTeamUserIds(
     });
 
     for (const report of reports) {
-      if (!report.active || report.organizationId !== user.organizationId || seen.has(report.id)) {
+      if (report.organizationId !== user.organizationId || visited.has(report.id)) {
         continue;
       }
-      seen.add(report.id);
+      visited.add(report.id);
       queue.push(report.id);
+      if (report.active) {
+        included.add(report.id);
+      }
     }
   }
 
-  return [...seen];
+  return [...included];
 }
 
 export function buildRecordPredicate(input: {

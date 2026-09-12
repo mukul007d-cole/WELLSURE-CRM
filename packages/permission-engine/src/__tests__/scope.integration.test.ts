@@ -43,6 +43,10 @@ describe.runIf(shouldRunPostgresIntegration)('scope resolution against real Post
         ('pg-grandchild', 'pg-org-a', 'pg-role', true, 'pg-dept-a', 'pg-child'),
         ('pg-sibling', 'pg-org-a', 'pg-role', true, 'pg-dept-a', null),
         ('pg-inactive-child', 'pg-org-a', 'pg-role', false, 'pg-dept-a', 'pg-root'),
+        -- A different department from 'pg-dept-a' on purpose: this row exists
+        -- to pin the TEAM-scope hierarchy walk below, and must not also
+        -- change the unrelated DEPARTMENT-scope assertion's expected set.
+        ('pg-orphaned-report', 'pg-org-a', 'pg-role', true, 'pg-dept-orphan', 'pg-inactive-child'),
         ('pg-other-dept', 'pg-org-a', 'pg-role', true, 'pg-dept-b', null),
         ('pg-cycle-a', 'pg-org-a', 'pg-role', true, 'pg-dept-cycle', 'pg-cycle-b'),
         ('pg-cycle-b', 'pg-org-a', 'pg-role', true, 'pg-dept-cycle', 'pg-cycle-a'),
@@ -53,11 +57,15 @@ describe.runIf(shouldRunPostgresIntegration)('scope resolution against real Post
     const root = user('pg-root', 'pg-org-a', 'pg-dept-a', null);
     const cycleUser = user('pg-cycle-a', 'pg-org-a', 'pg-dept-cycle', 'pg-cycle-b');
 
-    await expect(expandScopeUserIds({ repository, user: root, scope: 'TEAM' })).resolves.toEqual([
-      'pg-root',
-      'pg-child',
-      'pg-grandchild',
-    ]);
+    const rootTeam = await expandScopeUserIds({ repository, user: root, scope: 'TEAM' });
+    expect(rootTeam).toEqual(
+      expect.arrayContaining(['pg-root', 'pg-child', 'pg-grandchild', 'pg-orphaned-report']),
+    );
+    // `pg-inactive-child` is deactivated, so it is excluded — but the walk
+    // still passes through it to reach `pg-orphaned-report`, an active user
+    // reporting to it. A deactivated manager must not sever their remaining
+    // team's own manager chain from anyone above them.
+    expect(rootTeam).not.toContain('pg-inactive-child');
     await expect(
       expandScopeUserIds({ repository, user: root, scope: 'DEPARTMENT' }),
     ).resolves.toEqual(['pg-root', 'pg-child', 'pg-grandchild', 'pg-sibling']);

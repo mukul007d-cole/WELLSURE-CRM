@@ -53,6 +53,12 @@ export function createFixtureState(): FixtureState {
       user('user-other-dept', 'role-self', 'dept-beta', null),
       user('user-no-dept', 'role-department', null, null),
       { ...user('user-inactive', 'role-self', 'dept-alpha', 'user-root'), active: false },
+      // Still an active employee reporting, transitively, to `user-root` —
+      // through `user-inactive`, a deactivated manager. Proves the
+      // hierarchy walk (`expandTeamUserIds`) continues past a deactivated
+      // link rather than treating it as a dead end: `user-root` must still
+      // reach this user, even though `user-inactive` itself is excluded.
+      user('user-orphaned-report', 'role-self', 'dept-alpha', 'user-inactive'),
       { ...user('user-other-org', 'role-other-org', 'dept-alpha', null), organizationId: orgB },
     ],
     roles: [

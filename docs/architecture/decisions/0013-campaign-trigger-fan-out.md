@@ -81,3 +81,28 @@ wanted.
 Delivery outside the transaction makes sends at-least-once against an
 at-most-once record: a crash between commit and drain leaves rows `pending` for
 the next drain, so the failure mode is a delayed send, never a duplicate.
+
+### Amendment — a fourth `status_change` writer had never been registered
+
+"Adding a third consumer... is now a registration rather than another copy of
+the classification" assumed every `activity_logs` writer went through
+`TriggerDispatcher`. One did not:
+`ConfigurationService.deactivateStatus`'s replacement-reassignment (a Status
+consolidation, ADR-0004) bulk-moves every active process instance out of the
+deactivated Status and writes one `status_change` activity per lead directly
+against `PrismaConfigurationRepository.writeActivity` — a bare
+`activityLog.create()`, predating this ADR (Phase 4, before Notifications,
+Campaigns, or Routing existed) and never revisited when they arrived. Routing,
+triggered Campaigns, and status-changed Notification Rules all silently did
+not fire for leads migrated this way, with nothing surfacing the gap: the
+process instance moved, the audit trail looked identical to any other
+status change, and only the *absence* of a routing assignment or a
+campaign send would have given it away.
+
+Fixed to match every other writer: `PrismaConfigurationRepository.writeActivity`
+now classifies its own write through the same `triggerTypeFor` and dispatches
+through the same `[notifications, campaignTriggers, routing]` fan-out
+`PrismaLeadRepository` runs, bound to its own transaction client. See
+`apps/api/src/__tests__/configuration-deactivation.postgres.integration.test.ts`
+for the regression proof (a routed replacement Status actually reassigns the
+migrated lead, not just moves it).
