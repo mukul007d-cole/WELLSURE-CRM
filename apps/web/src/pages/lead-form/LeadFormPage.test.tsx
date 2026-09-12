@@ -39,12 +39,21 @@ function renderForm(userId: string, path: string, route: string) {
 const renderCreate = (userId = 'user-admin') => renderForm(userId, '/sellers/new', '/sellers/new');
 
 /**
- * react-hook-form re-seeds this form from `values` when the dynamic field list
- * arrives, which wipes anything typed before then. Wait for the fields to land
+ * react-hook-form re-seeds this form from `values` when the Field catalogue
+ * arrives, which wipes anything typed before then. Wait for that to land
  * before filling anything in.
+ *
+ * In edit mode the whole form (Name included) is behind a full-page skeleton
+ * until the seller loads, so waiting for `Name` alone already covers it. In
+ * create mode `Name` renders immediately — the real risk is the Field
+ * catalogue arriving moments later — so this also waits out its own loading
+ * marker. It does *not* wait for a specific Additional field, since which
+ * ones exist now depends on the Journey chosen; a test that needs one should
+ * await it directly once a Journey is selected.
  */
 async function waitForFormReady() {
-  await screen.findByLabelText(/Company Name/);
+  await screen.findByLabelText(/^Name/);
+  await waitFor(() => expect(screen.queryByTestId('fields-loading')).not.toBeInTheDocument());
 }
 
 async function chooseJourney() {
@@ -377,7 +386,9 @@ describe('lead form assignment types', () => {
     renderEdit('user-admin', 'lead-1');
     await waitForFormReady();
 
-    const companyField = screen.getByLabelText(/Company Name/);
+    // Behind its own journey-scoped fetch (`journeyFieldsQuery`), settled
+    // separately from — and after — the rest of the form.
+    const companyField = await screen.findByLabelText(/Company Name/);
     fireEvent.change(companyField, { target: { value: 'Renamed via Additional field' } });
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
@@ -437,7 +448,7 @@ describe('lead form assignment types', () => {
     renderEdit('user-admin', 'lead-1');
     await waitForFormReady();
 
-    expect(screen.getByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
+    expect(await screen.findByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
   });
 
   it('lets an ORGANIZATION-scoped user edit regardless, matching the engine', async () => {
@@ -464,6 +475,31 @@ describe('lead form editMode rendering', () => {
     sessionStorage.clear();
   });
 
+  /** A minimal AdminField-shaped row, as `GET /fields` returns it. */
+  function adminField(id: string, key: string, label: string) {
+    return {
+      id,
+      key,
+      name: label,
+      fieldType: 'text',
+      editMode: 'manual',
+      section: null,
+      source: 'manual',
+      active: true,
+    };
+  }
+
+  /** Wraps an AdminField as the row `GET /journeys/:id/fields` returns. */
+  function journeyFieldSetting(field: ReturnType<typeof adminField>) {
+    return {
+      fieldId: field.id,
+      journeyId: JOURNEY.id,
+      requirement: 'optional',
+      requiredFromStatusId: null,
+      field,
+    };
+  }
+
   function stubFields(
     fields: Array<{
       id: string;
@@ -474,18 +510,29 @@ describe('lead form editMode rendering', () => {
       section?: string | null;
     }>,
   ) {
+    const adminFields = fields.map((field) => ({
+      id: field.id,
+      key: field.key,
+      name: field.label,
+      fieldType: field.type,
+      editMode: field.editMode,
+      section: field.section ?? null,
+      source: 'manual',
+      active: true,
+    }));
     server.use(
-      http.get('/api/v1/fields', () =>
+      http.get('/api/v1/fields', () => HttpResponse.json(adminFields)),
+      // The form only renders a Field once it's mapped to the chosen
+      // Journey (`configApi.journeyFields`) — mirror that mapping here so a
+      // stubbed Field actually shows up once a test selects `JOURNEY`.
+      http.get('/api/v1/journeys/:id/fields', () =>
         HttpResponse.json(
-          fields.map((field) => ({
-            id: field.id,
-            key: field.key,
-            name: field.label,
-            fieldType: field.type,
-            editMode: field.editMode,
-            section: field.section ?? null,
-            source: 'manual',
-            active: true,
+          adminFields.map((field) => ({
+            fieldId: field.id,
+            journeyId: JOURNEY.id,
+            requirement: 'optional',
+            requiredFromStatusId: null,
+            field,
           })),
         ),
       ),
@@ -497,6 +544,7 @@ describe('lead form editMode rendering', () => {
       { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
     ]);
     renderCreate();
+    await chooseJourney();
     expect(await screen.findByLabelText('GST Number')).not.toBeDisabled();
   });
 
@@ -555,6 +603,7 @@ describe('lead form editMode rendering', () => {
       },
     ]);
     renderCreate();
+    await chooseJourney();
     expect(await screen.findByLabelText('Deal Value')).toBeDisabled();
     expect(screen.getByLabelText('Created Channel')).toBeDisabled();
   });
@@ -571,6 +620,7 @@ describe('lead form editMode rendering', () => {
       { id: 'field-manual', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
     ]);
     renderCreate();
+    await chooseJourney();
     await screen.findByLabelText('Notes');
     expect(screen.queryByLabelText('External Id')).not.toBeInTheDocument();
   });
@@ -595,8 +645,76 @@ describe('lead form editMode rendering', () => {
       },
     ]);
     renderCreate();
+    await chooseJourney();
     await screen.findByLabelText('Field A');
     expect(screen.getByText('Company')).toBeInTheDocument();
     expect(screen.getByText('Contact')).toBeInTheDocument();
+  });
+
+  /**
+   * The actual complaint: `/fields` lists the organization's whole Field
+   * catalogue regardless of Journey, so this form used to offer a control
+   * for one the chosen Journey had never opted into via the admin "Journey
+   * fields" screen. Filling it in looked fine right up to submit, where the
+   * API rejected it with a bare "field is not assigned to this journey"
+   * naming an id nobody filling out the form would recognize.
+   */
+  it('never renders an Additional field the chosen journey has not opted into', async () => {
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json([
+          adminField('field-mapped', 'mapped', 'Mapped Field'),
+          adminField('field-unmapped', 'unmapped', 'Unmapped Field'),
+        ]),
+      ),
+      http.get('/api/v1/journeys/:id/fields', () =>
+        HttpResponse.json([
+          journeyFieldSetting(adminField('field-mapped', 'mapped', 'Mapped Field')),
+        ]),
+      ),
+    );
+
+    renderCreate();
+    await chooseJourney();
+
+    await screen.findByLabelText('Mapped Field');
+    expect(screen.queryByLabelText('Unmapped Field')).not.toBeInTheDocument();
+  });
+
+  /**
+   * `toFieldValues` always emits an entry for a `boolean` Field, `false` when
+   * untouched, because an unchecked checkbox and "never asked" look
+   * identical to a plain HTML form. Once this form rendered every Field in
+   * the organization's catalogue regardless of Journey, that meant a
+   * checkbox Field no Journey had ever mapped got submitted — and rejected —
+   * on *every* lead create, not only ones where a rep touched it. Scoping
+   * the rendered (and now submitted) list to the chosen Journey's own
+   * mapping fixes this the same way it fixes the visible case above.
+   */
+  it('never submits a value for a boolean Field the journey has not mapped', async () => {
+    const bodies = captureCreate();
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json([
+          { ...adminField('field-flag', 'flag', 'Org Flag'), fieldType: 'boolean' },
+        ]),
+      ),
+      // This journey has never mapped it.
+      http.get('/api/v1/journeys/:id/fields', () => HttpResponse.json([])),
+    );
+
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    // Waits out the statuses fetch (this journey's default-on-create status)
+    // so the click doesn't land before it resolves and get blocked asking
+    // for an explicit status instead.
+    await screen.findByRole('option', { name: 'New Lead' });
+    expect(screen.queryByLabelText('Org Flag')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty('fieldValues.field-flag');
   });
 });

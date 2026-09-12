@@ -321,12 +321,29 @@ const MOCK_TEAMS: Team[] = [
 /** Per-Status routing rules and their per-Status role grants. */
 const MOCK_ROUTING_RULES: RoutingRule[] = [];
 const MOCK_ROUTING_GRANTS: Array<RoutingGrant & { statusId: string }> = [];
+/**
+ * Every Field mapped to every Journey, optional, from the start — a
+ * FieldJourneySetting the app has established admin screens for creating
+ * (`JourneyDetailPage`'s "Attach Field"). An organization that never used
+ * them would see every Additional field rejected on save with "field is not
+ * assigned to this journey" for every Journey, which is a real state the
+ * admin flow tests exercise deliberately (they override this handler to
+ * start from nothing) — but not the default this file's other fixtures
+ * describe, where Journeys are otherwise fully set up.
+ */
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
   requirement: string;
   requiredFromStatusId: string | null;
-}> = [];
+}> = JOURNEYS.flatMap((journey) =>
+  MOCK_ADMIN_FIELDS.map((field) => ({
+    fieldId: field.id,
+    journeyId: journey.id,
+    requirement: 'optional',
+    requiredFromStatusId: null,
+  })),
+);
 
 const INITIAL_ADMIN_STATE = structuredClone({
   journeys: JOURNEYS,
@@ -339,6 +356,7 @@ const INITIAL_ADMIN_STATE = structuredClone({
   fields: MOCK_ADMIN_FIELDS,
   users: MOCK_ADMIN_USERS,
   notificationRules: MOCK_NOTIFICATION_RULES,
+  journeyFields: MOCK_JOURNEY_FIELDS,
 });
 
 /**
@@ -370,7 +388,7 @@ export function resetAdminMockState() {
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_NOTIFICATION_RULES.splice(0, MOCK_NOTIFICATION_RULES.length, ...initial.notificationRules);
-  MOCK_JOURNEY_FIELDS.splice(0);
+  MOCK_JOURNEY_FIELDS.splice(0, MOCK_JOURNEY_FIELDS.length, ...initial.journeyFields);
   MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 

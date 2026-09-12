@@ -543,6 +543,40 @@ export const configApi = {
     request<Page<RawField> | RawField[]>('/fields')
       .then(items)
       .then((rows) => rows.map(normalizeField)),
+  /**
+   * The Fields actually mapped to a Journey via the admin "Journey fields"
+   * screen (`FieldJourneySetting`) — not the organization's whole Field
+   * catalogue, which is what `fields()` above returns. A Field a Journey has
+   * never opted into is filtered out here, same as `hidden` and an inactive
+   * setting or Field: the server rejects a value for any of those just as
+   * firmly ("field is not assigned to this journey" / "field is hidden for
+   * this journey"), so there is nothing a caller can do with them but offer
+   * a control that is guaranteed to fail on save.
+   */
+  journeyFields: (journeyId: string) =>
+    request<
+      Array<{
+        fieldId: string;
+        journeyId: string;
+        requirement: string;
+        requiredFromStatusId: string | null;
+        active?: boolean;
+        field: AdminField;
+      }>
+    >(`/journeys/${journeyId}/fields`).then((rows) =>
+      rows
+        .filter(
+          (row) =>
+            row.requirement !== 'hidden' && row.active !== false && row.field.active !== false,
+        )
+        .map((row) => {
+          // `AdminField.validationRule` is `T | null`; `RawField` only allows
+          // `T | undefined` (exactOptionalPropertyTypes), so a literal `null`
+          // has to be dropped rather than passed through as `undefined`.
+          const { validationRule, ...rest } = row.field;
+          return normalizeField(validationRule ? { ...rest, validationRule } : rest);
+        }),
+    ),
   services: () => request<Page<Service> | Service[]>('/services').then(items),
 };
 

@@ -62,14 +62,6 @@ export function LeadFormPage() {
 
   const fields = fieldsQuery.data ?? [];
   const existingProcess = sellerQuery.data?.processInstances[0];
-  // `json` fields have never had a control here; `api-only` ones are new —
-  // hidden from every human-facing form, the same rule the server enforces
-  // for the values themselves (there is no distinct "API caller" identity to
-  // gate on server-side, so the human form simply never offers the control).
-  const formFields = fields.filter(
-    (field) => field.type !== 'json' && field.editMode !== 'api-only',
-  );
-  const formSections = groupFieldsBySection(formFields);
   const existingFieldValues = sellerQuery.data?.fieldValues;
 
   const {
@@ -109,6 +101,32 @@ export function LeadFormPage() {
     queryFn: () => configApi.assignmentTypes(selectedJourneyId),
     enabled: Boolean(selectedJourneyId) && !isEditMode,
   });
+  /**
+   * The Fields actually mapped to *this* Journey via the admin "Journey
+   * fields" screen — `fields` above is the organization's whole catalogue,
+   * which is what used to let this form render a control for a Field the
+   * Journey had never opted into. Filling it in looked fine until submit,
+   * where the API rejected it with a bare "field is not assigned to this
+   * journey" naming an id nobody filling out the form would recognize. Worse,
+   * a `boolean` Field always sends a value (`false` when untouched — see
+   * `toFieldValues`), so an org-wide checkbox Field no Journey had mapped
+   * would silently fail *every* save that used the unscoped list, not only
+   * ones where a rep actually touched it.
+   */
+  const journeyFieldsQuery = useQuery({
+    queryKey: ['journey-fields', selectedJourneyId],
+    queryFn: () => configApi.journeyFields(selectedJourneyId),
+    enabled: Boolean(selectedJourneyId),
+  });
+  const journeyFields = journeyFieldsQuery.data ?? [];
+  // `json` fields have never had a control here; `api-only` ones are new —
+  // hidden from every human-facing form, the same rule the server enforces
+  // for the values themselves (there is no distinct "API caller" identity to
+  // gate on server-side, so the human form simply never offers the control).
+  const formFields = journeyFields.filter(
+    (field) => field.type !== 'json' && field.editMode !== 'api-only',
+  );
+  const formSections = groupFieldsBySection(formFields);
   const activeStatuses = (statusesQuery.data ?? []).filter((status) => status.isActive);
   /**
    * Creating without an explicit statusId falls back to the Journey's
@@ -144,7 +162,7 @@ export function LeadFormPage() {
           name: values.name,
           phone: values.phone || null,
           email: values.email || null,
-          fieldValues: toFieldValues(fields, values.fields),
+          fieldValues: toFieldValues(formFields, values.fields),
           statusId: values.statusId || undefined,
           // Feeds the authorization record-predicate. Omitting it sends an
           // empty array, which fails the scope check for any role narrower
@@ -176,7 +194,7 @@ export function LeadFormPage() {
           name: values.name,
           phone: values.phone || null,
           email: values.email || null,
-          fieldValues: toFieldValues(fields, values.fields),
+          fieldValues: toFieldValues(formFields, values.fields),
           // Always the creator — a new seller belongs to whoever adds it.
           // `assignmentType` is still free text at the API (nothing here
           // makes "owner" a canonical enum value), just no longer a
@@ -359,7 +377,21 @@ export function LeadFormPage() {
               Additional details
             </Eyebrow>
             {fieldsQuery.isPending ? (
+              // Gates typing anywhere else too — see `waitForFormReady` in
+              // the tests, which relies on this element specifically.
+              <div data-testid="fields-loading">
+                <Skeleton className="h-24 w-full" />
+              </div>
+            ) : !selectedJourneyId ? (
+              <p className="text-sm text-ink-soft">
+                Choose a journey to see the fields configured for it.
+              </p>
+            ) : journeyFieldsQuery.isPending ? (
               <Skeleton className="h-24 w-full" />
+            ) : formFields.length === 0 ? (
+              <p className="text-sm text-ink-soft">
+                This journey has no additional fields configured.
+              </p>
             ) : (
               <div className="flex flex-col gap-5">
                 {formSections.map((section) => (
