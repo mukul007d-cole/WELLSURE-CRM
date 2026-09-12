@@ -639,12 +639,18 @@ export class PrismaLeadRepository
  * All three call sites must stay in lockstep with `filter-sql.ts`'s SQL form
  * or `phase13b.postgres.integration.test.ts`'s scope-parity test catches the
  * drift.
+ *
+ * ADR-0021: `bypassesStatusVisibility` short-circuits to `[{}]` — an empty
+ * Prisma condition inside an `OR` array matches every row, the Prisma
+ * mirror of `filter-sql.ts`'s literal `TRUE`.
  */
 function statusVisibleOr(input: {
   organizationId: string;
   assignmentTypes: readonly string[];
   hierarchyUserIds: readonly string[];
+  bypassesStatusVisibility: boolean;
 }) {
+  if (input.bypassesStatusVisibility) return [{}];
   return [
     { currentStatus: { routingRules: { none: { active: true } } } },
     {
@@ -710,6 +716,7 @@ export function sellerWhere(
                   organizationId: input.organizationId,
                   assignmentTypes: input.recordPredicate.assignmentTypes,
                   hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+                  bypassesStatusVisibility: input.recordPredicate.bypassesStatusVisibility,
                 }),
               },
             },
@@ -736,6 +743,7 @@ export function sellerWhere(
                       organizationId: input.organizationId,
                       assignmentTypes: input.recordPredicate.assignmentTypes,
                       hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+                      bypassesStatusVisibility: input.recordPredicate.bypassesStatusVisibility,
                     }),
                   },
                 },
@@ -761,6 +769,7 @@ export function processWhere(
       organizationId: input.organizationId,
       assignmentTypes: input.recordPredicate.assignmentTypes,
       hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
+      bypassesStatusVisibility: input.recordPredicate.bypassesStatusVisibility,
     }),
     assignments: {
       some: {

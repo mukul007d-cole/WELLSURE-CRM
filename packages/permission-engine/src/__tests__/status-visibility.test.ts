@@ -143,3 +143,92 @@ describe('status visibility', () => {
     expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
   });
 });
+
+/**
+ * ADR-0021 — `leads:bypass_status_visibility`, the narrow backstop for
+ * admin/oversight Roles that Status Visibility would otherwise lock out of
+ * a lead the instant a Status they'd normally reach turns on routing.
+ */
+describe('status visibility bypass (ADR-0021)', () => {
+  it('is off by default for every Role, including one with ORGANIZATION scope', async () => {
+    const decision = await resolveAuthorization({
+      repository: createRepository(),
+      request: {
+        organizationId: orgA,
+        userId: 'user-oversight',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
+      },
+    });
+    // ORGANIZATION scope alone does not exempt anyone from Status
+    // Visibility — this is the exact gap ADR-0021 exists to let an admin
+    // deliberately close, not something scope already closes.
+    expect(decision.deniedReasons).toContain('STATUS_VISIBILITY_DENIED');
+    expect(decision.recordPredicate?.bypassesStatusVisibility).toBe(false);
+  });
+
+  it('lets an org-wide oversight Role, once granted, reach a lead outside the assignee’s hierarchy', async () => {
+    const state = createFixtureState();
+    state.statusVisibilityBypassRoleIds.push('role-organization');
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-oversight',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
+      },
+    });
+    expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
+    expect(decision.allowed).toBe(true);
+  });
+
+  it('grants no reach beyond the caller’s own DataScope — SELF scope still isn’t someone else’s lead', async () => {
+    const state = createFixtureState();
+    state.statusVisibilityBypassRoleIds.push('role-self'); // user-sibling's role
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-sibling',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
+      },
+    });
+    // The routing-based narrowing is gone...
+    expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
+    // ...but `leadA` was never `user-sibling`'s own to begin with, so SELF
+    // scope still refuses it — the bypass removes an extra restriction, it
+    // does not add reach beyond what the caller's scope already grants.
+    expect(decision.deniedReasons).toContain('RECORD_SCOPE_DENIED');
+    expect(decision.allowed).toBe(false);
+  });
+
+  it('carries onto the record predicate, for the list/SQL form of this same rule', async () => {
+    const state = createFixtureState();
+    state.statusVisibilityBypassRoleIds.push('role-organization');
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-oversight',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+      },
+    });
+    expect(decision.recordPredicate?.bypassesStatusVisibility).toBe(true);
+  });
+});

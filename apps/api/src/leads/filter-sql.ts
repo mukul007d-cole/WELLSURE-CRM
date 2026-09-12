@@ -222,12 +222,19 @@ function processExists(input: SellerListQueryInput, params: Params): string {
  * spliced into any of the three independent `process_instances` lookups
  * `accessClause()` runs, always asking the question of the one row its
  * enclosing `EXISTS` is testing rather than of `leads` as a whole.
+ *
+ * ADR-0021: `input.predicate.bypassesStatusVisibility` short-circuits this
+ * to an unconditional `TRUE` — the SQL mirror of `decision.ts` returning
+ * `true` from `statusVisible` without ever checking for a routing rule.
+ * Bound before anything else, so a bypassing caller never even binds the
+ * (possibly still-empty) `hierarchyUserIds` parameter.
  */
 function statusVisibilityClause(
   input: SellerListQueryInput,
   params: Params,
   alias: string,
 ): string {
+  if (input.predicate.bypassesStatusVisibility) return 'TRUE';
   const hierarchyUserIds = params.bind([...input.predicate.hierarchyUserIds], '::uuid[]');
   const assignmentTypeFilter =
     input.predicate.assignmentTypes.length > 0

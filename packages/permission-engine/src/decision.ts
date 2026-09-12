@@ -108,7 +108,17 @@ export async function resolveAuthorization(input: {
    * plays any part in this check. `assignments`/`hierarchyUserIds` are
    * computed lazily and shared with the `recordAllowed` block below so a
    * request naming both a Status and a lead pays for each lookup once.
+   *
+   * ADR-0021's backstop is checked once, up front: a Role holding
+   * `leads:bypass_status_visibility` skips this narrowing entirely, on
+   * every request, so it never pays the routing-rule lookup or the
+   * hierarchy walk for the single-record form of this check below.
    */
+  const statusVisibilityBypass = await input.repository.hasStatusVisibilityBypass({
+    roleId: role.id,
+    organizationId: input.request.organizationId,
+  });
+
   let assignmentsPromise: Promise<
     Awaited<ReturnType<PermissionRepository['listCurrentAssignments']>>
   > | null = null;
@@ -131,6 +141,7 @@ export async function resolveAuthorization(input: {
 
   const statusVisible = await (async () => {
     if (input.request.statusId === undefined) return true;
+    if (statusVisibilityBypass) return true;
     const hasActiveRoutingRule = await input.repository.hasActiveRoutingRule({
       organizationId: input.request.organizationId,
       statusId: input.request.statusId,
@@ -191,6 +202,7 @@ export async function resolveAuthorization(input: {
       userId: user.id,
       action: input.request.action,
       hierarchyUserIds: await loadHierarchyUserIds(),
+      bypassesStatusVisibility: statusVisibilityBypass,
     });
 
     if (input.request.leadId !== undefined) {

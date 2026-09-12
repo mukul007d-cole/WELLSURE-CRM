@@ -155,6 +155,9 @@ function createPermissionRepository(): PermissionRepository {
     async hasActiveRoutingRule() {
       return false;
     },
+    async hasStatusVisibilityBypass() {
+      return false;
+    },
     async listAccessibleJourneyIds() {
       return [journeyA];
     },

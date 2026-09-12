@@ -64,4 +64,17 @@ describe('permission catalog', () => {
     for (const module of ['leads', 'campaigns', 'attachments', 'lead_routing', 'reports'])
       expect(isPermissionPair(module, 'purge')).toBe(false);
   });
+
+  /**
+   * ADR-0021: unlike `purge`, this backstop is granted by bootstrap, on
+   * purpose — withholding it would leave the very first administrator open
+   * to the exact lockout it exists to prevent. The equality assertion above
+   * already pins this (the pair isn't in the withheld list), but the intent
+   * deserves its own name rather than riding silently on that list staying
+   * unchanged.
+   */
+  it('grants leads:bypass_status_visibility on bootstrap, unlike purge', () => {
+    expect(isPermissionPair('leads', 'bypass_status_visibility')).toBe(true);
+    expect(isGrantedOnBootstrap('leads', 'bypass_status_visibility')).toBe(true);
+  });
 });

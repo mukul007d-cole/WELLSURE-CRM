@@ -245,6 +245,9 @@ function permissionRepository(input: {
     async hasActiveRoutingRule() {
       return false;
     },
+    async hasStatusVisibilityBypass() {
+      return false;
+    },
     async listAccessibleJourneyIds() {
       return journeys;
     },

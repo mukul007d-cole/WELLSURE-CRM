@@ -100,6 +100,21 @@ export interface PermissionRepository {
    * docs/planning/phase-20-reconcile-status-routing-and-visibility.md.
    */
   hasActiveRoutingRule(input: { organizationId: string; statusId: string }): Promise<boolean>;
+  /**
+   * ADR-0021 — does this Role hold `leads:bypass_status_visibility`?
+   *
+   * A narrow, explicit backstop: when true, Status Visibility's routing-based
+   * narrowing (ADR-0020) is skipped entirely for this Role, on every request,
+   * regardless of which module's action triggered the check — the Role sees
+   * and edits leads exactly as its ordinary DataScope already allows, as if
+   * no Status here ever had an active routing rule. It grants no reach a
+   * Role's configured scope does not already have; it only turns off the
+   * *narrowing* routing would otherwise add on top of that scope. Meant for
+   * a small, deliberately-designated set of admin/oversight Roles — not a
+   * general escape hatch, and not implied by `ORGANIZATION` scope or any
+   * other permission.
+   */
+  hasStatusVisibilityBypass(input: { roleId: string; organizationId: string }): Promise<boolean>;
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
@@ -184,6 +199,18 @@ export interface RecordPredicate {
    * current assignment to someone in this set passes.
    */
   hierarchyUserIds: readonly string[];
+  /**
+   * ADR-0021 — this caller's Role holds `leads:bypass_status_visibility`.
+   *
+   * When true, the SQL/Prisma form of the Status Visibility clause
+   * (`filter-sql.ts`'s `statusVisibilityClause`, `prisma-lead-repository.ts`'s
+   * `statusVisibleOr`) is skipped entirely for every row this predicate
+   * scopes, the many-row mirror of `decision.ts` short-circuiting
+   * `statusVisible` to `true` for a single record. `hierarchyUserIds` is
+   * still populated when this is true (cheaper to leave it than to thread a
+   * conditional through every caller), but no longer consulted.
+   */
+  bypassesStatusVisibility: boolean;
 }
 
 export interface AuthorizationDecision {

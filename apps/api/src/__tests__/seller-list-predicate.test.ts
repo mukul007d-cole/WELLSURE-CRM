@@ -17,6 +17,7 @@ function predicate(overrides: Partial<RecordPredicate> = {}): RecordPredicate {
     includeDirectGrantsForUserId: userId,
     directGrantAction: 'view',
     hierarchyUserIds: [],
+    bypassesStatusVisibility: false,
     ...overrides,
   };
 }

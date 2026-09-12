@@ -352,6 +352,12 @@ export function permissionRepository(
       // is unrestricted, per the default this feature ships with.
       return false;
     },
+    async hasStatusVisibilityBypass() {
+      // ADR-0021's backstop is a deliberate, separately-granted permission —
+      // `allowed` (whether this fixture answers every *other* pair) has
+      // nothing to do with it, so this is always false regardless.
+      return false;
+    },
     async listAccessibleJourneyIds() {
       return journeyAccess ? [journeyId] : [];
     },

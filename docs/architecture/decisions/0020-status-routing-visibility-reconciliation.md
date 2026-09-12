@@ -149,6 +149,16 @@ restriction, not only ones an admin separately configured. Existing tests
 in `phase14b.postgres.integration.test.ts` that route a lead and then
 check a share's reach were updated to reflect this.
 
+**Follow-up (ADR-0021): this consequence, at its most severe, can lock out
+the administrator who configured the routing rule.** Nothing in this ADR
+or in `bootstrapFirstAdmin` places an admin/oversight Role inside anyone's
+`manager_id` chain, so an organization whose reporting hierarchy is flat
+or incomplete gets the harshest form of the paragraph above: only the
+literal assignee can see a lead in a routed Status, full stop. Found and
+addressed by a narrow, explicit, opt-in backstop
+(`leads:bypass_status_visibility`) rather than by weakening this ADR's own
+default — see ADR-0021.
+
 **`createLead`'s and `moveLeadJourney`'s "landing Status" question, which
 ADR-0019/Phase 19 flagged as a judgment call, is resolved by construction
 rather than decided.** Neither has an existing assignment to check

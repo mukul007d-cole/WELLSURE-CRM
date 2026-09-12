@@ -89,6 +89,7 @@ export function buildRecordPredicate(input: {
   userId: string;
   action: string;
   hierarchyUserIds: readonly string[];
+  bypassesStatusVisibility: boolean;
 }): RecordPredicate {
   return {
     organizationId: input.organizationId,
@@ -99,6 +100,7 @@ export function buildRecordPredicate(input: {
     includeDirectGrantsForUserId: input.userId,
     directGrantAction: input.action,
     hierarchyUserIds: input.hierarchyUserIds,
+    bypassesStatusVisibility: input.bypassesStatusVisibility,
   };
 }
 

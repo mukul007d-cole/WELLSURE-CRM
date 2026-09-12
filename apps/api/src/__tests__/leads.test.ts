@@ -997,6 +997,9 @@ function permissionRepository(
     async hasActiveRoutingRule() {
       return false;
     },
+    async hasStatusVisibilityBypass() {
+      return false;
+    },
     async listAccessibleJourneyIds() {
       return input.journeys ?? [journeyA];
     },

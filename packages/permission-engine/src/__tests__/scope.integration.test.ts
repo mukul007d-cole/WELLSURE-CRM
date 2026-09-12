@@ -118,6 +118,9 @@ function createPostgresScopeRepository(sql: postgres.Sql): PermissionRepository 
     hasActiveRoutingRule() {
       return Promise.resolve(false);
     },
+    hasStatusVisibilityBypass() {
+      return Promise.resolve(false);
+    },
     listAccessibleJourneyIds() {
       return Promise.resolve([]);
     },

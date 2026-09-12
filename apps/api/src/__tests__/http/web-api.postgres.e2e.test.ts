@@ -68,6 +68,9 @@ describe.runIf(shouldRunPostgresIntegration)(
         async hasActiveRoutingRule() {
           return false;
         },
+        async hasStatusVisibilityBypass() {
+          return false;
+        },
         async getLeadScope() {
           return null;
         },

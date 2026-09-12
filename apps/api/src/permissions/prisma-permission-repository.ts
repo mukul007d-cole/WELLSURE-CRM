@@ -155,6 +155,20 @@ export class PrismaPermissionRepository implements PermissionRepository {
     return rule !== null;
   }
 
+  /** ADR-0021 — see the interface doc comment. Reuses `getRolePermission`'s real lookup. */
+  async hasStatusVisibilityBypass(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<boolean> {
+    const permission = await this.getRolePermission({
+      roleId: input.roleId,
+      organizationId: input.organizationId,
+      module: 'leads',
+      action: 'bypass_status_visibility',
+    });
+    return permission !== null;
+  }
+
   async listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;

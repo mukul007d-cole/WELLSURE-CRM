@@ -20,6 +20,16 @@ export const permissionCatalog = [
     // `leads:create` as well, so holding `import` never lets someone create a
     // lead they could not create singly, in a journey they cannot access, or
     // with a Field they cannot edit. See ADR-0016.
+    // `bypass_status_visibility` is a narrow backstop, not a scope. It grants
+    // no reach beyond whatever DataScope this role already holds for the
+    // action in question — it only turns off Status Visibility's routing-
+    // based narrowing (ADR-0020) on top of that scope. Without it, a role
+    // whose Users are outside the assignee's `manager_id` chain — an admin
+    // or support role least of all placed inside the sales hierarchy, most
+    // of all — loses visibility into any lead sitting in a routed Status the
+    // instant routing is turned on there, with no way back in. Granted by
+    // bootstrap (unlike `purge`): withholding it by default would leave the
+    // very first administrator open to exactly that lockout. See ADR-0021.
     actions: [
       'view',
       'create',
@@ -30,6 +40,7 @@ export const permissionCatalog = [
       'import',
       'bulk_reassign',
       'bulk_status_change',
+      'bypass_status_visibility',
     ],
   },
   {

@@ -491,6 +491,53 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19/20 Status Visibility', () => {
     expect((await detail(asWide(), lead.leadId)).statusCode).toBe(403);
   }, 120_000);
 
+  /**
+   * ADR-0021 — `leads:bypass_status_visibility`, the narrow backstop for a
+   * Role like `roleWide` here: broad `leads` scope, but genuinely outside
+   * `userSelf`'s reporting hierarchy, exactly the "admin turned on routing
+   * and locked itself out" scenario the backstop exists for.
+   */
+  it('lets an org-wide Role reach a lead outside the hierarchy once granted leads:bypass_status_visibility', async () => {
+    const routed = await makeStatus(journey1, 'oversight_bypass_gate');
+    await activateRouting(routed);
+    const lead = await seedLead(routed, journey1, userSelf);
+
+    // The premise, restated: without the backstop, ORGANIZATION scope is
+    // not enough — the same claim the tests above already pin.
+    expect((await detail(asWide(), lead.leadId)).statusCode).toBe(403);
+    const deniedList = await list(asWide());
+    expect(deniedList.body).not.toContain(lead.leadId);
+
+    await prisma.rolePermission.create({
+      data: {
+        organizationId: org,
+        roleId: roleWide,
+        module: 'leads',
+        action: 'bypass_status_visibility',
+        scope: 'ORGANIZATION',
+      },
+    });
+    try {
+      expect((await detail(asWide(), lead.leadId)).statusCode).toBe(200);
+      const allowedList = await list(asWide());
+      expect(allowedList.statusCode).toBe(200);
+      expect(allowedList.body).toContain(lead.leadId);
+      const allowedBody = JSON.parse(allowedList.body) as { total: number; rows: unknown[] };
+      expect(allowedBody.total).toBe(allowedBody.rows.length);
+    } finally {
+      // Every other test in this file relies on `roleWide` staying outside
+      // `userSelf`'s hierarchy with no backstop — this must not leak.
+      await prisma.rolePermission.deleteMany({
+        where: {
+          organizationId: org,
+          roleId: roleWide,
+          module: 'leads',
+          action: 'bypass_status_visibility',
+        },
+      });
+    }
+  }, 120_000);
+
   it('narrows on top of data scope but never substitutes for it (AND, not OR)', async () => {
     const routed = await makeStatus(journey1, 'scope_and_gate');
     await activateRouting(routed);

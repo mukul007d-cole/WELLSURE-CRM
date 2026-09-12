@@ -24,6 +24,12 @@ export interface FixtureState {
    * *is* the fixture for "unrouted", not an omission to fill in.
    */
   activeRoutingRuleStatusIds: Array<{ statusId: string; organizationId: string }>;
+  /**
+   * ADR-0021. Deliberately empty by default, for the same reason: no Role
+   * bypasses Status Visibility unless a test explicitly grants it, so every
+   * existing test that never touches this axis stays correct unmodified.
+   */
+  statusVisibilityBypassRoleIds: string[];
 }
 
 export const orgA = 'org-synthetic-a';
@@ -59,6 +65,12 @@ export function createFixtureState(): FixtureState {
       // link rather than treating it as a dead end: `user-root` must still
       // reach this user, even though `user-inactive` itself is excluded.
       user('user-orphaned-report', 'role-self', 'dept-alpha', 'user-inactive'),
+      // No department, no manager, no report of anyone in `leadA`'s
+      // hierarchy — an admin/oversight account deliberately outside the
+      // sales reporting line, `role-organization`'s ORGANIZATION scope
+      // notwithstanding. For ADR-0021's bypass tests: this scope alone
+      // already reaches `leadA` everywhere *except* `statusRestricted`.
+      user('user-oversight', 'role-organization', null, null),
       { ...user('user-other-org', 'role-other-org', 'dept-alpha', null), organizationId: orgB },
     ],
     roles: [
@@ -106,6 +118,7 @@ export function createFixtureState(): FixtureState {
     // active rule, so visibility narrows to `leadA`'s assignee and their
     // manager chain.
     activeRoutingRuleStatusIds: [{ statusId: statusRestricted, organizationId: orgA }],
+    statusVisibilityBypassRoleIds: [],
   };
 }
 
@@ -151,6 +164,9 @@ export function createRepository(state = createFixtureState()): PermissionReposi
           (row) => row.organizationId === input.organizationId && row.statusId === input.statusId,
         ),
       );
+    },
+    hasStatusVisibilityBypass(input) {
+      return Promise.resolve(state.statusVisibilityBypassRoleIds.includes(input.roleId));
     },
     listAccessibleJourneyIds(input) {
       return Promise.resolve(

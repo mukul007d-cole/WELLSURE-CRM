@@ -218,6 +218,11 @@ export async function runImport(input: {
           // matter only if some other clause in the predicate were less
           // strict.
           hierarchyUserIds: [],
+          // Never bypasses, for the same reason: this predicate exists to
+          // deny every record when the importer has no `leads:view` scope
+          // at all, and ADR-0021's backstop is a Role-level grant this
+          // fallback has no Role behind to check.
+          bypassesStatusVisibility: false,
         },
         ...(input.expectedContentHash === undefined
           ? {}
