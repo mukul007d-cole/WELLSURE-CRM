@@ -6,6 +6,7 @@ import {
   type TriggerDispatcher,
   type TriggerEvent,
 } from '../leads/trigger-dispatch.js';
+import { maybeGrantReassignmentGrace } from '../leads/reassignment-grace.js';
 import { pick, type Candidate, type RoutingAlgorithm } from './algorithms.js';
 
 export type SkipReason =
@@ -286,6 +287,19 @@ export class StatusRoutingService implements TriggerConsumer {
         oldValue,
         newValue,
       },
+    });
+
+    // Phase 21 Part 2 — same transaction as the reassignment itself
+    // (`this.prisma` here is the mutation's own transaction client, per this
+    // class's own doc comment). A no-op unless the previous holder opted in
+    // and is currently eligible. `previous` is `undefined` on a first-ever
+    // assignment into a routed Status — no previous owner to grant to.
+    await maybeGrantReassignmentGrace(this.prisma, {
+      organizationId: input.organizationId,
+      leadId: input.leadId,
+      actorUserId: input.actorUserId,
+      previousUserId: previous?.userId ?? null,
+      newUserId: input.userId,
     });
 
     // Dispatched, not written directly to one consumer: an automatic assignment

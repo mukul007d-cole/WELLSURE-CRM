@@ -151,6 +151,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
         userId: actor,
         actorUserId: owner,
         capabilities: ['view'],
+        durationDays: 30,
       }),
     ).rejects.toThrow('not_found');
     await service.create({
@@ -159,6 +160,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userId: actor,
       actorUserId: owner,
       capabilities: ['view'],
+      durationDays: 30,
     });
     const permission = new PrismaPermissionRepository(prisma as never);
     const view = await permission.getActiveDirectGrant({
@@ -285,6 +287,184 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
     ).toBeNull();
   });
 
+  it('computes expiresAt server-side from the chosen duration, ignoring any client-supplied timestamp (Phase 21 Part 1)', async () => {
+    const service = new LeadSharingService(prisma);
+    const before = Date.now();
+    for (const durationDays of [7, 30, 60] as const) {
+      const recipient = randomUUID();
+      await prisma.user.create({
+        data: {
+          id: recipient,
+          organizationId: org,
+          roleId: role,
+          name: `Synthetic recipient ${durationDays}`,
+          email: `recipient-${durationDays}@example.test`,
+        },
+      });
+      const share = await service.create({
+        organizationId: org,
+        leadId: lead,
+        userId: recipient,
+        actorUserId: owner,
+        capabilities: ['view'],
+        durationDays,
+      });
+      const expected = before + durationDays * 24 * 60 * 60 * 1000;
+      const actual = share.expiresAt!.getTime();
+      // A generous tolerance for wall-clock time spent in this loop, not for
+      // the computation itself — it must land within seconds of `now +
+      // durationDays`, nowhere near a different bucket.
+      expect(Math.abs(actual - expected)).toBeLessThan(60_000);
+
+      const listed = (await service.list(org, lead)).find((row) => row.userId === recipient);
+      expect(listed?.expiresAt?.getTime()).toBe(share.expiresAt!.getTime());
+
+      const activity = await prisma.activityLog.findFirst({
+        where: { organizationId: org, leadId: lead, actionType: 'share_changed' },
+        orderBy: { timestamp: 'desc' },
+      });
+      expect(activity?.newValue).toMatchObject({
+        shareId: share.id,
+        userId: recipient,
+        durationDays,
+        expiresAt: share.expiresAt!.toISOString(),
+      });
+      // Revoked and deactivated immediately: this `org`/`lead` fixture is
+      // shared across every test in this file, and later tests assume a
+      // fixed roster of active users and shares — an org-wide resolver test
+      // (`feature_permission_holders`) enumerates every active `role`
+      // holder by a hardcoded expected list.
+      await service.revoke({
+        organizationId: org,
+        leadId: lead,
+        shareId: share.id,
+        actorUserId: owner,
+      });
+      await prisma.user.update({
+        where: { organizationId_id: { organizationId: org, id: recipient } },
+        data: { active: false },
+      });
+    }
+  });
+
+  it('rejects a duration outside 7/30/60 and never trusts a client-supplied expiresAt, over HTTP', async () => {
+    const service = new LeadSharingService(prisma);
+    // A dedicated recipient, not `actor` — this `lead` fixture is shared
+    // across every test in this file, and a later test (notification
+    // recipient counting) assumes no other active shares linger on it.
+    const httpRecipient = randomUUID();
+    await prisma.user.create({
+      data: {
+        id: httpRecipient,
+        organizationId: org,
+        roleId: role,
+        name: 'Synthetic HTTP recipient',
+        email: 'http-recipient@example.test',
+      },
+    });
+    const permission = new PrismaPermissionRepository(prisma as never);
+    const session = {
+      id: randomUUID(),
+      tokenHash: 'ignored',
+      userId: owner,
+      organizationId: org,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60000),
+      revokedAt: null,
+      lastSeenAt: new Date(),
+      ipAddress: null,
+      userAgent: null,
+    };
+    const authRepository = {
+      findSessionByTokenHash() {
+        return Promise.resolve(session);
+      },
+      touchSession() {
+        return Promise.resolve();
+      },
+      getUserSnapshot() {
+        return Promise.resolve({
+          id: owner,
+          organizationId: org,
+          roleId: role,
+          active: true,
+          departmentId: null,
+          managerId: null,
+        });
+      },
+    };
+    const server = buildServer({
+      authRepository,
+      permissionRepository: permission,
+      leadRepository: new PrismaLeadRepository(prisma as never),
+      leadSharingService: service,
+      configurationRepository: {},
+      audit: {},
+      emailSender: {},
+      authConfig: { ...defaultAuthConfig, secureCookies: false },
+      corsOrigins: [],
+    } as unknown as ServerDependencies);
+    const missingDuration = await server.inject({
+      method: 'POST',
+      url: `/api/v1/leads/${lead}/shares`,
+      headers: { cookie: 'falcon_session=synthetic' },
+      payload: {
+        userId: httpRecipient,
+        capabilities: ['view'],
+        assignmentTypes: ['synthetic_owner'],
+      },
+    });
+    expect(missingDuration.statusCode).toBe(400);
+    expect(JSON.parse(missingDuration.body)).toEqual({ error: 'invalid_duration' });
+
+    const invalidDuration = await server.inject({
+      method: 'POST',
+      url: `/api/v1/leads/${lead}/shares`,
+      headers: { cookie: 'falcon_session=synthetic' },
+      payload: {
+        userId: httpRecipient,
+        capabilities: ['view'],
+        durationDays: 45,
+        assignmentTypes: ['synthetic_owner'],
+      },
+    });
+    expect(invalidDuration.statusCode).toBe(400);
+    expect(JSON.parse(invalidDuration.body)).toEqual({ error: 'invalid_duration' });
+
+    const before = Date.now();
+    const forged = await server.inject({
+      method: 'POST',
+      url: `/api/v1/leads/${lead}/shares`,
+      headers: { cookie: 'falcon_session=synthetic' },
+      payload: {
+        userId: httpRecipient,
+        capabilities: ['view'],
+        durationDays: 7,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        assignmentTypes: ['synthetic_owner'],
+      },
+    });
+    expect(forged.statusCode).toBe(201);
+    const createdExpiresAt = new Date(
+      (JSON.parse(forged.body) as { expiresAt: string }).expiresAt,
+    ).getTime();
+    expect(createdExpiresAt).toBeLessThan(new Date('2099-01-01').getTime());
+    expect(Math.abs(createdExpiresAt - (before + 7 * 24 * 60 * 60 * 1000))).toBeLessThan(60_000);
+    await server.close();
+    // Revoked and deactivated immediately — see the comment on
+    // `httpRecipient` above.
+    await service.revoke({
+      organizationId: org,
+      leadId: lead,
+      shareId: (JSON.parse(forged.body) as { id: string }).id,
+      actorUserId: owner,
+    });
+    await prisma.user.update({
+      where: { organizationId_id: { organizationId: org, id: httpRecipient } },
+      data: { active: false },
+    });
+  });
+
   it('produces exactly owner and other active share recipients, is idempotent, and rolls back notification failure', async () => {
     const sharing = new LeadSharingService(prisma);
     await sharing.create({
@@ -293,6 +473,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userId: actor,
       actorUserId: owner,
       capabilities: ['view', 'edit'],
+      durationDays: 30,
     });
     await sharing.create({
       organizationId: org,
@@ -300,6 +481,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userId: other,
       actorUserId: owner,
       capabilities: ['view'],
+      durationDays: 30,
     });
     const revokedShare = await sharing.create({
       organizationId: org,
@@ -307,6 +489,7 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       userId: revoked,
       actorUserId: owner,
       capabilities: ['view'],
+      durationDays: 30,
     });
     await sharing.revoke({
       organizationId: org,

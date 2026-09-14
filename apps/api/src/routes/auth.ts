@@ -13,6 +13,10 @@ import { revokeSession, type SessionRepository } from '../auth/session.js';
 import type { SecurityAuditWriter } from '../auth/audit.js';
 import type { AuthenticatedContext } from '../auth/middleware.js';
 import type { PermissionRepository } from '@falcon/permission-engine';
+import {
+  updateReassignmentGracePreference,
+  type PreferencesRepository,
+} from '../auth/preferences.js';
 
 export interface CapabilityReader {
   listRolePermissions(input: { roleId: string; organizationId: string }): Promise<
@@ -168,6 +172,27 @@ export async function completePasswordResetRoute(input: {
       ...(result.details ? { details: { reasons: result.details } } : {}),
     },
   };
+}
+
+export async function updatePreferencesRoute(input: {
+  repository: PreferencesRepository;
+  permissionRepository: Pick<PermissionRepository, 'getRolePermission'>;
+  auth: AuthenticatedContext;
+  body: { retainViewAfterReassignment: unknown };
+}): Promise<{ status: 200 | 400; body: unknown }> {
+  if (typeof input.body.retainViewAfterReassignment !== 'boolean')
+    return { status: 400, body: { error: 'validation_error' } };
+  const value = input.body.retainViewAfterReassignment;
+  const result = await updateReassignmentGracePreference({
+    repository: input.repository,
+    permissionRepository: input.permissionRepository,
+    userId: input.auth.user.id,
+    organizationId: input.auth.user.organizationId,
+    roleId: input.auth.user.roleId,
+    value,
+  });
+  if (!result.ok) return { status: 400, body: { error: result.reason } };
+  return { status: 200, body: { retainViewAfterReassignment: value } };
 }
 
 export async function changePasswordRoute(input: {

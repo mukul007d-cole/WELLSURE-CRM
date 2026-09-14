@@ -8,6 +8,7 @@ import {
   loginRoute,
   logoutRoute,
   requestPasswordResetRoute,
+  updatePreferencesRoute,
 } from '../../routes/auth.js';
 import { sendRouteResult } from '../errors.js';
 import { authenticate } from '../plugins/authenticate.js';
@@ -69,6 +70,7 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
               name: { type: 'string' },
               email: { type: 'string' },
               roleName: { type: 'string' },
+              retainViewAfterReassignment: { type: 'boolean' },
             },
           },
           401: errorSchema,
@@ -76,6 +78,31 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
       },
     },
     (request) => request.auth.user,
+  );
+  server.patch(
+    '/api/v1/auth/preferences',
+    {
+      preHandler: authenticate(deps),
+      schema: {
+        tags: ['auth'],
+        body: {
+          ...objectBody,
+          required: ['retainViewAfterReassignment'],
+          properties: { retainViewAfterReassignment: { type: 'boolean' } },
+        },
+        response: { 400: errorSchema, 401: errorSchema },
+      },
+    },
+    async (request, reply) =>
+      sendRouteResult(
+        reply,
+        await updatePreferencesRoute({
+          repository: deps.authRepository,
+          permissionRepository: deps.permissionRepository,
+          auth: request.auth,
+          body: request.body as { retainViewAfterReassignment: unknown },
+        }),
+      ),
   );
   server.get(
     '/api/v1/auth/capabilities',

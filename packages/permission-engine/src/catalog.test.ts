@@ -80,6 +80,17 @@ describe('permission catalog', () => {
   });
 
   /**
+   * Phase 21 Part 2 (ADR-0023) — the Role-level gate for the personal
+   * reassignment-grace opt-in. Bootstrap-granted like most of the catalog,
+   * unlike `purge`: it carries no destructive/irreversible risk of its own,
+   * only expanded exposure a user must also opt into individually.
+   */
+  it('grants leads:retain_view_after_reassignment on bootstrap, unlike purge', () => {
+    expect(isPermissionPair('leads', 'retain_view_after_reassignment')).toBe(true);
+    expect(isGrantedOnBootstrap('leads', 'retain_view_after_reassignment')).toBe(true);
+  });
+
+  /**
    * ADR-0022: these were grantable — bootstrap even granted them, since
    * none were `withheldFromBootstrap` — but honoured by no route. Retired
    * outright rather than left as permissions an admin could check with no
@@ -110,10 +121,17 @@ describe('isScopedAction', () => {
   it('is true only for the leads actions checked against a real, existing lead', () => {
     for (const action of ['view', 'edit', 'comment', 'delete'])
       expect(isScopedAction('leads', action)).toBe(true);
-    // `create` has no existing lead to scope against yet; `export`/`import`
-    // and `bypass_status_visibility` each have a documented reason of
-    // their own (ADR-0016, ADR-0021) for never consulting their own scope.
-    for (const action of ['create', 'export', 'import', 'bypass_status_visibility'])
+    // `create` has no existing lead to scope against yet; `export`/`import`,
+    // `bypass_status_visibility`, and `retain_view_after_reassignment` each
+    // have a documented reason of their own (ADR-0016, ADR-0021, ADR-0023)
+    // for never consulting their own scope.
+    for (const action of [
+      'create',
+      'export',
+      'import',
+      'bypass_status_visibility',
+      'retain_view_after_reassignment',
+    ])
       expect(isScopedAction('leads', action)).toBe(false);
   });
 

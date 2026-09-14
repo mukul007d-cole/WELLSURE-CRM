@@ -24,7 +24,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
 }
 
 export function SettingsPage() {
-  const { user, capabilities } = useAuth();
+  const { user, capabilities, can } = useAuth();
   const { sidebarCollapsed, setSidebarCollapsed, tableDensity, setTableDensity } = usePreferences();
   const signOut = useSignOut();
   const [signingOut, setSigningOut] = useState(false);
@@ -36,6 +36,29 @@ export function SettingsPage() {
     text: string;
   } | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
+  // `null` means "no local override — show whatever the server last said."
+  // Avoids syncing local state from `user` (which loads asynchronously) via
+  // an effect; the displayed value is derived at render time instead, with
+  // this holding only an optimistic in-flight/rolled-back override.
+  const [pendingRetainView, setPendingRetainView] = useState<boolean | null>(null);
+  const [savingPreference, setSavingPreference] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const retainViewAfterReassignment =
+    pendingRetainView ?? user?.retainViewAfterReassignment ?? false;
+
+  async function handleRetainViewToggle(checked: boolean) {
+    setPendingRetainView(checked);
+    setSavingPreference(true);
+    setPreferenceError(null);
+    try {
+      await authApi.updatePreferences(checked);
+    } catch (error) {
+      setPendingRetainView(null);
+      setPreferenceError(friendlyErrorMessage(error));
+    } finally {
+      setSavingPreference(false);
+    }
+  }
 
   // Nothing on this page is fetched, so there is nothing for refresh to reload.
   usePageChrome('Settings', []);
@@ -138,6 +161,25 @@ export function SettingsPage() {
             </ul>
           </details>
         </SectionCard>
+
+        {can('leads', 'retain_view_after_reassignment') ? (
+          <SectionCard
+            title="Lead reassignment"
+            description="What happens when a lead is moved off you."
+          >
+            {preferenceError ? <Banner tone="error">{preferenceError}</Banner> : null}
+            <Checkbox
+              label="Keep view-only access for 30 days after a lead is reassigned away from me"
+              checked={retainViewAfterReassignment}
+              disabled={savingPreference}
+              onChange={(event) => void handleRetainViewToggle(event.target.checked)}
+            />
+            <p className="mt-1 text-xs text-ink-soft">
+              If a lead is reassigned away from you — manually or by Status Routing — you&rsquo;ll
+              keep view-only access to it for 30 days so you can see how it progresses.
+            </p>
+          </SectionCard>
+        ) : null}
 
         <SectionCard
           title="Appearance"

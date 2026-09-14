@@ -1,6 +1,11 @@
 # Phase 21 — Time-Bounded Sharing + Post-Reassignment Grace Visibility
 
-Status: **proposed — awaiting approval. Nothing in this plan is implemented.**
+Status: **implemented.** Approved with resolutions for the three flagged
+decisions (see "Amendments found during implementation" at the end):
+no permanent-share option, Role-based eligibility gating, and — the one
+substantive change from this plan's original framing — Risk 1 (Status
+Visibility silently neutralizing the grace grant) was **fixed, not
+accepted**, per direct instruction. See ADR-0023.
 
 ## Goal
 
@@ -567,22 +572,19 @@ share creation calls, with `durationDays` fixed at 30 and `actions` fixed at
 
 ## Risks / open questions
 
-1. **The 30-day grace grant can be silently neutralized by Status
-   Visibility.** Per `access-model.md`: once a lead's current Status has an
-   active routing rule, visibility narrows to the assignee plus their
-   manager chain, and "nothing bypasses it, including a
-   deliberately-granted share." If the previous owner is not in the new
-   assignee's manager chain and the lead later sits in (or already sits in)
-   a routed Status, their grace grant exists in the database and satisfies
-   `leads:view`'s record-scope check, but the request still gets denied by
-   the separate, unconditional Status Visibility check. "Retain view access
-   for 30 days" is therefore a slightly weaker guarantee than a literal
-   reading suggests under the currently-approved (but not yet merged)
-   Phase 20 mechanism — flagged per the sequencing note, and worth
-   confirming this is acceptable before implementation, since fixing it
-   would mean inventing a per-grant Status-Visibility-bypass concept that
-   does not exist anywhere in the system today (`bypass_status_visibility`
-   is Role-level, not attachable to one grant).
+1. ~~**The 30-day grace grant can be silently neutralized by Status
+   Visibility.**~~ **Resolved, not accepted — see ADR-0023.** Direct
+   instruction was to fix this rather than ship it as a known gap: a valid,
+   unexpired direct grant (Lead Share, and now a reassignment-grace grant)
+   now overrides Status Visibility's routing-based narrowing, the same way
+   it already overrides ordinary `DataScope`. This reverses ADR-0020's own
+   "nothing bypasses it, including a deliberately-granted share" and
+   ADR-0021's "no first-class way to do that other than granting the
+   bypass" — both got a Follow-up note pointing at ADR-0023. See the "the
+   grace grant survives Status Visibility's routing-based narrowing" test
+   in `phase21.postgres.integration.test.ts` and the two rewritten tests in
+   `phase14b`/`phase19` for the empirical proof, on both the single-record
+   and list/SQL paths.
 2. **Reassignment-type genericity (§Part 2 decision 1)** — confirm the
    intent is "any assignment type," not a specific "owner" type this task's
    wording (`their former lead`) might have had in mind without realizing no
@@ -674,3 +676,49 @@ Per `docs/testing/quality-gates.md`; real Postgres, synthetic fixtures only.
   it become inert (matching how a retired catalog pair already behaves
   elsewhere in this codebase, e.g. the recent
   `leads:bulk_reassign`/`leads:bulk_status_change` retirement), not an error.
+
+---
+
+## Amendments found during implementation
+
+- **Risk 1 was resolved, not accepted.** Approval directed a real fix
+  rather than shipping Part 2 with a known gap: a valid, unexpired direct
+  grant now overrides Status Visibility's routing-based narrowing, the
+  same way it already overrides ordinary `DataScope` — reversing the
+  explicit "nothing bypasses it, including a deliberately-granted share"
+  rule ADR-0020 stated and ADR-0021 built on. Full reasoning, the exact
+  code changes, and what it reopens are recorded in ADR-0023 rather than
+  repeated here; both ADR-0020 and ADR-0021 got a "Follow-up (ADR-0023)"
+  note appended, per this project's practice of amending rather than
+  silently editing a settled decision.
+- **The fix necessarily touched more than `decision.ts` alone.** The task
+  named `decision.ts`, but `filter-sql.ts`'s two direct-grant branches and
+  `prisma-lead-repository.ts`'s `sellerWhere` oracle compute the identical
+  axis for list/count — leaving them on the old rule would have made a
+  shared lead visible on detail fetch but invisible on the Seller List for
+  the same caller, breaking the exact list/detail parity
+  `phase13b.postgres.integration.test.ts` exists to pin. Fixed in lockstep,
+  as ADR-0023 records.
+- **A circular import, found while wiring Part 2's hook.**
+  `reassignment-grace.ts` needs `createTimedAccessGrant` from `sharing.ts`
+  (Part 1), but `sharing.ts`'s own `reassign()` needs to call
+  `reassignment-grace.ts`'s hook — a straight import cycle. Resolved by
+  extracting `createTimedAccessGrant`/`shareDurationsDays` into their own
+  module, `apps/api/src/leads/access-grants.ts`, imported by both; not
+  called out in the original plan, which described the extraction but not
+  where it would have to live once Part 2's own hook needed it too.
+- **Three existing tests asserted the pre-fix behavior directly and were
+  rewritten, not merely extended:**
+  `packages/permission-engine/src/__tests__/status-visibility.test.ts`
+  (new cases, nothing removed), and
+  `apps/api/src/__tests__/phase14b.postgres.integration.test.ts` /
+  `apps/api/src/__tests__/phase19.postgres.integration.test.ts` (each had
+  one test asserting a share is denied once routing narrows visibility —
+  renamed and re-asserted the opposite, with a fresh sibling test keeping
+  the no-grant negative case on record, exactly as Phase 20's own plan doc
+  did for the test it inverted).
+- **`PrismaAuthRepository` gained a fourth implemented interface**
+  (`PreferencesRepository`) rather than a new class, since it already owns
+  the `users`/`system_audit_logs` access `setRetainViewAfterReassignment`
+  needs and already composes several small auth-related interfaces the
+  same way.

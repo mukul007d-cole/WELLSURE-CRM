@@ -11,6 +11,7 @@ GET    /auth/capabilities              -- caller's own effective grants; authent
 POST   /auth/password-reset/request
 POST   /auth/password-reset/complete
 POST   /auth/password/change
+PATCH  /auth/preferences               -- self-only; today just `retainViewAfterReassignment` (Phase 21 Part 2), 400 `ineligible` if the caller's Role lacks `leads:retain_view_after_reassignment` and the body sets it true
 ```
 These are the currently bound Phase 6 routes. `/auth/refresh` remains a
 documented target without a backing route function and is not exposed by the
@@ -196,7 +197,7 @@ POST   /leads/:id/services             -- NOT IMPLEMENTED
 GET    /leads/:id/activity             -- paginated {page,pageSize,total,items}, newest first; gated on leads:view; old_value/new_value redacted against the caller's visible field set (see ADR-0011)
 POST   /leads/:id/comments
 GET    /leads/:id/shares
-POST   /leads/:id/shares
+POST   /leads/:id/shares               -- body requires `durationDays`: one of 7/30/60, no permanent option (Phase 21). `expiresAt` is computed server-side from it; a client-supplied `expiresAt` is ignored.
 PUT    /leads/:id/shares/:shareId
 DELETE /leads/:id/shares/:shareId
 POST   /leads/:id/deactivate

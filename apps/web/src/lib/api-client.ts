@@ -27,6 +27,7 @@ import type {
   AttachmentRecord,
   LeadShare,
   ShareCapability,
+  ShareDurationDays,
   NotificationItem,
   NotificationRule,
   Campaign,
@@ -136,6 +137,11 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  updatePreferences: (retainViewAfterReassignment: boolean) =>
+    request<{ retainViewAfterReassignment: boolean }>(
+      '/auth/preferences',
+      json('PATCH', { retainViewAfterReassignment }),
+    ),
 };
 
 const json = (method: string, body?: unknown): RequestInit => ({
@@ -365,8 +371,9 @@ export const sellersApi = {
       assignmentTypes: string[];
       userId: string;
       capabilities: ShareCapability[];
+      durationDays: ShareDurationDays;
     },
-  ) => request(`/leads/${id}/shares`, json('POST', body)),
+  ) => request<LeadShare>(`/leads/${id}/shares`, json('POST', body)),
   updateShare: (id: string, shareId: string, body: object) =>
     request(`/leads/${id}/shares/${shareId}`, json('PUT', body)),
   revokeShare: (id: string, shareId: string, journeyId: string) =>
