@@ -16,13 +16,16 @@ import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { loadAllPages } from './shared';
 import {
   hasPermission,
+  isActionScoped,
   moduleSelection,
+  normalizeScopes,
   setAll,
   setModule,
   setPermission,
   setScopeForAll,
   scopeHint,
   scopeLabel,
+  unscopedHint,
   type CatalogModule,
 } from './permission-matrix';
 
@@ -95,7 +98,12 @@ export function RoleDetailPage() {
     await refreshCapabilities();
   };
   const savePermissions = useMutation({
-    mutationFn: () => adminApi.savePermissions(roleId, permissions),
+    // Normalized at the boundary, not on every edit: corrects a role saved
+    // before this action was recognized as unscoped, or one just bulk-
+    // rescoped by "Set all scopes…" (which applies one value to every
+    // granted row without knowing which are unscoped), without needing a
+    // data migration for rows that were never behaviorally wrong.
+    mutationFn: () => adminApi.savePermissions(roleId, normalizeScopes(permissions, modules)),
     onSuccess: saved,
   });
   const saveJourneys = useMutation({
@@ -237,26 +245,35 @@ export function RoleDetailPage() {
                             )
                           }
                         />
-                        <Select
-                          aria-label={`${module.label} ${action} scope`}
-                          disabled={!row}
-                          value={row?.scope ?? 'SELF'}
-                          onChange={(e) =>
-                            setPermissions((rows) =>
-                              rows.map((x) =>
-                                x.module === module.module && x.action === action
-                                  ? { ...x, scope: e.target.value as DataScope }
-                                  : x,
-                              ),
-                            )
-                          }
-                        >
-                          {catalog.data?.supportedScopes.map((scope) => (
-                            <option key={scope} value={scope}>
-                              {scopeLabel(scope)}
-                            </option>
-                          ))}
-                        </Select>
+                        {isActionScoped(module, action) ? (
+                          <Select
+                            aria-label={`${module.label} ${action} scope`}
+                            disabled={!row}
+                            value={row?.scope ?? 'SELF'}
+                            onChange={(e) =>
+                              setPermissions((rows) =>
+                                rows.map((x) =>
+                                  x.module === module.module && x.action === action
+                                    ? { ...x, scope: e.target.value as DataScope }
+                                    : x,
+                                ),
+                              )
+                            }
+                          >
+                            {catalog.data?.supportedScopes.map((scope) => (
+                              <option key={scope} value={scope}>
+                                {scopeLabel(scope)}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : (
+                          // ADR-0022: this action's scope is never consulted by
+                          // anything — a real selector here would offer a choice
+                          // that silently does nothing, whichever option is picked.
+                          <span className="text-xs text-ink-soft" title={unscopedHint}>
+                            Always organization-wide
+                          </span>
+                        )}
                       </div>
                     );
                   })}

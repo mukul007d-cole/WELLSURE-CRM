@@ -87,20 +87,34 @@ export interface PermissionRepository {
     journeyId: string;
   }): Promise<boolean>;
   /**
-   * Phase 19 — may this Role see a lead currently sitting in this Status?
+   * Phase 20 — does this Status have an active routing rule?
    *
-   * A Status with zero `status_visibility` rows is unrestricted (this must
-   * return `true` for every Role); once a Status has any row at all, this
-   * returns `true` only for a Role a row names. See
-   * docs/planning/phase-19-status-scoped-role-visibility.md — this is the
-   * one consequential default-state decision the whole feature turns on, and
-   * every implementation of this method must encode it identically.
+   * Status Visibility (originally Phase 19, reworked in Phase 20) no longer
+   * reads a separate allow-list: a Status with no active routing rule is
+   * unrestricted (ordinary DataScope/Journey rules apply, exactly Phase 19's
+   * "absence means unrestricted" default, now keyed off routing instead of a
+   * table of rows); one with an active rule restricts visibility to the
+   * lead's current assignee and that assignee's reporting-hierarchy
+   * ancestors — computed in `decision.ts` from `listCurrentAssignments` and
+   * `expandScopeUserIds(..., 'TEAM')`, not from this repository method. See
+   * docs/planning/phase-20-reconcile-status-routing-and-visibility.md.
    */
-  hasStatusVisibility(input: {
-    roleId: string;
-    organizationId: string;
-    statusId: string;
-  }): Promise<boolean>;
+  hasActiveRoutingRule(input: { organizationId: string; statusId: string }): Promise<boolean>;
+  /**
+   * ADR-0021 — does this Role hold `leads:bypass_status_visibility`?
+   *
+   * A narrow, explicit backstop: when true, Status Visibility's routing-based
+   * narrowing (ADR-0020) is skipped entirely for this Role, on every request,
+   * regardless of which module's action triggered the check — the Role sees
+   * and edits leads exactly as its ordinary DataScope already allows, as if
+   * no Status here ever had an active routing rule. It grants no reach a
+   * Role's configured scope does not already have; it only turns off the
+   * *narrowing* routing would otherwise add on top of that scope. Meant for
+   * a small, deliberately-designated set of admin/oversight Roles — not a
+   * general escape hatch, and not implied by `ORGANIZATION` scope or any
+   * other permission.
+   */
+  hasStatusVisibilityBypass(input: { roleId: string; organizationId: string }): Promise<boolean>;
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
@@ -147,9 +161,9 @@ export interface AuthorizationRequest {
   leadId?: string;
   /**
    * The Status a specific record currently sits in — parallel to `journeyId`,
-   * checked via `hasStatusVisibility` only when present. Bulk/list-style
-   * callers with no single Status in view leave this unset and rely on
-   * `RecordPredicate.roleId` instead (see there).
+   * checked only when present. Bulk/list-style callers with no single Status
+   * in view leave this unset and rely on `RecordPredicate.hierarchyUserIds`
+   * instead (see there).
    */
   statusId?: string;
   requestedFieldIds?: readonly string[];
@@ -174,14 +188,29 @@ export interface RecordPredicate {
   includeDirectGrantsForUserId: string;
   directGrantAction: string;
   /**
-   * Phase 19 — the caller's own Role id, so a many-row query (the Seller
-   * List, export, bulk import matching) can apply the same
-   * `hasStatusVisibility` rule `AuthorizationRequest.statusId` applies to a
-   * single record, per process instance, in SQL: unrestricted unless the
-   * instance's current Status has any `status_visibility` row, in which case
-   * only a row naming this Role passes.
+   * Phase 20 — the caller's own id plus every active user reachable
+   * downward through `users.manager_id` (i.e. `expandScopeUserIds(...,
+   * 'TEAM')`, computed unconditionally regardless of the caller's own
+   * granted scope for this action), so a many-row query (the Seller List,
+   * export, bulk import matching) can apply the same Status Visibility rule
+   * `AuthorizationRequest.statusId` applies to a single record, per process
+   * instance, in SQL: unrestricted unless the instance's current Status has
+   * an active routing rule, in which case only a process instance with a
+   * current assignment to someone in this set passes.
    */
-  roleId: string;
+  hierarchyUserIds: readonly string[];
+  /**
+   * ADR-0021 — this caller's Role holds `leads:bypass_status_visibility`.
+   *
+   * When true, the SQL/Prisma form of the Status Visibility clause
+   * (`filter-sql.ts`'s `statusVisibilityClause`, `prisma-lead-repository.ts`'s
+   * `statusVisibleOr`) is skipped entirely for every row this predicate
+   * scopes, the many-row mirror of `decision.ts` short-circuiting
+   * `statusVisible` to `true` for a single record. `hierarchyUserIds` is
+   * still populated when this is true (cheaper to leave it than to thread a
+   * conditional through every caller), but no longer consulted.
+   */
+  bypassesStatusVisibility: boolean;
 }
 
 export interface AuthorizationDecision {

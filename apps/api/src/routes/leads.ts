@@ -129,7 +129,10 @@ export interface SellerListInput {
 
 export type LeadRouteResult =
   | { status: 200 | 201; body: unknown }
-  | { status: 400 | 403 | 404 | 409; body: { error: string; details?: Record<string, unknown> } };
+  | {
+      status: 400 | 403 | 404 | 409;
+      body: { error: string; reason?: string; details?: Record<string, unknown> };
+    };
 
 export async function createLead(input: {
   auth: AuthenticatedContext;
@@ -242,9 +245,18 @@ export async function moveLeadJourney(input: {
           input.targetJourneyId,
           input.statusId,
         );
-  for (const [journeyId, action, statusId] of [
-    [input.journeyId, editAction, source.currentStatusId],
-    [input.targetJourneyId, createAction, landingStatus?.id],
+  for (const [journeyId, action, statusId, includeLeadId] of [
+    // Source: the lead's real, existing assignment lives here, so Status
+    // Visibility (Phase 20) has something to check the caller's
+    // reporting-hierarchy reach against.
+    [input.journeyId, editAction, source.currentStatusId, true],
+    // Target: a landing check, exactly like `createLead`'s — the lead has
+    // no process instance (and so no assignment) in the target Journey yet,
+    // so `leadId` is deliberately omitted here. Passing it would make
+    // `assignmentScopeAllowsLead` look for an assignment that cannot exist
+    // yet, denying Status Visibility for every caller on any Status with an
+    // active routing rule, not narrowing it for anyone in particular.
+    [input.targetJourneyId, createAction, landingStatus?.id, false],
   ] as const) {
     const decision = await resolveAuthorization({
       repository: input.permissionRepository,
@@ -254,7 +266,7 @@ export async function moveLeadJourney(input: {
         module: leadsModule,
         action,
         journeyId,
-        leadId: input.leadId,
+        ...(includeLeadId ? { leadId: input.leadId } : {}),
         ...(statusId === undefined ? {} : { statusId }),
         assignmentTypes: input.assignmentTypes,
         ...(input.now === undefined ? {} : { now: input.now }),
@@ -658,6 +670,17 @@ function toResponse(error: LeadError): LeadRouteResult {
     status,
     body: {
       error: error.code,
+      // Every `LeadError` message is a short, developer-authored constant
+      // ("required field is missing", "field is locked and cannot be
+      // changed", …) — never user input, so there is nothing to leak.
+      // `error: 'validation_error'` alone doesn't distinguish any of those
+      // from each other; without this the client's only honest option is
+      // the same generic "some fields need a second look" for every one of
+      // them. `details.fieldId` (present for most, absent for a few, e.g.
+      // "at least one assignment is required") narrows further when it's
+      // there. The same `reason` field the import row-outcome shape
+      // already sends for an identical purpose.
+      reason: error.message,
       ...(Object.keys(error.details).length === 0 ? {} : { details: error.details }),
     },
   };

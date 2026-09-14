@@ -39,17 +39,21 @@ function renderForm(userId: string, path: string, route: string) {
 const renderCreate = (userId = 'user-admin') => renderForm(userId, '/sellers/new', '/sellers/new');
 
 /**
- * The control starts as a text input while the types load and is replaced by a
- * select once they arrive, so tests must wait for an option rather than
- * holding on to the element they first found.
- */
-/**
- * react-hook-form re-seeds this form from `values` when the dynamic field list
- * arrives, which wipes anything typed before then. Wait for the fields to land
+ * react-hook-form re-seeds this form from `values` when the Field catalogue
+ * arrives, which wipes anything typed before then. Wait for that to land
  * before filling anything in.
+ *
+ * In edit mode the whole form (Name included) is behind a full-page skeleton
+ * until the seller loads, so waiting for `Name` alone already covers it. In
+ * create mode `Name` renders immediately — the real risk is the Field
+ * catalogue arriving moments later — so this also waits out its own loading
+ * marker. It does *not* wait for a specific Additional field, since which
+ * ones exist now depends on the Journey chosen; a test that needs one should
+ * await it directly once a Journey is selected.
  */
 async function waitForFormReady() {
-  await screen.findByLabelText(/Company Name/);
+  await screen.findByLabelText(/^Name/);
+  await waitFor(() => expect(screen.queryByTestId('fields-loading')).not.toBeInTheDocument());
 }
 
 async function chooseJourney() {
@@ -61,8 +65,23 @@ async function chooseJourney() {
 
 async function chooseAssignmentType(value: string) {
   await screen.findByRole('option', { name: value });
-  fireEvent.change(screen.getByLabelText(/^Assign as/), { target: { value } });
+  fireEvent.change(screen.getByLabelText(/^Assignment role/), { target: { value } });
 }
+
+/** A single active, default-on-create status — the common shape most tests need. */
+const oneDefaultStatus = [
+  {
+    id: 'status-default',
+    journeyId: JOURNEY.id,
+    key: 'new',
+    name: 'New',
+    outcomeType: 'open',
+    behaviorType: 'default',
+    active: true,
+    sortOrder: 0,
+    isDefaultOnCreate: true,
+  },
+];
 const renderEdit = (userId: string, leadId: string) =>
   renderForm(userId, `/sellers/${leadId}/edit`, '/sellers/:sellerId/edit');
 
@@ -102,38 +121,48 @@ describe('lead form assignment types', () => {
     document.cookie = 'falcon_session=; Path=/; Max-Age=0';
   });
 
-  it('offers the assignment types actually in use on the chosen journey', async () => {
-    renderCreate();
-
-    await chooseJourney();
-
-    // Comes from the journey document, not a literal in the bundle.
-    expect(await screen.findByRole('option', { name: 'owner' })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Assign as/).tagName).toBe('SELECT');
-  });
-
-  it('sends the configured assignment type rather than a hardcoded literal', async () => {
+  it('offers a real picker only when the journey has more than one assignment type', async () => {
     const bodies = captureCreate();
-    // A journey whose assignments use a type that is emphatically not "owner",
-    // so a regression to the literal cannot pass this test.
+    // Two types actually in use at once — a genuine choice, unlike the
+    // single-type case where the form decides silently.
     server.use(
       http.get('/api/v1/journeys/:id', () =>
         HttpResponse.json({
           ...JOURNEY,
           active: true,
-          statuses: [
-            {
-              id: 'status-default',
-              journeyId: JOURNEY.id,
-              key: 'new',
-              name: 'New',
-              outcomeType: 'open',
-              behaviorType: 'default',
-              active: true,
-              sortOrder: 0,
-              isDefaultOnCreate: true,
-            },
-          ],
+          statuses: oneDefaultStatus,
+          assignmentTypes: ['owner', 'referrer'],
+        }),
+      ),
+    );
+
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+
+    // Comes from the journey document, not a literal in the bundle.
+    expect(await screen.findByRole('option', { name: 'owner' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'referrer' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Assignment role/).tagName).toBe('SELECT');
+
+    await chooseAssignmentType('referrer');
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]!.assignments).toEqual([{ assignmentType: 'referrer', userId: 'user-admin' }]);
+  });
+
+  it('sends the configured assignment type rather than a hardcoded literal', async () => {
+    const bodies = captureCreate();
+    // A journey whose one assignment type is emphatically not "owner", so a
+    // regression to the literal cannot pass this test.
+    server.use(
+      http.get('/api/v1/journeys/:id', () =>
+        HttpResponse.json({
+          ...JOURNEY,
+          active: true,
+          statuses: oneDefaultStatus,
           assignmentTypes: ['synthetic-relationship-lead'],
         }),
       ),
@@ -144,7 +173,10 @@ describe('lead form assignment types', () => {
 
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
-    await chooseAssignmentType('synthetic-relationship-lead');
+    // A single known type is used silently — no picker to interact with, but
+    // wait for the round trip that resolves it before submitting.
+    await screen.findByRole('option', { name: 'New' });
+    expect(screen.queryByLabelText(/^Assignment role/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
 
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -154,31 +186,55 @@ describe('lead form assignment types', () => {
     expect(JSON.stringify(bodies[0])).not.toContain('"owner"');
   });
 
-  it('lets the first assignment type on an empty journey be named', async () => {
+  it('defaults a journey with no assignment history yet to "owner" without asking', async () => {
+    const bodies = captureCreate();
     server.use(
       http.get('/api/v1/journeys/:id', () =>
-        HttpResponse.json({ ...JOURNEY, active: true, statuses: [], assignmentTypes: [] }),
+        HttpResponse.json({
+          ...JOURNEY,
+          active: true,
+          statuses: oneDefaultStatus,
+          assignmentTypes: [],
+        }),
       ),
     );
 
     renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
+    await screen.findByRole('option', { name: 'New' });
 
-    // No types yet, so a free-text box rather than an empty dropdown.
-    const input = await screen.findByLabelText(/^Assign as/);
-    await waitFor(() => expect(input).not.toBeDisabled());
-    expect(input.tagName).toBe('INPUT');
-    expect(screen.getByText(/name the first one/i)).toBeInTheDocument();
+    // No type has ever existed on this journey — nothing to pick, and no
+    // free-text box either. The rep is never asked to invent a name.
+    expect(screen.queryByLabelText(/^Assignment role/)).not.toBeInTheDocument();
+    expect(screen.getByText('This seller will belong to you.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]!.assignments).toEqual([{ assignmentType: 'owner', userId: 'user-admin' }]);
   });
 
-  it('refuses to create without an assignment type instead of inventing one', async () => {
+  it('refuses to create when the journey is ambiguous and no role is chosen', async () => {
     const bodies = captureCreate();
+    server.use(
+      http.get('/api/v1/journeys/:id', () =>
+        HttpResponse.json({
+          ...JOURNEY,
+          active: true,
+          statuses: oneDefaultStatus,
+          assignmentTypes: ['owner', 'referrer'],
+        }),
+      ),
+    );
+
     renderCreate();
     await waitForFormReady();
 
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
-    // Types are available, but none is chosen.
+    // Two roles are on offer, but the placeholder is left selected.
     await screen.findByRole('option', { name: 'owner' });
     fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
 
@@ -195,7 +251,10 @@ describe('lead form assignment types', () => {
 
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
-    await chooseAssignmentType('owner');
+    // Waits out the statuses fetch, which resolves this journey's
+    // default-on-create status — otherwise the click can land before it
+    // does and the form blocks the submit asking for an explicit status.
+    await screen.findByRole('option', { name: 'New Lead' });
     fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
 
     expect(await screen.findByText('Seller detail: lead-new')).toBeInTheDocument();
@@ -203,17 +262,28 @@ describe('lead form assignment types', () => {
 
   it('refuses to submit against a journey with no active statuses', async () => {
     const bodies = captureCreate();
+    // Nothing in the response distinguishes "still loading" from "loaded and
+    // empty" in the DOM, so count the round trip directly rather than
+    // waiting on an option that will never appear.
+    let journeyDetailCalls = 0;
     server.use(
-      http.get('/api/v1/journeys/:id', () =>
-        HttpResponse.json({ ...JOURNEY, active: true, statuses: [], assignmentTypes: ['owner'] }),
-      ),
+      http.get('/api/v1/journeys/:id', () => {
+        journeyDetailCalls += 1;
+        return HttpResponse.json({
+          ...JOURNEY,
+          active: true,
+          statuses: [],
+          assignmentTypes: ['owner'],
+        });
+      }),
     );
 
     renderCreate();
     await waitForFormReady();
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
-    await chooseAssignmentType('owner');
+    // The statuses and assignment-types queries each fetch this same journey.
+    await waitFor(() => expect(journeyDetailCalls).toBeGreaterThanOrEqual(2));
     fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
 
     // Named plainly instead of a bare validation_error from the server.
@@ -250,7 +320,6 @@ describe('lead form assignment types', () => {
     await waitForFormReady();
     fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
     await chooseJourney();
-    await chooseAssignmentType('owner');
 
     // No "use journey default" on offer, because there is no default.
     await screen.findByRole('option', { name: 'Triage' });
@@ -317,7 +386,9 @@ describe('lead form assignment types', () => {
     renderEdit('user-admin', 'lead-1');
     await waitForFormReady();
 
-    const companyField = screen.getByLabelText(/Company Name/);
+    // Behind its own journey-scoped fetch (`journeyFieldsQuery`), settled
+    // separately from — and after — the rest of the form.
+    const companyField = await screen.findByLabelText(/Company Name/);
     fireEvent.change(companyField, { target: { value: 'Renamed via Additional field' } });
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
@@ -377,7 +448,7 @@ describe('lead form assignment types', () => {
     renderEdit('user-admin', 'lead-1');
     await waitForFormReady();
 
-    expect(screen.getByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
+    expect(await screen.findByLabelText(/Company Name/)).toHaveValue('Existing Company Value');
   });
 
   it('lets an ORGANIZATION-scoped user edit regardless, matching the engine', async () => {
@@ -404,6 +475,31 @@ describe('lead form editMode rendering', () => {
     sessionStorage.clear();
   });
 
+  /** A minimal AdminField-shaped row, as `GET /fields` returns it. */
+  function adminField(id: string, key: string, label: string) {
+    return {
+      id,
+      key,
+      name: label,
+      fieldType: 'text',
+      editMode: 'manual',
+      section: null,
+      source: 'manual',
+      active: true,
+    };
+  }
+
+  /** Wraps an AdminField as the row `GET /journeys/:id/fields` returns. */
+  function journeyFieldSetting(field: ReturnType<typeof adminField>) {
+    return {
+      fieldId: field.id,
+      journeyId: JOURNEY.id,
+      requirement: 'optional',
+      requiredFromStatusId: null,
+      field,
+    };
+  }
+
   function stubFields(
     fields: Array<{
       id: string;
@@ -414,18 +510,29 @@ describe('lead form editMode rendering', () => {
       section?: string | null;
     }>,
   ) {
+    const adminFields = fields.map((field) => ({
+      id: field.id,
+      key: field.key,
+      name: field.label,
+      fieldType: field.type,
+      editMode: field.editMode,
+      section: field.section ?? null,
+      source: 'manual',
+      active: true,
+    }));
     server.use(
-      http.get('/api/v1/fields', () =>
+      http.get('/api/v1/fields', () => HttpResponse.json(adminFields)),
+      // The form only renders a Field once it's mapped to the chosen
+      // Journey (`configApi.journeyFields`) — mirror that mapping here so a
+      // stubbed Field actually shows up once a test selects `JOURNEY`.
+      http.get('/api/v1/journeys/:id/fields', () =>
         HttpResponse.json(
-          fields.map((field) => ({
-            id: field.id,
-            key: field.key,
-            name: field.label,
-            fieldType: field.type,
-            editMode: field.editMode,
-            section: field.section ?? null,
-            source: 'manual',
-            active: true,
+          adminFields.map((field) => ({
+            fieldId: field.id,
+            journeyId: JOURNEY.id,
+            requirement: 'optional',
+            requiredFromStatusId: null,
+            field,
           })),
         ),
       ),
@@ -437,6 +544,7 @@ describe('lead form editMode rendering', () => {
       { id: 'field-locked', key: 'gst', label: 'GST Number', type: 'text', editMode: 'locked' },
     ]);
     renderCreate();
+    await chooseJourney();
     expect(await screen.findByLabelText('GST Number')).not.toBeDisabled();
   });
 
@@ -495,6 +603,7 @@ describe('lead form editMode rendering', () => {
       },
     ]);
     renderCreate();
+    await chooseJourney();
     expect(await screen.findByLabelText('Deal Value')).toBeDisabled();
     expect(screen.getByLabelText('Created Channel')).toBeDisabled();
   });
@@ -511,6 +620,7 @@ describe('lead form editMode rendering', () => {
       { id: 'field-manual', key: 'notes', label: 'Notes', type: 'textarea', editMode: 'manual' },
     ]);
     renderCreate();
+    await chooseJourney();
     await screen.findByLabelText('Notes');
     expect(screen.queryByLabelText('External Id')).not.toBeInTheDocument();
   });
@@ -535,8 +645,76 @@ describe('lead form editMode rendering', () => {
       },
     ]);
     renderCreate();
+    await chooseJourney();
     await screen.findByLabelText('Field A');
     expect(screen.getByText('Company')).toBeInTheDocument();
     expect(screen.getByText('Contact')).toBeInTheDocument();
+  });
+
+  /**
+   * The actual complaint: `/fields` lists the organization's whole Field
+   * catalogue regardless of Journey, so this form used to offer a control
+   * for one the chosen Journey had never opted into via the admin "Journey
+   * fields" screen. Filling it in looked fine right up to submit, where the
+   * API rejected it with a bare "field is not assigned to this journey"
+   * naming an id nobody filling out the form would recognize.
+   */
+  it('never renders an Additional field the chosen journey has not opted into', async () => {
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json([
+          adminField('field-mapped', 'mapped', 'Mapped Field'),
+          adminField('field-unmapped', 'unmapped', 'Unmapped Field'),
+        ]),
+      ),
+      http.get('/api/v1/journeys/:id/fields', () =>
+        HttpResponse.json([
+          journeyFieldSetting(adminField('field-mapped', 'mapped', 'Mapped Field')),
+        ]),
+      ),
+    );
+
+    renderCreate();
+    await chooseJourney();
+
+    await screen.findByLabelText('Mapped Field');
+    expect(screen.queryByLabelText('Unmapped Field')).not.toBeInTheDocument();
+  });
+
+  /**
+   * `toFieldValues` always emits an entry for a `boolean` Field, `false` when
+   * untouched, because an unchecked checkbox and "never asked" look
+   * identical to a plain HTML form. Once this form rendered every Field in
+   * the organization's catalogue regardless of Journey, that meant a
+   * checkbox Field no Journey had ever mapped got submitted — and rejected —
+   * on *every* lead create, not only ones where a rep touched it. Scoping
+   * the rendered (and now submitted) list to the chosen Journey's own
+   * mapping fixes this the same way it fixes the visible case above.
+   */
+  it('never submits a value for a boolean Field the journey has not mapped', async () => {
+    const bodies = captureCreate();
+    server.use(
+      http.get('/api/v1/fields', () =>
+        HttpResponse.json([
+          { ...adminField('field-flag', 'flag', 'Org Flag'), fieldType: 'boolean' },
+        ]),
+      ),
+      // This journey has never mapped it.
+      http.get('/api/v1/journeys/:id/fields', () => HttpResponse.json([])),
+    );
+
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    // Waits out the statuses fetch (this journey's default-on-create status)
+    // so the click doesn't land before it resolves and get blocked asking
+    // for an explicit status instead.
+    await screen.findByRole('option', { name: 'New Lead' });
+    expect(screen.queryByLabelText('Org Flag')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty('fieldValues.field-flag');
   });
 });

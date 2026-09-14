@@ -18,12 +18,18 @@ export interface FixtureState {
   assignments: AssignmentSnapshot[];
   grants: DirectGrantSnapshot[];
   /**
-   * Phase 19. Deliberately empty by default: a Status with no row here is
-   * unrestricted, so every existing test that never touches this axis stays
-   * correct without adding rows for it — that emptiness *is* the fixture for
-   * "unconfigured", not an omission to fill in.
+   * Phase 20. Deliberately empty by default: a Status with no active
+   * routing rule is unrestricted, so every existing test that never touches
+   * this axis stays correct without adding rows for it — that emptiness
+   * *is* the fixture for "unrouted", not an omission to fill in.
    */
-  statusVisibility: Array<{ statusId: string; roleId: string; organizationId: string }>;
+  activeRoutingRuleStatusIds: Array<{ statusId: string; organizationId: string }>;
+  /**
+   * ADR-0021. Deliberately empty by default, for the same reason: no Role
+   * bypasses Status Visibility unless a test explicitly grants it, so every
+   * existing test that never touches this axis stays correct unmodified.
+   */
+  statusVisibilityBypassRoleIds: string[];
 }
 
 export const orgA = 'org-synthetic-a';
@@ -34,9 +40,13 @@ export const actionEdit = 'action.synthetic.edit';
 export const journeyA = 'journey-synthetic-a';
 export const leadA = 'lead-synthetic-a';
 export const assignmentPrimary = 'assignment.synthetic.primary';
-/** A Status with no `status_visibility` rows configured — unrestricted. */
+/** A Status with no active routing rule — unrestricted. */
 export const statusOpen = 'status-synthetic-open';
-/** A Status restricted, by fixture rows, to `role-self` only. */
+/**
+ * A Status with an active routing rule — restricted to `leadA`'s current
+ * assignee (`user-child`) and that assignee's reporting-hierarchy ancestors
+ * (`user-root`).
+ */
 export const statusRestricted = 'status-synthetic-restricted';
 
 export function createFixtureState(): FixtureState {
@@ -49,6 +59,18 @@ export function createFixtureState(): FixtureState {
       user('user-other-dept', 'role-self', 'dept-beta', null),
       user('user-no-dept', 'role-department', null, null),
       { ...user('user-inactive', 'role-self', 'dept-alpha', 'user-root'), active: false },
+      // Still an active employee reporting, transitively, to `user-root` —
+      // through `user-inactive`, a deactivated manager. Proves the
+      // hierarchy walk (`expandTeamUserIds`) continues past a deactivated
+      // link rather than treating it as a dead end: `user-root` must still
+      // reach this user, even though `user-inactive` itself is excluded.
+      user('user-orphaned-report', 'role-self', 'dept-alpha', 'user-inactive'),
+      // No department, no manager, no report of anyone in `leadA`'s
+      // hierarchy — an admin/oversight account deliberately outside the
+      // sales reporting line, `role-organization`'s ORGANIZATION scope
+      // notwithstanding. For ADR-0021's bypass tests: this scope alone
+      // already reaches `leadA` everywhere *except* `statusRestricted`.
+      user('user-oversight', 'role-organization', null, null),
       { ...user('user-other-org', 'role-other-org', 'dept-alpha', null), organizationId: orgB },
     ],
     roles: [
@@ -91,9 +113,12 @@ export function createFixtureState(): FixtureState {
       { ...assignment('lead-synthetic-other-org', 'user-other-org'), organizationId: orgB },
     ],
     grants: [],
-    // `statusOpen` intentionally has no rows — see `FixtureState.statusVisibility`.
-    // `statusRestricted` is allow-listed to `role-self` only.
-    statusVisibility: [{ statusId: statusRestricted, roleId: 'role-self', organizationId: orgA }],
+    // `statusOpen` intentionally has no rule — see
+    // `FixtureState.activeRoutingRuleStatusIds`. `statusRestricted` has an
+    // active rule, so visibility narrows to `leadA`'s assignee and their
+    // manager chain.
+    activeRoutingRuleStatusIds: [{ statusId: statusRestricted, organizationId: orgA }],
+    statusVisibilityBypassRoleIds: [],
   };
 }
 
@@ -133,11 +158,15 @@ export function createRepository(state = createFixtureState()): PermissionReposi
         ),
       );
     },
-    hasStatusVisibility(input) {
-      const rows = state.statusVisibility.filter(
-        (row) => row.organizationId === input.organizationId && row.statusId === input.statusId,
+    hasActiveRoutingRule(input) {
+      return Promise.resolve(
+        state.activeRoutingRuleStatusIds.some(
+          (row) => row.organizationId === input.organizationId && row.statusId === input.statusId,
+        ),
       );
-      return Promise.resolve(rows.length === 0 || rows.some((row) => row.roleId === input.roleId));
+    },
+    hasStatusVisibilityBypass(input) {
+      return Promise.resolve(state.statusVisibilityBypassRoleIds.includes(input.roleId));
     },
     listAccessibleJourneyIds(input) {
       return Promise.resolve(

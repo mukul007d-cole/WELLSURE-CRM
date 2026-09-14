@@ -58,7 +58,6 @@ model Organization {
   teams               Team[]
   routingRules        StatusRoutingRule[]
   routingPermissions  StatusRoutingPermission[]
-  statusVisibility    StatusVisibility[]
   settings            Setting[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -127,15 +126,14 @@ model Role {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy        User?                     @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
-  updatedBy        User?                     @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
-  users            User[]
-  permissions      RolePermission[]
-  journeyAccess    RoleJourneyAccess[]
-  fieldVisibility  FieldVisibility[]
-  routingGrants    StatusRoutingPermission[]
-  statusVisibility StatusVisibility[]
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy       User?                     @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy       User?                     @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  users           User[]
+  permissions     RolePermission[]
+  journeyAccess   RoleJourneyAccess[]
+  fieldVisibility FieldVisibility[]
+  routingGrants   StatusRoutingPermission[]
 
   @@id([organizationId, id])
   @@unique([organizationId, key])
@@ -404,7 +402,6 @@ model Status {
   /// by a one-to-one relation that would need a second redundant index.
   routingRules       StatusRoutingRule[]
   routingPermissions StatusRoutingPermission[]
-  visibilityRoles    StatusVisibility[]
 
   @@id([organizationId, id])
   @@unique([organizationId, journeyId, key])
@@ -1112,33 +1109,9 @@ model StatusRoutingPermission {
   @@map("status_routing_permissions")
 }
 
-/// Phase 19 — which Roles may see a lead while it sits in this Status.
-///
-/// Allow-list, but scoped per Status rather than absence-always-denies: a
-/// Status with zero rows here is unrestricted (ordinary DataScope/Journey
-/// rules apply unchanged), matching `status_routing_rules`' own "no rule
-/// means unrouted" default rather than `field_visibility`'s "no row means
-/// hidden" — every Status already exists in every organization today, so
-/// "absence denies" would deny every lead, in every Status, everywhere, the
-/// moment this table exists. A Status gains a restriction only once an admin
-/// adds a row to it. See docs/planning/phase-19-status-scoped-role-visibility.md.
-///
-/// Editing these rows is gated on `roles_permissions:edit`, never on
-/// `journeys_statuses:*`, matching `field_visibility` and
-/// `status_routing_permissions`'s identical self-escalation rule.
-model StatusVisibility {
-  id             String   @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  statusId       String   @map("status_id") @db.Uuid
-  roleId         String   @map("role_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  status       Status       @relation(fields: [organizationId, statusId], references: [organizationId, id], onDelete: Restrict)
-  role         Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
-
-  @@id([organizationId, id])
-  @@unique([organizationId, statusId, roleId])
-  @@index([organizationId, roleId])
-  @@map("status_visibility")
-}
+// StatusVisibility (Phase 19, Role-based allow-list) retired in Phase 20:
+// visibility of a lead in a routed Status is now computed from the routing
+// assignment itself (the assignee, plus the assignee's reporting-hierarchy
+// ancestors) rather than a separately configured table. See
+// docs/planning/phase-20-reconcile-status-routing-and-visibility.md and
+// docs/architecture/decisions/0019-status-visibility-default-state.md.

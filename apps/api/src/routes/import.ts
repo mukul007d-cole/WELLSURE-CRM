@@ -212,11 +212,17 @@ export async function runImport(input: {
           journeyIds: [],
           includeDirectGrantsForUserId: input.auth.user.id,
           directGrantAction: 'view',
-          // Never a real Role match for a Phase 19 status_visibility row —
+          // Never a real match for Status Visibility's hierarchy check —
           // deliberately, since this whole predicate already denies every
-          // record (`allowedUserIds: []`); a real roleId here would matter
-          // only if some other clause in the predicate were less strict.
-          roleId: view.roleId ?? '',
+          // record (`allowedUserIds: []`); a real hierarchy set here would
+          // matter only if some other clause in the predicate were less
+          // strict.
+          hierarchyUserIds: [],
+          // Never bypasses, for the same reason: this predicate exists to
+          // deny every record when the importer has no `leads:view` scope
+          // at all, and ADR-0021's backstop is a Role-level grant this
+          // fallback has no Role behind to check.
+          bypassesStatusVisibility: false,
         },
         ...(input.expectedContentHash === undefined
           ? {}

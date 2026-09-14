@@ -347,10 +347,16 @@ export function permissionRepository(
     async hasJourneyAccess(input: { roleId: string; organizationId: string; journeyId: string }) {
       return journeyAccess && input.journeyId === journeyId;
     },
-    async hasStatusVisibility() {
-      // These fixtures never write a `status_visibility` row, so every
-      // Status is unrestricted, per the default this feature ships with.
-      return true;
+    async hasActiveRoutingRule() {
+      // These fixtures never write an active routing rule, so every Status
+      // is unrestricted, per the default this feature ships with.
+      return false;
+    },
+    async hasStatusVisibilityBypass() {
+      // ADR-0021's backstop is a deliberate, separately-granted permission —
+      // `allowed` (whether this fixture answers every *other* pair) has
+      // nothing to do with it, so this is always false regardless.
+      return false;
     },
     async listAccessibleJourneyIds() {
       return journeyAccess ? [journeyId] : [];

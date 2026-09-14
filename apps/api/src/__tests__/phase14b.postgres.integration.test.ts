@@ -376,14 +376,12 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
         sortOrder: 10,
       },
     });
-    await prisma.statusRoutingPermission.createMany({
-      data: ['view', 'configure', 'operate'].map((action) => ({
-        organizationId: org,
-        statusId: routedStatus,
-        roleId: adminRole,
-        action,
-      })),
-    });
+    // No `statusRoutingPermission` rows seeded here (Phase 20 follow-up):
+    // `routedStatus` starts with zero per-status grant rows for every test,
+    // which is the real default — the admin role's module-level
+    // `lead_routing:view/configure/operate` (granted once in `beforeAll`)
+    // already reaches an unconfigured Status on its own. A test that needs
+    // this Status narrowed to particular roles adds the rows itself.
   });
 
   afterAll(async () => {
@@ -453,7 +451,16 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     expect(activity?.source).toBe('routing');
   }, 120_000);
 
-  it('leaves a live share intact — the one documented way a previous holder still sees it', async () => {
+  it('a live share no longer keeps a previous holder in once the Status is routed (Phase 20)', async () => {
+    // Before Phase 20, a share (`user_access_grants`) was an independent OR
+    // branch that Status Visibility never touched unless an admin had
+    // explicitly restricted the Status by Role. Phase 20 ties Status
+    // Visibility to routing itself: `routedStatus`, the moment a rule
+    // exists on it (as every test in this file gives it), restricts
+    // visibility to the new assignee and their reporting-hierarchy
+    // ancestors — a share is "explicit visibility to someone else," exactly
+    // what routing now decides instead. `repA` holds a share but is not
+    // `repB`'s manager, so the share no longer bypasses it.
     const lead = await seedLead(repA);
     await putRule({ assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] });
     await prisma.userAccessGrant.create({
@@ -470,11 +477,11 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
 
     // The assignment is gone…
     expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
-    // …but the share is an independent OR branch, so access survives. Asserted
-    // so the boundary is documented by a test rather than found as a surprise.
+    // …and so, now, is the share's own reach — Status Visibility narrows it
+    // below what the grant alone used to permit.
     const after = await repSees(repA, lead.leadId);
-    expect(after.detail.statusCode).toBe(200);
-    expect(after.list.body).toContain(lead.leadId);
+    expect(after.detail.statusCode).toBe(403);
+    expect(after.list.body).not.toContain(lead.leadId);
   }, 120_000);
 
   /* ---------------------------------------------------------------- Firing */
@@ -730,7 +737,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
 
   /* ---------------------------------------------------------- Permissions */
 
-  it('requires configure and operate independently, and both on top of the per-status grant', async () => {
+  it('requires configure and operate independently, and a per-status row only narrows once one exists (Phase 20)', async () => {
     await putRule({ assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] });
     const lead = await seedLead(repA);
 
@@ -748,8 +755,10 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
       expect({ url, status: response.statusCode }).toEqual({ url, status: 403 });
     }
 
-    // Give the rep the module action but no per-status grant: still refused.
-    // This is the layer that makes one journey's statuses separately operable.
+    // Give the rep the module action. `routedStatus` carries zero
+    // `status_routing_permission` rows for `operate` — no admin has opted it
+    // into a per-status allow-list yet — so it has no opinion, and the module
+    // action alone reaches it (`RoutingRuleService.roleHasGrant`).
     await prisma.rolePermission.create({
       data: {
         organizationId: org,
@@ -759,7 +768,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
         scope: 'ORGANIZATION',
       },
     });
-    const withoutGrant = await call(
+    const beforeAnyRow = await call(
       asRep(repA),
       'POST',
       `/api/v1/leads/${lead.leadId}/routing-assign`,
@@ -769,24 +778,46 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
         assignmentTypes: [assignmentType],
       },
     );
-    expect(withoutGrant.statusCode).toBe(403);
+    expect(beforeAnyRow.statusCode).toBe(200);
+    expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
 
-    // Grant it on this status only, and the same call succeeds.
+    // Naming even one role for (routedStatus, operate) opts the Status into a
+    // real allow-list. The rep's role isn't named, so it is refused again —
+    // nothing about its module permission changed, only the Status's now has
+    // an opinion. This is the layer that makes one journey's statuses
+    // separately operable.
+    await prisma.statusRoutingPermission.create({
+      data: { organizationId: org, statusId: routedStatus, roleId: adminRole, action: 'operate' },
+    });
+    const secondLead = await seedLead(repA);
+    const narrowedOut = await call(
+      asRep(repA),
+      'POST',
+      `/api/v1/leads/${secondLead.leadId}/routing-assign`,
+      {
+        processInstanceId: secondLead.processInstanceId,
+        statusId: routedStatus,
+        assignmentTypes: [assignmentType],
+      },
+    );
+    expect(narrowedOut.statusCode).toBe(403);
+
+    // Add the rep's own role to that same allow-list, and it works again.
     await prisma.statusRoutingPermission.create({
       data: { organizationId: org, statusId: routedStatus, roleId: repRole, action: 'operate' },
     });
     const withGrant = await call(
       asRep(repA),
       'POST',
-      `/api/v1/leads/${lead.leadId}/routing-assign`,
+      `/api/v1/leads/${secondLead.leadId}/routing-assign`,
       {
-        processInstanceId: lead.processInstanceId,
+        processInstanceId: secondLead.processInstanceId,
         statusId: routedStatus,
         assignmentTypes: [assignmentType],
       },
     );
     expect(withGrant.statusCode).toBe(200);
-    expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
+    expect(await currentOwner(secondLead.processInstanceId)).toEqual({ userId: repB });
 
     // `operate` is an additional gate, never a replacement: the same rep cannot
     // reach a lead outside their own record scope, even holding it.
@@ -805,10 +836,99 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     expect(await currentOwner(foreignLead.processInstanceId)).toEqual({ userId: repC });
 
     await prisma.statusRoutingPermission.deleteMany({
-      where: { organizationId: org, roleId: repRole },
+      where: { organizationId: org, statusId: routedStatus },
     });
     await prisma.rolePermission.deleteMany({
       where: { organizationId: org, roleId: repRole, module: 'lead_routing' },
+    });
+  }, 120_000);
+
+  /**
+   * Phase 20, Part 1: `lead_routing:configure`/`operate` reachability, proved
+   * through the real, catalog-validated grant path — not a hand-inserted
+   * `rolePermission.create` row, which is exactly the shape of check that let
+   * PR #33's `<module>:deactivate` bug (a permission action the catalog never
+   * defined) survive a green suite. If `lead_routing:configure`/`operate` were
+   * ever mistyped or dropped from `permissionCatalog`, `PUT /roles/:id/permissions`
+   * would 400 on `unknown permission or scope` below, not silently succeed.
+   */
+  it('grants configure/operate through the real Role permissions endpoint, and the granted role reaches the feature', async () => {
+    const grantedRole = randomUUID();
+    const grantedUser = randomUUID();
+    await prisma.role.create({
+      data: {
+        id: grantedRole,
+        organizationId: org,
+        key: 'synthetic_routing_admin',
+        name: 'Synthetic routing admin',
+      },
+    });
+    await prisma.user.create({
+      data: {
+        id: grantedUser,
+        organizationId: org,
+        name: 'Synthetic routing admin user',
+        email: 'routing-admin@example.test',
+        roleId: grantedRole,
+        departmentId: department,
+      },
+    });
+
+    // The catalog lists it — proving it is visible to grant, not just that a
+    // hand-built row happens to satisfy the check below.
+    const catalog = await call(asAdmin(), 'GET', '/api/v1/permissions/catalog');
+    const catalogBody = catalog.body;
+    expect(catalogBody).toContain('"module":"lead_routing"');
+    expect(catalogBody).toContain('"configure"');
+    expect(catalogBody).toContain('"operate"');
+
+    // Granted through `PUT /roles/:id/permissions` — the same admin-validated
+    // write path (`isPermissionPair`) every real Role edit goes through.
+    const grantResponse = await call(asAdmin(), 'PUT', `/api/v1/roles/${grantedRole}/permissions`, {
+      permissions: [
+        { module: 'lead_routing', action: 'view', scope: 'ORGANIZATION' },
+        { module: 'lead_routing', action: 'configure', scope: 'ORGANIZATION' },
+        { module: 'leads', action: 'edit', scope: 'ORGANIZATION' },
+      ],
+    });
+    expect(grantResponse.statusCode).toBe(200);
+
+    // `routedStatus` has no opinion yet (zero `status_routing_permission` rows
+    // for `configure`), so the module action alone would already reach it —
+    // that's the Phase 20 default, proved separately above. Opt this Status
+    // into a real per-status allow-list by naming a *different* role, so the
+    // refusal below is genuinely about the per-Status layer and not vacuous.
+    await prisma.statusRoutingPermission.create({
+      data: { organizationId: org, statusId: routedStatus, roleId: adminRole, action: 'configure' },
+    });
+    const beforePerStatusGrant = await call(
+      { userId: grantedUser, roleId: grantedRole },
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing`,
+      { assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] },
+    );
+    expect(beforePerStatusGrant.statusCode).toBe(403);
+
+    // The per-Status grant, via the real permissions endpoint too.
+    const grantPerStatus = await call(
+      asAdmin(),
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing/permissions`,
+      { permissions: [{ roleId: grantedRole, action: 'configure' }] },
+    );
+    expect(grantPerStatus.statusCode).toBe(200);
+
+    // Now genuinely reachable.
+    const configure = await call(
+      { userId: grantedUser, roleId: grantedRole },
+      'PUT',
+      `/api/v1/statuses/${routedStatus}/routing`,
+      { assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] },
+    );
+    expect(configure.statusCode).toBe(200);
+
+    await prisma.statusRoutingPermission.deleteMany({
+      where: { organizationId: org, roleId: grantedRole },
     });
   }, 120_000);
 
@@ -965,9 +1085,13 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     await moveToStatus(lead, routedStatus);
     expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repA });
 
+    // A made-up statusId carries no per-status grant rows either, so under
+    // Phase 20's default (absence is unrestricted, not denied) admin's module
+    // `view` reaches the per-status gate; it is `RoutingRuleService.get`
+    // itself, finding no such Status, that turns this into 404.
     expect(
       (await call(asAdmin(), 'GET', `/api/v1/statuses/${randomUUID()}/routing`)).statusCode,
-    ).toBe(403);
+    ).toBe(404);
     const foreignPool = await putRule({
       assignmentType,
       algorithm: 'round_robin',

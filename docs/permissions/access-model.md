@@ -21,17 +21,25 @@ ALLOW =
 
 | Module | Actions |
 |---|---|
-| Leads | view, create, edit, comment, delete, export, import, bulk_reassign, bulk_status_change |
+| Leads | view, create, edit, comment, delete, export, import, bypass_status_visibility |
 | Fields | view, create, edit, delete, purge |
 | Journeys & Statuses | view, create, edit, delete, purge |
 | Services | view, create, edit, purge |
 | Users | view, create, edit, deactivate, purge |
 | Roles & Permissions | view, create, edit, purge |
-| Reports | view_standard, view_financial, build_custom (Phase 2) |
 | Attachments | upload, download, delete |
 | Campaigns | view, create, edit, send |
 | Lead Routing | view, configure, operate |
 | Integrations | configure |
+
+`leads:bulk_reassign`/`leads:bulk_status_change` and the entire `reports`
+module (`view_standard`/`view_financial`/`build_custom`, a Phase 2
+placeholder) were grantable here once but honoured by no route — an admin
+could check the box and nothing would happen. Retired outright (ADR-0022)
+rather than left as permissions with no observable effect; a real bulk
+lead-action or reporting feature adds its own catalog entry back when it
+ships, rather than reactivating one that was never actually wired to
+anything.
 
 The immutable runtime source for these identifiers is
 `packages/permission-engine/src/catalog.ts`. **An action absent from that file
@@ -79,11 +87,15 @@ reason: deciding who *may* receive leads at a Status and moving one particular
 lead are different levels of trust. `operate` is an **additional** gate — a
 manual override still passes `leads:edit`, journey access and the operator's own
 record scope. Both are further layered on a per-`(status, role)` row in
-`status_routing_permissions`, exactly as field access is layered on
-`field_visibility`: the module action and the row are both required, so one
-Journey's Statuses can be operated by different groups. Editing those rows is
-gated on `roles_permissions:edit`, never on `lead_routing:configure`. See
-ADR-0015.
+`status_routing_permissions` — but unlike `field_visibility`, that layer
+starts **open**: a `(status, action)` with zero rows is unrestricted, so the
+module action alone reaches every Status until an admin adds at least one
+row for that action, which then narrows it to only the Roles named. This is
+the same default `status_routing_rules` itself uses ("no rule means
+unrouted") and Status Visibility now uses too, not `field_visibility`'s
+"absence hides" — a Status, unlike a brand-new Field, already exists for
+every organization. Editing those rows is gated on `roles_permissions:edit`,
+never on `lead_routing:configure`. See ADR-0015 (amended).
 
 `campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 
@@ -99,15 +111,36 @@ ADR-0015.
   regardless of reporting branch or depth.
 - `ORGANIZATION`: all records in the requester's organization.
 
+**Not every action's scope is enforced (ADR-0022).** A `DataScope` answers
+"whose record is this," which is only a real question for an action the
+server actually checks against a specific existing Lead —
+`leads:view/edit/comment/delete` and `attachments:upload/download/delete`
+(checked against the Lead the attachment belongs to). Every other action
+in the catalog has no such record to ask about: a configuration entity
+(Field, Journey, Status, Service, Role, User, Campaign, a routing rule
+itself) isn't owned by one person the way a Lead is assigned to one,
+`leads:create` has no *existing* record yet to scope against, and
+`leads:export`/`leads:import`/`campaigns:send` each deliberately reuse
+`leads:view`'s own scope instead of consulting their own (ADR-0016). For
+all of these, every one of SELF/TEAM/DEPARTMENT/ORGANIZATION behaves
+identically — picking a narrower one restricts nothing. The Role editor
+reflects this directly: `packages/permission-engine/src/catalog.ts`'s
+`scopedActions` names exactly the actions above, per module, and the UI
+shows a real selector only for those, a plain "Always organization-wide"
+label everywhere else — rather than offering a control that would
+silently do nothing for roughly three-quarters of the catalog.
+
 **C. Journey access** — explicit allow-list per role. A role with no access to a Journey doesn't see it in the UI at all, not greyed out.
 
 **D. Field-level visibility** — layered on top of A–C via an allow-list in `field_visibility`. Each `(field, role)` row grants `VIEW` or `EDIT`; `EDIT` includes viewing. Absence of a row means the field is hidden entirely for that role. Enforced by stripping fields from the API response server-side, never just hiding them client-side — this is what makes sensitive fields actually secure.
 
 The same rows are editable from either direction — one role's access to every field, or one field's access for every role — and both directions are gated on `roles_permissions`, never on `fields`. A Field administrator who cannot edit permissions cannot grant visibility, including to their own role. Both write a full replacement of the axis they address, with the previous and new sets recorded in `system_audit_logs`.
 
-**E. Status Visibility** — an allow-list in `status_visibility`, gating who may see a **whole lead** while it sits in a given Status, on every surface (Seller List, search, Seller 360, activity timeline, direct fetch by id) — not field-level redaction, which stays `field_visibility`'s job. Unlike C and D, absence is not denial: a Status with zero `status_visibility` rows imposes no restriction at all (every Status already exists in every organization today, so "absence denies" would deny every lead, everywhere, the instant the table exists — see `status_routing_rules`' identical "no rule means unrouted" default). A Status gains a restriction only once an admin adds at least one row to it; clearing every row returns it to unrestricted, never to denied-for-everyone, and there is deliberately no way to configure "visible to no Role."
+**E. Status Visibility** — gates who may see a **whole lead** while it sits in a given Status, on every surface (Seller List, search, Seller 360, activity timeline, direct fetch by id) — not field-level redaction, which stays `field_visibility`'s job. Originally (Phase 19) an admin-configured, Role-level allow-list in a `status_visibility` table. **Phase 20 united it with Status Routing**: there is no more allow-list. A Status with no *active routing rule* imposes no restriction at all — the identical "absence means unrestricted" default Phase 19 established, now keyed off routing rather than a table of rows (matching `status_routing_rules`' own "no rule means unrouted"). Once a Status has an active routing rule, visibility narrows to the lead's **current assignee** plus everyone above the assignee in the reporting hierarchy (`users.manager_id`, any depth — the identical relation `TEAM` scope resolves, ADR-0006, asked from the manager's side). No Role, and no separately-configured grant, plays any part in the check — routing decides visibility, including for a Role with `ORGANIZATION` scope and including a live Lead Share.
 
-Status Visibility is `AND`ed onto A–D, never `OR`ed: a Role in a Status's allow-list gains no new reach, and still only sees a lead that is *also* within its ordinary data scope and Journey access. A lead with process instances in more than one Journey stays visible through any one process instance an ordinarily-authorized Role can also see there — the same per-process union Journey access already uses — so one denied Status never hides a lead a Role can otherwise reach through a different, unrestricted or allowed process instance. Evaluated fresh against the process instance's *current* Status on every request: moving a lead's Status changes who can see it immediately, with no transition-specific invalidation. Editable rows are gated on `roles_permissions`, never on `journeys_statuses`, matching D's identical self-escalation rule. Not to be confused with `status_routing_permissions` (who may configure or operate a Status's assignment routing) — both are per-`(status, role)` allow-lists, but they gate different questions.
+**`leads:bypass_status_visibility` (ADR-0021)** is the one deliberate exception: a Role holding it skips this narrowing entirely, on every request, as if no Status it ever asks about had an active routing rule. It grants no reach beyond that Role's own configured data scope — a `SELF`-scoped Role with the bypass still can't see someone else's lead — it only turns off the *extra* restriction routing would otherwise layer on top. A narrow backstop for specifically-designated admin/oversight Roles, not a general escape hatch: granted to the bootstrap administrator by default (unlike `purge`, so the very first admin is never the one who gets locked out), but not implied by `ORGANIZATION` scope, `roles_permissions:edit`, or anything else — an admin grants it to any other Role deliberately.
+
+Status Visibility is `AND`ed onto A–D, never `OR`ed: being the assignee or their manager gains no new reach beyond what the caller's own data scope already grants for the module action in question, and still only shows a lead that is *also* within ordinary data scope and Journey access — narrower, in fact, than Phase 19 ever was, since it can now cut below `DEPARTMENT`/`ORGANIZATION` scope for any Role once routing is active, not just a Role an admin explicitly excluded. A lead with process instances in more than one Journey stays visible through any one process instance an ordinarily-authorized caller can also see there — the same per-process union Journey access already uses — so one denied Status never hides a lead a caller can otherwise reach through a different, unrestricted process instance, or one where they are the assignee or a manager. Evaluated fresh against the process instance's *current* Status and its *current* assignment on every request: moving a lead's Status, or reassigning it (automatically or via a manual routing override), changes who can see it immediately, with no transition-specific invalidation. A share (`user_access_grants`) or any other route to a lead is equally subject to this check — nothing bypasses it, including a deliberately-granted share, once the Status the lead sits in has active routing. There is no more configuration surface for this axis at all; `status_routing_permissions` (who may configure or operate a Status's assignment routing) is unchanged and still separate — that gates the routing feature itself, not lead visibility.
 
 ## Additional mechanism: direct record grants
 

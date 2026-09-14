@@ -1,0 +1,13 @@
+-- Phase 20 — retire Status Visibility's Role-based allow-list.
+--
+-- Visibility of a lead sitting in a routed Status is no longer a
+-- separately admin-configured, per-(status, role) table. It is now
+-- computed at read time from the routing assignment itself: the lead's
+-- current assignee, plus everyone above the assignee in the reporting
+-- hierarchy (`users.manager_id`, any depth) — routing decides visibility.
+-- See docs/planning/phase-20-reconcile-status-routing-and-visibility.md.
+--
+-- Any rows in this table are lost — there is no equivalent state to carry
+-- them into: an explicit (status, role) pairing has no hierarchy-shaped
+-- analogue. Named explicitly rather than left as a silent side effect.
+DROP TABLE status_visibility;

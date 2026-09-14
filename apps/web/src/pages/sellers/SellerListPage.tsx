@@ -86,20 +86,26 @@ export function SellerListPage() {
     queryFn: () => configApi.statuses(journeyId as string),
     enabled: Boolean(journeyId),
   });
-
-  // All known Field ids, so every row's `fieldValues` comes back populated —
-  // the API only returns a value for a Field id explicitly requested. Kept in
-  // the query key so the list re-fetches once the Field catalogue itself
-  // loads, rather than being stuck with the empty list the very first render
-  // saw.
-  const fieldIds = (fieldsQuery.data ?? []).map((field) => field.id);
+  // The Fields actually mapped to the selected Journey (admin "Journey
+  // fields" screen) — not the organization's whole catalogue. A Field the
+  // Journey never opted into has nothing meaningful to show here either way
+  // (no lead on it could have a value for a Field it was never offered), so
+  // showing it was just a column of dashes.
+  const journeyFieldsQuery = useQuery({
+    queryKey: ['journey-fields', journeyId],
+    queryFn: () => configApi.journeyFields(journeyId as string),
+    enabled: Boolean(journeyId),
+  });
   // "All journeys" is the summary view (Journey/Status/Owner, same as
-  // always); picking one journey is the "data heavy" view — every
-  // organization Field gets its own column, since nothing in this app scopes
-  // Fields to a journey below the admin configuration screens (the seller
-  // create/edit form shows the same "Additional fields" for every journey
-  // too).
-  const journeyFields = journeyId ? (fieldsQuery.data ?? []) : [];
+  // always); picking one journey is the "data heavy" view — every Field the
+  // journey has mapped gets its own column.
+  const journeyFields = journeyId ? (journeyFieldsQuery.data ?? []) : [];
+  // Only the ids the table is about to render columns for, so every row's
+  // `fieldValues` comes back populated for exactly those — the API only
+  // returns a value for a Field id explicitly requested. Kept in the query
+  // key so the list re-fetches once they load, rather than being stuck with
+  // the empty list the very first render saw.
+  const fieldIds = journeyFields.map((field) => field.id);
 
   const sellersQuery = useQuery({
     queryKey: [

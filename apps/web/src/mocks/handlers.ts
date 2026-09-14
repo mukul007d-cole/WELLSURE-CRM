@@ -10,13 +10,7 @@ import {
   USERS,
   type MockLead,
 } from './fixtures';
-import type {
-  RoutingGrant,
-  RoutingRule,
-  StatusVisibilityGrant,
-  Team,
-  TeamMember,
-} from '../types/domain';
+import type { RoutingGrant, RoutingRule, Team, TeamMember } from '../types/domain';
 import { isLeadInScope, stripFieldValues } from './permissions';
 import {
   clearCookieHeader,
@@ -328,16 +322,28 @@ const MOCK_TEAMS: Team[] = [
 const MOCK_ROUTING_RULES: RoutingRule[] = [];
 const MOCK_ROUTING_GRANTS: Array<RoutingGrant & { statusId: string }> = [];
 /**
- * Status Visibility (Phase 19): starts empty, matching the real default —
- * every Status is unrestricted until an admin adds a row.
+ * Every Field mapped to every Journey, optional, from the start — a
+ * FieldJourneySetting the app has established admin screens for creating
+ * (`JourneyDetailPage`'s "Attach Field"). An organization that never used
+ * them would see every Additional field rejected on save with "field is not
+ * assigned to this journey" for every Journey, which is a real state the
+ * admin flow tests exercise deliberately (they override this handler to
+ * start from nothing) — but not the default this file's other fixtures
+ * describe, where Journeys are otherwise fully set up.
  */
-const MOCK_STATUS_VISIBILITY: Array<StatusVisibilityGrant & { statusId: string }> = [];
 const MOCK_JOURNEY_FIELDS: Array<{
   fieldId: string;
   journeyId: string;
   requirement: string;
   requiredFromStatusId: string | null;
-}> = [];
+}> = JOURNEYS.flatMap((journey) =>
+  MOCK_ADMIN_FIELDS.map((field) => ({
+    fieldId: field.id,
+    journeyId: journey.id,
+    requirement: 'optional',
+    requiredFromStatusId: null,
+  })),
+);
 
 const INITIAL_ADMIN_STATE = structuredClone({
   journeys: JOURNEYS,
@@ -347,10 +353,10 @@ const INITIAL_ADMIN_STATE = structuredClone({
   teams: MOCK_TEAMS,
   routingRules: MOCK_ROUTING_RULES,
   routingGrants: MOCK_ROUTING_GRANTS,
-  statusVisibility: MOCK_STATUS_VISIBILITY,
   fields: MOCK_ADMIN_FIELDS,
   users: MOCK_ADMIN_USERS,
   notificationRules: MOCK_NOTIFICATION_RULES,
+  journeyFields: MOCK_JOURNEY_FIELDS,
 });
 
 /**
@@ -379,11 +385,10 @@ export function resetAdminMockState() {
   MOCK_TEAMS.splice(0, MOCK_TEAMS.length, ...initial.teams);
   MOCK_ROUTING_RULES.splice(0, MOCK_ROUTING_RULES.length, ...initial.routingRules);
   MOCK_ROUTING_GRANTS.splice(0, MOCK_ROUTING_GRANTS.length, ...initial.routingGrants);
-  MOCK_STATUS_VISIBILITY.splice(0, MOCK_STATUS_VISIBILITY.length, ...initial.statusVisibility);
   MOCK_ADMIN_FIELDS.splice(0, MOCK_ADMIN_FIELDS.length, ...initial.fields);
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_NOTIFICATION_RULES.splice(0, MOCK_NOTIFICATION_RULES.length, ...initial.notificationRules);
-  MOCK_JOURNEY_FIELDS.splice(0);
+  MOCK_JOURNEY_FIELDS.splice(0, MOCK_JOURNEY_FIELDS.length, ...initial.journeyFields);
   MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 
@@ -791,6 +796,14 @@ export const handlers = [
     HttpResponse.json({
       modules: [
         {
+          module: 'leads',
+          label: 'Leads',
+          actions: ['view', 'create', 'edit', 'export'],
+          // `view`/`edit` are scoped (checked against a real lead); `create`
+          // and `export` are not — ADR-0022.
+          scopedActions: ['view', 'edit'],
+        },
+        {
           module: 'users',
           label: 'Users & Departments',
           actions: ['view', 'create', 'edit', 'deactivate'],
@@ -1070,25 +1083,9 @@ export const handlers = [
     );
     return HttpResponse.json(body.permissions);
   }),
-  http.get(`${API_BASE}/statuses/:statusId/visibility`, ({ params }) =>
-    HttpResponse.json(
-      MOCK_STATUS_VISIBILITY.filter((row) => row.statusId === params.statusId)
-        .map(({ roleId }) => ({ roleId }))
-        .sort((a, b) => a.roleId.localeCompare(b.roleId)),
-    ),
-  ),
-  http.put(`${API_BASE}/statuses/:statusId/visibility`, async ({ params, request }) => {
-    const body = (await request.json()) as { roleIds: string[] };
-    const kept = MOCK_STATUS_VISIBILITY.filter((row) => row.statusId !== params.statusId);
-    const roleIds = [...new Set(body.roleIds)].sort();
-    MOCK_STATUS_VISIBILITY.splice(
-      0,
-      MOCK_STATUS_VISIBILITY.length,
-      ...kept,
-      ...roleIds.map((roleId) => ({ roleId, statusId: String(params.statusId) })),
-    );
-    return HttpResponse.json(roleIds.map((roleId) => ({ roleId })));
-  }),
+  // Status Visibility (Phase 19) endpoints retired in Phase 20 — a routed
+  // Status's visibility is derived from its routing assignment, with no
+  // separate endpoint to mock.
   http.put(`${API_BASE}/teams/:id/members`, async ({ params, request }) => {
     const body = (await request.json()) as {
       members: Array<{ userId: string; isLeader: boolean }>;

@@ -1,6 +1,10 @@
 import type { FalconPrismaClient } from '@falcon/database';
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
 
+import { CampaignTriggerService } from '../campaigns/trigger-service.js';
+import { TriggerDispatcher, triggerTypeFor } from '../leads/trigger-dispatch.js';
+import { NotificationService } from '../notifications/service.js';
+import { StatusRoutingService } from '../routing/service.js';
 import type { ConfigurationAuditInput, LeadActivityInput } from './audit.js';
 import type { ConfigRow, ConfigurationRepository, ProcessInstanceStatusMove } from './service.js';
 
@@ -369,8 +373,39 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
   async writeSystemAudit(input: ConfigurationAuditInput): Promise<void> {
     await this.prisma.systemAuditLog.create({ data: input as never });
   }
+  /**
+   * A Status's replacement-reassignment writes exactly this activity, per
+   * lead, for every process instance it moves. Before this, it was a bare
+   * insert — the *only* `status_change` writer in the app that never
+   * dispatched, so a Status consolidated into one with an active routing
+   * rule, a triggered campaign, or a "status changed" notification rule
+   * fired none of them for the leads bulk-migrated into it. Every other
+   * writer already goes through `TriggerDispatcher` (`trigger-dispatch.ts`);
+   * this one predates that mechanism (Phase 4, before Notifications,
+   * Campaigns, or Routing existed) and was never updated when they arrived.
+   * Fixed to match: the same `[notifications, campaignTriggers, routing]`
+   * fan-out `PrismaLeadRepository` runs for an ordinary status change,
+   * bound to this repository's own transaction client so a bulk migration
+   * commits or rolls back as one unit exactly as it already did.
+   */
   async writeActivity(input: LeadActivityInput): Promise<void> {
-    await this.prisma.activityLog.create({ data: input as never });
+    const activity = await this.prisma.activityLog.create({ data: input as never });
+    const triggerType = triggerTypeFor(input.actionType);
+    if (triggerType === undefined) return;
+    await new TriggerDispatcher([
+      new NotificationService(this.prisma),
+      new CampaignTriggerService(this.prisma),
+      buildConfigurationRoutingService(this.prisma),
+    ]).dispatch({
+      organizationId: input.organizationId,
+      activityLogId: activity.id,
+      leadId: input.leadId,
+      processInstanceId: input.processInstanceId,
+      actorUserId: input.actorUserId,
+      triggerType,
+      oldValue: input.oldValue,
+      newValue: input.newValue,
+    });
   }
 
   private async update(
@@ -403,4 +438,20 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
 interface ModelOps {
   findFirst(args: object): Promise<unknown>;
   update(args: object): Promise<ConfigRow>;
+}
+
+/**
+ * Routing, bound to this repository's transaction client, with the inner
+ * dispatcher it needs for the `reassignment` activity it writes itself when
+ * it actually assigns someone — identical in shape to
+ * `prisma-lead-repository.ts`'s own `buildRoutingService`, and for the same
+ * reason: that inner dispatcher deliberately excludes routing, so the hop
+ * terminates structurally rather than by relying on routing's own
+ * `lead_reassigned` no-op.
+ */
+function buildConfigurationRoutingService(prisma: FalconPrismaClient): StatusRoutingService {
+  return new StatusRoutingService(
+    prisma,
+    new TriggerDispatcher([new NotificationService(prisma), new CampaignTriggerService(prisma)]),
+  );
 }

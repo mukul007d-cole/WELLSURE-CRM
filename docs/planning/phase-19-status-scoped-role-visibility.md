@@ -933,3 +933,14 @@ behavior change, which is the property decision 1 was chosen for.
   plan's other tests exercise `user_access_grants` at all — every one of
   them reaches its lead through ordinary `DataScope` and an assignment —
   which is exactly why the gap shipped past them undetected.
+- **Superseded by Phase 20.** The Role-based allow-list this phase built
+  (`status_visibility`, its admin panel, and the interaction it required
+  with Status Routing's own candidate filter) was replaced: Status
+  Visibility is now derived from the routing assignment itself — the
+  lead's current assignee and their reporting-hierarchy ancestors — with
+  no separate configuration at all. The two default-state decisions this
+  phase made (an unconfigured/unrouted Status is unrestricted; evaluate
+  the interaction with routing at evaluation time, not configuration time)
+  still hold, just re-keyed onto the new mechanism. See
+  `docs/planning/phase-20-reconcile-status-routing-and-visibility.md` and
+  `docs/architecture/decisions/0020-status-routing-visibility-reconciliation.md`.

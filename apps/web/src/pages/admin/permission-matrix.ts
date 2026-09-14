@@ -5,6 +5,54 @@ export interface CatalogModule {
   module: string;
   label: string;
   actions: string[];
+  /** ADR-0022 — see `isActionScoped`. */
+  scopedActions?: string[];
+}
+
+/**
+ * ADR-0022 — does this action's granted DataScope actually decide
+ * anything, or would every one of SELF/TEAM/DEPARTMENT/ORGANIZATION behave
+ * identically? Most of the catalog is the latter: an action the server
+ * never checks against a specific record (every configuration/admin
+ * module, a Campaign, routing configuration itself) has no "whose record
+ * is this" question for a scope to answer. Backs the Role editor's
+ * decision to show a real selector only where the choice is real.
+ */
+export function isActionScoped(module: CatalogModule, action: string): boolean {
+  return (module.scopedActions ?? []).includes(action);
+}
+
+/**
+ * The scope a Role's permission rows for an unscoped action should be
+ * saved with — not because it's enforced (it isn't, by definition), but so
+ * the stored data reads as the true, unconditional-everywhere behavior
+ * rather than an arbitrary leftover from whichever value happened to be
+ * selected (or defaulted) before this action was recognized as unscoped.
+ */
+const unscopedStorageValue: DataScope = 'ORGANIZATION';
+
+/**
+ * Normalizes every unscoped action's stored scope to
+ * `unscopedStorageValue`, leaving genuinely scoped actions untouched.
+ *
+ * Applied once, at the boundary where the editor's local state becomes the
+ * request body (`RoleDetailPage`'s save mutation) — not on every keystroke
+ * or bulk edit — so a role loaded with a stale scope from before this
+ * distinction existed (or from "Set all scopes…", which does not know
+ * which rows are unscoped) is corrected the next time it's saved, without
+ * needing a separate data migration to rewrite rows that were never
+ * behaviorally wrong, only cosmetically misleading.
+ */
+export function normalizeScopes(
+  rows: PermissionRows,
+  modules: readonly CatalogModule[],
+): PermissionRows {
+  const byModule = new Map(modules.map((module) => [module.module, module]));
+  return rows.map((row) => {
+    const module = byModule.get(row.module);
+    if (module === undefined || isActionScoped(module, row.action)) return row;
+    return { ...row, scope: unscopedStorageValue };
+  });
 }
 
 /**
@@ -89,6 +137,9 @@ export function scopeLabel(scope: DataScope): string {
 
 export const scopeHint =
   'Team (reporting line) means everyone reporting to this user through the org chart, at any depth. It is not related to Teams configured under Departments.';
+
+export const unscopedHint =
+  "This action isn't checked against any specific record, so a narrower scope would have no effect — granting it reaches the whole organization.";
 
 export type ModuleSelection = 'none' | 'some' | 'all';
 

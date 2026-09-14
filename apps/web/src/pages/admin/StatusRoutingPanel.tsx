@@ -128,13 +128,27 @@ export function StatusRoutingPanel({
           Leads entering this Status keep whatever assignment they already have.
         </p>
       ) : (
-        <div className="text-sm">
-          <span className="font-medium">{rule.assignmentType}</span>
-          <span className="ml-2 text-ink-soft">
-            {rule.algorithm === 'round_robin' ? 'round robin' : 'least loaded'} ·{' '}
-            {rule.poolType === 'team' ? 'Team pool' : `${rule.members.length} named users`}
-          </span>
-        </div>
+        <>
+          <div className="text-sm">
+            <span className="font-medium">{rule.assignmentType}</span>
+            <span className="ml-2 text-ink-soft">
+              {rule.algorithm === 'round_robin' ? 'round robin' : 'least loaded'} ·{' '}
+              {rule.poolType === 'team' ? 'Team pool' : `${rule.members.length} named users`}
+            </span>
+          </div>
+          {/*
+           * Routing decides visibility (Phase 20): once a Status has an
+           * active rule, a lead sitting in it is visible only to its
+           * current assignee and that assignee's reporting-hierarchy
+           * ancestors — no separate configuration, and nothing else grants
+           * anyone else access. Said here, at the point an admin turns
+           * routing on, since it's a bigger visibility change than the rule
+           * itself might suggest.
+           */}
+          <p className="text-xs text-ink-soft">
+            Visible only to the assigned user and their manager chain.
+          </p>
+        </>
       )}
 
       {(state.data?.candidates ?? []).length > 0 ? (

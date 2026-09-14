@@ -1,0 +1,7 @@
+-- Rollback for 00000000000004_retire_unimplemented_permissions.
+--
+-- There is no schema to restore — this migration only deleted rows, and
+-- which Roles held these pairs before is not recoverable here. Restore
+-- them from a database backup taken before the forward migration, if
+-- ever needed, or re-grant them by hand once the catalog defines the
+-- pairs again.

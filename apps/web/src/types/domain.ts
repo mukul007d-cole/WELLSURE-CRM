@@ -473,27 +473,38 @@ export interface RoutingState {
     isNext: boolean;
   }>;
 }
-/**
- * Status Visibility (Phase 19): one Role allowed to see a lead while it sits
- * in this Status. A distinct axis from `RoutingGrant` despite the identical
- * per-(status, role) allow-list shape — this gates who may see a lead at
- * all, not who may configure or operate its routing.
- *
- * Membership only, no action dimension: a Role either can see a lead here or
- * the row is absent. Zero rows for a Status means unrestricted, not "visible
- * to no one" — see `StatusVisibilityPanel`.
- */
-export interface StatusVisibilityGrant {
-  roleId: string;
-}
+// StatusVisibilityGrant (Phase 19, Role-based allow-list) retired in Phase
+// 20: visibility of a lead in a routed Status is now derived from its
+// routing assignment (the assignee and their reporting-hierarchy
+// ancestors), shown as a note in `StatusRoutingPanel` rather than a
+// separate configurable grant.
 export interface PermissionCatalog {
-  modules: Array<{ module: string; label: string; actions: string[] }>;
+  modules: Array<{
+    module: string;
+    label: string;
+    actions: string[];
+    /**
+     * ADR-0022 — which of this module's actions actually consult the
+     * granted DataScope. Absent (or an action missing from it) means that
+     * action's scope is never checked — it behaves identically no matter
+     * which of SELF/TEAM/DEPARTMENT/ORGANIZATION is stored, so the Role
+     * editor shows a fixed "Always organization-wide" label instead of a
+     * selector that would otherwise silently do nothing.
+     */
+    scopedActions?: string[];
+  }>;
   supportedScopes: DataScope[];
 }
 
 /** Flat, machine-readable API error-code body. */
 export interface ApiErrorBody {
   error: string;
+  /**
+   * A short, human-safe explanation some routes send alongside `error`
+   * (e.g. lead mutations: "required field is missing", "field is locked
+   * and cannot be changed") — not every error code carries one.
+   */
+  reason?: string | undefined;
   details?: Record<string, unknown> | undefined;
 }
 

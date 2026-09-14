@@ -258,6 +258,123 @@ describe.runIf(shouldRunAdminPostgres)('configuration deactivation permissions',
       expect(row.newValue).toMatchObject({ active: false });
     }
   }, 120_000);
+
+  /**
+   * The regression this case exists for: a Status's replacement-reassignment
+   * wrote a `status_change` activity directly, bypassing `TriggerDispatcher`
+   * entirely — the only `status_change` writer in the app that did. A lead
+   * bulk-migrated into a Status with an active routing rule kept whatever
+   * assignment it already had instead of being routed, silently, with
+   * nothing in the response or the UI saying so.
+   *
+   * Proven the most unambiguous way available: give the *replacement* Status
+   * an active routing rule naming a pool member who is not the lead's
+   * current owner, deactivate the *old* Status with that replacement, and
+   * check who holds the assignment afterward. Before the fix this is the
+   * original owner, unchanged; after it, it is the routing rule's own pick —
+   * which only happens if the reassignment genuinely dispatched
+   * `status_changed` to `StatusRoutingService`, not merely moved the process
+   * instance's `current_status_id` column.
+   */
+  it('fires Routing (and writes the resulting reassignment activity) when a Status deactivation reassigns leads into a routed replacement', async () => {
+    const journey = await created('/api/v1/journeys', {
+      key: 'synthetic_reassign_journey',
+      name: 'Synthetic Reassign Journey',
+    });
+    const oldStatus = await created(`/api/v1/journeys/${journey.id}/statuses`, {
+      key: 'synthetic_old_status',
+      name: 'Old Status',
+      outcomeType: 'open',
+      behaviorType: 'default',
+      sortOrder: 0,
+    });
+    const replacementStatus = await created(`/api/v1/journeys/${journey.id}/statuses`, {
+      key: 'synthetic_replacement_status',
+      name: 'Replacement Status',
+      outcomeType: 'open',
+      behaviorType: 'default',
+      sortOrder: 1,
+    });
+
+    const assignmentType = 'synthetic_reassignment_owner';
+    const originalOwner = randomUUID();
+    const poolMember = randomUUID();
+    await prisma.user.createMany({
+      data: [
+        { id: originalOwner, name: 'Synthetic original owner' },
+        { id: poolMember, name: 'Synthetic pool member' },
+      ].map((row) => ({
+        id: row.id,
+        organizationId: org,
+        name: row.name,
+        email: `${row.id}@example.test`,
+        roleId: adminRole,
+      })),
+    });
+
+    // Active only on the *replacement* Status — the old one carries no rule
+    // at all, so any assignment change can only have come from routing on
+    // the status the lead is moved *into*.
+    const rule = await prisma.statusRoutingRule.create({
+      data: {
+        organizationId: org,
+        journeyId: journey.id,
+        statusId: replacementStatus.id,
+        assignmentType,
+        algorithm: 'round_robin',
+        poolType: 'users',
+        createdById: adminUser,
+        updatedById: adminUser,
+      },
+    });
+    await prisma.statusRoutingRuleMember.create({
+      data: { organizationId: org, ruleId: rule.id, userId: poolMember },
+    });
+
+    const leadResponse = await call(asAdmin(), 'POST', '/api/v1/leads', {
+      journeyId: journey.id,
+      name: 'Synthetic reassignment lead',
+      statusId: oldStatus.id,
+      assignments: [{ assignmentType, userId: originalOwner }],
+    });
+    expect(leadResponse.statusCode).toBe(201);
+    const { process } = JSON.parse(leadResponse.body) as { process: { id: string } };
+
+    const response = await call(asAdmin(), 'DELETE', `/api/v1/statuses/${oldStatus.id}`, {
+      journeyId: journey.id,
+      replacementStatusId: replacementStatus.id,
+    });
+    expect(response.statusCode).toBe(200);
+
+    const moved = await prisma.processInstance.findFirst({
+      where: { organizationId: org, id: process.id },
+      select: { currentStatusId: true },
+    });
+    expect(moved?.currentStatusId).toBe(replacementStatus.id);
+
+    const currentAssignment = await prisma.assignment.findFirst({
+      where: {
+        organizationId: org,
+        processInstanceId: process.id,
+        assignmentType,
+        isCurrent: true,
+      },
+    });
+    // Routing fired: the pool member holds it now, not the original owner.
+    expect(currentAssignment?.userId).toBe(poolMember);
+
+    const reassignment = await prisma.activityLog.findFirst({
+      where: {
+        organizationId: org,
+        processInstanceId: process.id,
+        actionType: 'reassignment',
+        source: 'routing',
+      },
+    });
+    expect(reassignment).not.toBeNull();
+    expect(reassignment?.oldValue).toMatchObject({ userId: originalOwner });
+    expect(reassignment?.newValue).toMatchObject({ userId: poolMember });
+  }, 120_000);
 });
 
 describe.skipIf(shouldRunAdminPostgres)('configuration deactivation permissions', () => {

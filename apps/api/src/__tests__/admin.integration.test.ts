@@ -53,6 +53,14 @@ describe.runIf(shouldRunAdminPostgres)('administration against real Postgres', (
       bootstrapGrantedPairs().length,
     );
     expect(await db.prisma.rolePermission.count({ where: { action: 'purge' } })).toBe(0);
+    // ADR-0021: unlike `purge`, granted — the first administrator must never
+    // start out locked out of a lead by Status Visibility with no way back
+    // in, which withholding this one by default would risk.
+    expect(
+      await db.prisma.rolePermission.count({
+        where: { module: 'leads', action: 'bypass_status_visibility' },
+      }),
+    ).toBe(1);
     expect(bootstrapGrantedPairs().length).toBeLessThan(
       permissionCatalog.reduce((total, entry) => total + entry.actions.length, 0),
     );

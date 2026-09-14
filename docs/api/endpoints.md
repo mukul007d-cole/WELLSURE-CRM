@@ -61,19 +61,20 @@ both, and for why a Team is not the `TEAM` data scope.
 
 ### Journeys, Statuses, Services
 
-Routing rules live under a Status. Every routing route needs both the
-`lead_routing` module action **and** a `status_routing_permissions` row for that
-(status, role, action) — the same layering `field_visibility` uses. Editing those
-grants is gated on `roles_permissions:edit`, never on `lead_routing:configure`.
-See ADR-0015.
+Routing rules live under a Status. Every routing route needs the `lead_routing`
+module action; `status_routing_permissions` layers a per-(status, role, action)
+allow-list on top, but — unlike `field_visibility` — that layer starts open: a
+(status, action) with zero rows is unrestricted, and only gains a real
+allow-list once an admin adds at least one row for it. Editing those grants is
+gated on `roles_permissions:edit`, never on `lead_routing:configure`. See
+ADR-0015 (amended).
 
-Status Visibility (`/statuses/:id/visibility`) is a separate axis from routing
-permissions, easily confused for it since both are per-`(status, role)`
-allow-lists edited under `roles_permissions`: routing permissions gate who may
-*configure or operate* a Status's assignment routing, while Status Visibility
-gates who may *see a lead at all* while it sits in that Status. A Status with
-zero `status_visibility` rows is unrestricted — see `docs/permissions/access-model.md`'s
-item E for the full default-state rule.
+Status Visibility no longer has its own routes (Phase 20 retired
+`/statuses/:id/visibility`): who may see a lead while it sits in a Status is
+now derived from the routing assignment itself — the current assignee plus
+their reporting-hierarchy ancestors — the moment a Status has an active
+routing rule, with nothing left to configure separately. See
+`docs/permissions/access-model.md`'s item E for the full rule.
 ```
 GET    /journeys
 POST   /journeys
@@ -90,8 +91,8 @@ GET    /statuses/:id/routing/permissions  -- roles_permissions:view
 PUT    /statuses/:id/routing/permissions  -- roles_permissions:edit; whole-set replace
 POST   /leads/:id/routing-assign          -- lead_routing:operate AND the caller's normal leads:edit + record scope
 
-GET    /statuses/:id/visibility           -- roles_permissions:view
-PUT    /statuses/:id/visibility           -- roles_permissions:edit; whole-set replace, body { roleIds: [...] }
+# GET/PUT /statuses/:id/visibility retired (Phase 20) — Status Visibility is
+# now derived from the routing assignment above, not a separate endpoint.
 
 GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses
@@ -199,8 +200,11 @@ POST   /leads/:id/shares
 PUT    /leads/:id/shares/:shareId
 DELETE /leads/:id/shares/:shareId
 POST   /leads/:id/deactivate
-POST   /leads/bulk/reassign            -- NOT IMPLEMENTED (leads:bulk_reassign is grantable but honoured by no route)
-POST   /leads/bulk/status              -- NOT IMPLEMENTED (leads:bulk_status_change is grantable but honoured by no route)
+-- Bulk reassign/status-change routes and the leads:bulk_reassign/
+-- leads:bulk_status_change permissions that would have gated them were
+-- never built past the placeholder stage; the permissions were retired
+-- (ADR-0022) rather than left grantable with no route to honour them. A
+-- real bulk feature designs its own permission and route together.
 GET    /leads/export                   -- CSV of the Seller List under the same query parameters as GET /leads; leads:export
 POST   /leads/import/analyze           -- multipart; returns the file's columns, samples and fill rates. leads:import
 POST   /leads/import/preview           -- multipart; runs the real creation path and rolls it back. Writes nothing. leads:import + leads:create
@@ -315,7 +319,7 @@ POST   /invoices/:id/payments
 
 ### Reports
 
-**Not implemented.** No route file exists. The dashboard derives its counts from scoped `GET /leads` totals instead. Paths below are the V1 target, not the current surface.
+**Not implemented.** No route file exists. The dashboard derives its counts from scoped `GET /leads` totals instead. Paths below are the V1 target, not the current surface. The `reports` permission module (`view_standard`/`view_financial`/`build_custom`) that would have gated these was retired from the catalog (ADR-0022) rather than left grantable for a feature that doesn't exist — it returns when these routes do.
 
 ```
 GET    /reports/dashboard
