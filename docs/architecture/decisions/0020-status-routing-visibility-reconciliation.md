@@ -159,6 +159,20 @@ addressed by a narrow, explicit, opt-in backstop
 (`leads:bypass_status_visibility`) rather than by weakening this ADR's own
 default — see ADR-0021.
 
+**Follow-up (ADR-0023): the direct-grant consequence above is reversed, not
+merely refined.** "A deliberately-granted share no longer bypasses Status
+Visibility once its Status has active routing" was reasoned through here
+as an accepted consequence, not a bug — but it silently defeated a share
+in exactly the moment a share is most likely to matter (the lead it names
+was just reassigned away by the routing this ADR added). Phase 21 restores
+a direct grant's original, pre-existing purpose — a deliberate,
+individual-record exception to the general rules, exactly as it already is
+against ordinary `DataScope` — by making it an exception to Status
+Visibility's routing-based narrowing too. The Role-scope narrowing this ADR
+describes for `DataScope` itself (`ORGANIZATION` narrowed to the assignee's
+hierarchy) is untouched; only the direct-grant sentence is superseded. See
+ADR-0023.
+
 **`createLead`'s and `moveLeadJourney`'s "landing Status" question, which
 ADR-0019/Phase 19 flagged as a judgment call, is resolved by construction
 rather than decided.** Neither has an existing assignment to check

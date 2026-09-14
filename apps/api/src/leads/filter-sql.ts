@@ -114,21 +114,21 @@ function whereClause(input: SellerListQueryInput, params: Params): string {
  * Data scope. Filters are ANDed alongside this, never in place of it, so no
  * filter can reach a record the caller's scope excludes.
  *
- * All three branches must independently enforce Status Visibility (Phase
- * 19, reworked Phase 20): `resolveAuthorization`'s `statusVisible` check
- * (packages/permission-engine/src/decision.ts) is unconditional — it denies
- * regardless of *how* the caller reached the record, assignment or direct
- * grant alike — so a lead shared directly with someone this check excludes
- * must not stay visible here just because it arrived through
- * `user_access_grants` rather than `processExists()`'s assignment path.
- * Only `processExists()` itself
- * (the `mine` branch, and the first half of the `all` OR) got this in the
- * original pass; `shared_with_me` and the `all` branch's own shared-record
- * arm are two independent lookups against `process_instances` and each needs
- * its own copy of the same check — see
- * `phase19.postgres.integration.test.ts`'s direct-grant test, which pins
- * this the same way the multi-Journey test pins `processExists()`'s
- * placement.
+ * Status Visibility (Phase 19, reworked Phase 20, corrected Phase 21) is
+ * enforced by `processExists()` alone — the `mine` branch, and the first
+ * half of the `all` OR, both of which stand for an *ordinary*, scope-derived
+ * route to the record. A direct grant (`user_access_grants`) — the
+ * `shared_with_me` branch, and the `all` branch's own shared-record arm — is
+ * a deliberate, individual-record exception to the general rules, exactly
+ * like it already is against ordinary DataScope (`grantExists()` already
+ * widens access a Role's own scope alone would refuse). Phase 20 had made
+ * Status Visibility unconditional over these two branches as well, which
+ * silently defeated a share the moment routing reassigned the lead away
+ * from its holder — precisely the scenario Phase 21's reassignment-grace
+ * grants need to survive. See
+ * `phase14b.postgres.integration.test.ts`'s grant/routing-interaction tests,
+ * which pin this the same way the multi-Journey test pins `processExists()`'s
+ * own placement of the check it still runs.
  */
 function accessClause(input: SellerListQueryInput, params: Params): string {
   /*
@@ -138,18 +138,18 @@ function accessClause(input: SellerListQueryInput, params: Params): string {
    * type of parameter $2".
    */
   if (input.accessMode === 'shared_with_me')
-    return `(${grantExists(input, params, 'view')} AND ${anyProcessStatusVisible(input, params)})`;
+    return `(${grantExists(input, params, 'view')} AND ${anyProcessActive()})`;
   const process = processExists(input, params);
   if (input.accessMode === 'mine') return process;
-  // Default 'all': assigned records, or records shared directly with the caller
-  // that still sit inside a Journey the caller can see *and* a Status
-  // Visibility doesn't exclude them from — the same (journey, status) pair
-  // `processExists()` requires of an assigned record, checked against the
-  // same process instance rather than two independent ones.
+  // Default 'all': assigned records (Status Visibility applies, inside
+  // `processExists()`), or records shared directly with the caller that
+  // still sit inside a Journey the caller can see — a direct grant is its
+  // own exception to Status Visibility, so this arm deliberately does not
+  // repeat that check.
   const shared = grantExists(input, params, input.predicate.directGrantAction);
   const journeyIds = params.bind([...input.predicate.journeyIds], '::uuid[]');
-  const sharedProcessVisible = `EXISTS (SELECT 1 FROM process_instances pj WHERE pj.organization_id = l.organization_id AND pj.lead_id = l.id AND pj.active AND pj.journey_id = ANY(${journeyIds}) AND ${statusVisibilityClause(input, params, 'pj')})`;
-  return `(${process} OR (${shared} AND ${sharedProcessVisible}))`;
+  const sharedProcessExists = `EXISTS (SELECT 1 FROM process_instances pj WHERE pj.organization_id = l.organization_id AND pj.lead_id = l.id AND pj.active AND pj.journey_id = ANY(${journeyIds}))`;
+  return `(${process} OR (${shared} AND ${sharedProcessExists}))`;
 }
 
 function processExists(input: SellerListQueryInput, params: Params): string {
@@ -216,12 +216,14 @@ function processExists(input: SellerListQueryInput, params: Params): string {
  * (`expandScopeUserIds(..., 'TEAM')`, computed once per request regardless
  * of the caller's own granted scope for this action).
  *
- * `alias` names the `process_instances` row this is correlated against —
- * `p` inside `processExists()`, `pj` inside the `all` branch's shared-record
- * arm, `pv` inside `anyProcessStatusVisible()` — so the same clause can be
- * spliced into any of the three independent `process_instances` lookups
- * `accessClause()` runs, always asking the question of the one row its
- * enclosing `EXISTS` is testing rather than of `leads` as a whole.
+ * Phase 21: this is now spliced into exactly one place —
+ * `processExists()`'s `p` alias, the ordinary scope-derived route to a
+ * record. It used to also gate the two direct-grant branches
+ * (`pj`/`pv`); that made a share stop working the moment routing
+ * reassigned a lead away from its holder, defeating the one purpose a
+ * direct grant exists for. A grant is its own exception to this check now
+ * (`grantExists()`'s callers in `accessClause()`), the same way it already
+ * is to ordinary DataScope.
  *
  * ADR-0021: `input.predicate.bypassesStatusVisibility` short-circuits this
  * to an unconditional `TRUE` — the SQL mirror of `decision.ts` returning
@@ -244,22 +246,19 @@ function statusVisibilityClause(
 }
 
 /**
- * Status Visibility (Phase 19, reworked Phase 20) for the `shared_with_me`
- * view: does this lead have at least one active process instance whose
- * current Status does not exclude the caller? `resolveAuthorization`'s
- * `statusVisible` check is unconditional
- * (packages/permission-engine/src/decision.ts) — it does not care whether
- * the caller reached the record through ordinary scope or a direct grant —
- * so a share must not bypass it.
+ * For the `shared_with_me` view: does this lead have at least one active
+ * process instance at all? A direct grant is its own exception to Status
+ * Visibility (Phase 21, see `statusVisibilityClause`'s doc comment above),
+ * so this no longer asks anything about the caller or the Status — only
+ * that there is a live process instance for the grant to attach to.
  *
  * Deliberately no Journey filter here: `shared_with_me` already runs with no
- * Journey restriction today (`grantExists()` alone, unchanged by this fix),
- * and closing that separately is a distinct question from the one this
- * function answers — see the plan doc's correction.
+ * Journey restriction today (`grantExists()` alone), and closing that
+ * separately is a distinct question from the one this function answers —
+ * see the phase 9 plan doc's correction.
  */
-function anyProcessStatusVisible(input: SellerListQueryInput, params: Params): string {
-  const alias = 'pv';
-  return `EXISTS (SELECT 1 FROM process_instances ${alias} WHERE ${alias}.organization_id = l.organization_id AND ${alias}.lead_id = l.id AND ${alias}.active AND ${statusVisibilityClause(input, params, alias)})`;
+function anyProcessActive(): string {
+  return `EXISTS (SELECT 1 FROM process_instances pv WHERE pv.organization_id = l.organization_id AND pv.lead_id = l.id AND pv.active)`;
 }
 
 function grantExists(input: SellerListQueryInput, params: Params, action: string): string {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveAuthorization } from '../decision.js';
 import {
+  actionView,
   assignmentPrimary,
   createFixtureState,
   createRepository,
@@ -122,6 +123,72 @@ describe('status visibility', () => {
     expect(decision.recordPredicate?.hierarchyUserIds).toEqual(
       expect.arrayContaining(['user-root', 'user-child', 'user-grandchild']),
     );
+  });
+
+  it('a direct grant lets a caller through despite an active routing rule that would otherwise deny them (Phase 21)', async () => {
+    // `user-sibling` is unrelated to `leadA`'s assignee (`user-child`) and its
+    // manager chain — the `allowed: false` row above, with no grant. A
+    // matching, unexpired `view` grant is a deliberate, individual-record
+    // exception to the general rules (exactly like it already is against
+    // ordinary DataScope, proven by the RECORD_SCOPE_DENIED-override tests in
+    // `direct-grants.test.ts`) — it must survive Status Visibility's
+    // routing-based narrowing too, not just widen access when routing isn't
+    // in play.
+    const state = createFixtureState();
+    state.grants.push({
+      id: 'grant-sibling-leadA',
+      leadId: leadA,
+      userId: 'user-sibling',
+      organizationId: orgA,
+      expiresAt: null,
+      revokedAt: null,
+      actions: [actionView],
+    });
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-sibling',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
+      },
+    });
+    expect(decision.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
+    expect(decision.deniedReasons).not.toContain('RECORD_SCOPE_DENIED');
+    expect(decision.allowed).toBe(true);
+    expect(decision.directGrantId).toBe('grant-sibling-leadA');
+  });
+
+  it('an expired grant does not bypass Status Visibility — still denied, same as no grant at all', async () => {
+    const state = createFixtureState();
+    state.grants.push({
+      id: 'grant-sibling-expired',
+      leadId: leadA,
+      userId: 'user-sibling',
+      organizationId: orgA,
+      expiresAt: new Date('2000-01-01'),
+      revokedAt: null,
+      actions: [actionView],
+    });
+    const decision = await resolveAuthorization({
+      repository: createRepository(state),
+      request: {
+        organizationId: orgA,
+        userId: 'user-sibling',
+        module: moduleLeads,
+        action: 'action.synthetic.view',
+        journeyId: journeyA,
+        statusId: statusRestricted,
+        leadId: leadA,
+        assignmentTypes: [assignmentPrimary],
+      },
+    });
+    expect(decision.deniedReasons).toContain('STATUS_VISIBILITY_DENIED');
+    expect(decision.allowed).toBe(false);
   });
 
   it('deactivating the routing rule returns the Status to unrestricted, not to denied-for-everyone', async () => {

@@ -158,3 +158,16 @@ is wanted later, and an organization that prefers Option 1's discipline
 can simply never grant this permission to any Role beyond the bootstrap
 default, and remove it from that Role once its own hierarchy is
 established.
+
+**Follow-up (ADR-0023): the "no first-class way" claim above is now
+false.** This ADR's Consequences section named handing a specific lead to
+a specific non-ancestor colleague, in a routed Status, as a gap only a
+Role-wide bypass grant could paper over. Phase 21 gives Lead Sharing back
+its own reach into a routed Status — a direct grant is now its own
+individual-record exception to Status Visibility, the same way it already
+is to ordinary `DataScope` — so sharing the one lead is the first-class
+way to do exactly that, without touching this Role's bypass at all. This
+ADR's own subject (`leads:bypass_status_visibility` itself — a Role-level,
+every-lead exemption for admin/oversight Roles) is untouched and still the
+right tool for that broader case; only the claim that nothing narrower
+existed is superseded. See ADR-0023.

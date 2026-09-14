@@ -631,14 +631,15 @@ export class PrismaLeadRepository
  * rule names *this* current Status); one with an active rule narrows
  * visibility to the lead's current assignee and that assignee's
  * reporting-hierarchy ancestors (`some: { isCurrent: true, userId: { in:
- * hierarchyUserIds } }`) — no Role plays any part in this check. Shared by
- * every `processInstances` filter below that stands in for `processExists()`
- * or one of its two direct-grant counterparts — `resolveAuthorization`'s
- * `statusVisible` check (packages/permission-engine/src/decision.ts) is
- * unconditional, so neither an assignment nor a direct grant may bypass it.
- * All three call sites must stay in lockstep with `filter-sql.ts`'s SQL form
- * or `phase13b.postgres.integration.test.ts`'s scope-parity test catches the
- * drift.
+ * hierarchyUserIds } }`) — no Role plays any part in this check.
+ *
+ * Phase 21: used only by `processWhere()`, the ordinary scope-derived route
+ * to a record (`filter-sql.ts`'s `processExists()`/`p` alias). A direct
+ * grant is its own individual-record exception to this check, exactly like
+ * it already is to ordinary DataScope — see `sellerWhere`'s two grant
+ * branches below, which no longer call this. Must stay in lockstep with
+ * `filter-sql.ts`'s SQL form or `phase13b.postgres.integration.test.ts`'s
+ * scope-parity test catches the drift.
  *
  * ADR-0021: `bypassesStatusVisibility` short-circuits to `[{}]` — an empty
  * Prisma condition inside an `OR` array matches every row, the Prisma
@@ -706,20 +707,10 @@ export function sellerWhere(
               },
             },
             // No Journey filter here, matching this view's existing scope —
-            // see `filter-sql.ts`'s `anyProcessStatusVisible`. Status
-            // Visibility is the axis this adds.
-            processInstances: {
-              some: {
-                organizationId: input.organizationId,
-                active: true,
-                OR: statusVisibleOr({
-                  organizationId: input.organizationId,
-                  assignmentTypes: input.recordPredicate.assignmentTypes,
-                  hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
-                  bypassesStatusVisibility: input.recordPredicate.bypassesStatusVisibility,
-                }),
-              },
-            },
+            // see `filter-sql.ts`'s `anyProcessActive`. A direct grant is
+            // its own exception to Status Visibility (Phase 21), so this
+            // only asks that a live process instance exists at all.
+            processInstances: { some: { organizationId: input.organizationId, active: true } },
           }
         : {
             OR: [
@@ -734,17 +725,13 @@ export function sellerWhere(
                     OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
                   },
                 },
+                // A direct grant is its own exception to Status Visibility
+                // (Phase 21) — only Journey access still applies.
                 processInstances: {
                   some: {
                     organizationId: input.organizationId,
                     active: true,
                     journeyId: { in: [...input.recordPredicate.journeyIds] },
-                    OR: statusVisibleOr({
-                      organizationId: input.organizationId,
-                      assignmentTypes: input.recordPredicate.assignmentTypes,
-                      hierarchyUserIds: input.recordPredicate.hierarchyUserIds,
-                      bypassesStatusVisibility: input.recordPredicate.bypassesStatusVisibility,
-                    }),
                   },
                 },
               },
