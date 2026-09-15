@@ -9,6 +9,7 @@ import type {
 } from './password-reset.js';
 import type { PasswordChangeRepository } from './password-reset.js';
 import type { SessionRecord, SessionRepository } from './session.js';
+import type { PreferencesRepository } from './preferences.js';
 
 interface PrismaAuthClient {
   $transaction<T>(work: (tx: PrismaAuthClient) => Promise<T>): Promise<T>;
@@ -48,6 +49,7 @@ interface UserRow {
   passwordHash: string | null;
   name?: string;
   role?: { name: string };
+  retainViewAfterReassignment?: boolean;
 }
 
 type SessionRow = SessionRecord;
@@ -55,7 +57,12 @@ type PasswordResetTokenRow = PasswordResetTokenRecord;
 interface LoginAttemptRow extends LoginAttemptRecord {
   id: string;
 }
-type PrismaUserSnapshot = UserSnapshot & { name?: string; email: string; roleName?: string };
+type PrismaUserSnapshot = UserSnapshot & {
+  name?: string;
+  email: string;
+  roleName?: string;
+  retainViewAfterReassignment?: boolean;
+};
 
 export class PrismaAuthRepository
   implements
@@ -63,6 +70,7 @@ export class PrismaAuthRepository
     SessionRepository,
     PasswordResetRepository,
     PasswordChangeRepository,
+    PreferencesRepository,
     SecurityAuditWriter
 {
   constructor(private readonly prisma: PrismaAuthClient) {}
@@ -128,6 +136,7 @@ export class PrismaAuthRepository
         active: true,
         departmentId: true,
         managerId: true,
+        retainViewAfterReassignment: true,
       },
     });
     if (row === null) return null;
@@ -141,7 +150,39 @@ export class PrismaAuthRepository
       ...(row.name === undefined ? {} : { name: row.name }),
       email: row.email,
       ...(row.role === undefined ? {} : { roleName: row.role.name }),
+      ...(row.retainViewAfterReassignment === undefined
+        ? {}
+        : { retainViewAfterReassignment: row.retainViewAfterReassignment }),
     };
+  }
+
+  async setRetainViewAfterReassignment(input: {
+    userId: string;
+    organizationId: string;
+    value: boolean;
+    changedAt: Date;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const old = await tx.user.findFirst({
+        where: { organizationId: input.organizationId, id: input.userId },
+        select: { retainViewAfterReassignment: true },
+      });
+      await tx.user.update({
+        where: { organizationId_id: { organizationId: input.organizationId, id: input.userId } },
+        data: { retainViewAfterReassignment: input.value },
+      });
+      await tx.systemAuditLog.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.userId,
+          entityType: 'user',
+          entityId: input.userId,
+          action: 'auth.reassignment_grace_preference_changed',
+          oldValue: { retainViewAfterReassignment: old?.retainViewAfterReassignment ?? false },
+          newValue: { retainViewAfterReassignment: input.value },
+        },
+      });
+    });
   }
 
   async getLoginAttempt(

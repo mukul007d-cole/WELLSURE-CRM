@@ -1,8 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { adminApi, sellersApi } from '../../lib/api-client';
-import type { ShareCapability } from '../../types/domain';
+import {
+  shareDurationsDays,
+  type ShareCapability,
+  type ShareDurationDays,
+} from '../../types/domain';
 import { Button } from '../../components/ui/Button';
+
+/** "Expires in N days", or the date once it's further out than a week. */
+function expiryLabel(expiresAt: string | null): string {
+  if (expiresAt === null) return 'Never expires';
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (days <= 7)
+    return days <= 0 ? 'Expires today' : `Expires in ${days} day${days === 1 ? '' : 's'}`;
+  return `Expires ${new Date(expiresAt).toLocaleDateString()}`;
+}
 
 export function LeadShareDialog({
   leadId,
@@ -18,6 +31,7 @@ export function LeadShareDialog({
   const client = useQueryClient();
   const [userId, setUserId] = useState('');
   const [caps, setCaps] = useState<ShareCapability[]>(['view']);
+  const [durationDays, setDurationDays] = useState<ShareDurationDays | ''>('');
   const shares = useQuery({
     queryKey: ['lead-shares', leadId],
     queryFn: () => sellersApi.shares(leadId, { journeyId, assignmentTypes }),
@@ -29,7 +43,13 @@ export function LeadShareDialog({
   const refresh = () => client.invalidateQueries({ queryKey: ['lead-shares', leadId] });
   const create = useMutation({
     mutationFn: () =>
-      sellersApi.share(leadId, { journeyId, assignmentTypes, userId, capabilities: caps }),
+      sellersApi.share(leadId, {
+        journeyId,
+        assignmentTypes,
+        userId,
+        capabilities: caps,
+        durationDays: durationDays as ShareDurationDays,
+      }),
     onSuccess: refresh,
   });
   const toggle = (cap: ShareCapability) =>
@@ -91,9 +111,24 @@ export function LeadShareDialog({
             </label>
           ))}
         </fieldset>
+        <label className="mt-4 block text-sm font-medium">
+          Expires after
+          <select
+            className="mt-1 w-full rounded-control border border-line p-2"
+            value={durationDays}
+            onChange={(e) => setDurationDays(Number(e.target.value) as ShareDurationDays)}
+          >
+            <option value="">Select a duration</option>
+            {shareDurationsDays.map((days) => (
+              <option key={days} value={days}>
+                {days} days
+              </option>
+            ))}
+          </select>
+        </label>
         <Button
           className="mt-4"
-          disabled={!userId || create.isPending}
+          disabled={!userId || !durationDays || create.isPending}
           onClick={() => create.mutate()}
         >
           Share
@@ -109,6 +144,7 @@ export function LeadShareDialog({
                     .map((c) => (c === 'comment' ? 'Add notes' : c[0]!.toUpperCase() + c.slice(1)))
                     .join(' · ')}
                 </p>
+                <p className="text-xs text-ink-soft">{expiryLabel(share.expiresAt)}</p>
               </div>
               <div className="flex gap-2">
                 <Button

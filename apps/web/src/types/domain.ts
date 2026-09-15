@@ -215,6 +215,9 @@ export interface AttachmentRecord {
 }
 
 export type ShareCapability = 'view' | 'edit' | 'comment';
+/** A fixed set, required on every share — no "permanent" option (Phase 21). */
+export const shareDurationsDays = [7, 30, 60] as const;
+export type ShareDurationDays = (typeof shareDurationsDays)[number];
 export interface LeadShare {
   id: string;
   userId: string;
@@ -222,6 +225,7 @@ export interface LeadShare {
   grantedByUserId: string;
   capabilities: ShareCapability[];
   createdAt: string;
+  expiresAt: string | null;
 }
 export interface NotificationItem {
   id: string;
@@ -322,6 +326,7 @@ export interface SessionUser {
   email: string;
   roleId: string;
   roleName: string;
+  retainViewAfterReassignment: boolean;
 }
 
 export interface CapabilitySet {

@@ -13,6 +13,7 @@ import type {
 } from '../auth/password-reset.js';
 import type { LoginRepository } from '../auth/login.js';
 import type { SessionRepository } from '../auth/session.js';
+import type { PreferencesRepository } from '../auth/preferences.js';
 import type { ConfigurationRepository } from '../configuration/service.js';
 import type { PurgeService } from '../configuration/purge-service.js';
 import type { AdminRepository } from '../admin/repository.js';
@@ -28,7 +29,8 @@ export interface ServerDependencies {
   authRepository: LoginRepository &
     SessionRepository &
     PasswordResetRepository &
-    PasswordChangeRepository;
+    PasswordChangeRepository &
+    PreferencesRepository;
   audit: SecurityAuditWriter;
   emailSender: EmailSender & CampaignEmailSender;
   /**

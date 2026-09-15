@@ -30,6 +30,12 @@ export const permissionCatalog = [
     // instant routing is turned on there, with no way back in. Granted by
     // bootstrap (unlike `purge`): withholding it by default would leave the
     // very first administrator open to exactly that lockout. See ADR-0021.
+    // `retain_view_after_reassignment` (Phase 21 Part 2) is the same shape
+    // as `bypass_status_visibility`: a Role-level boolean with no per-record
+    // meaning, never a scope. It does not itself grant anything — it only
+    // decides whether a user whose Role holds it may see, and use, the
+    // personal Settings toggle that opts them into a 30-day view-only grant
+    // when a lead is reassigned away from them. See ADR-0023.
     actions: [
       'view',
       'create',
@@ -39,6 +45,7 @@ export const permissionCatalog = [
       'export',
       'import',
       'bypass_status_visibility',
+      'retain_view_after_reassignment',
     ],
     // Which of this module's actions actually consult the granted DataScope
     // — see `scoped()`'s doc comment below for what that means and why most

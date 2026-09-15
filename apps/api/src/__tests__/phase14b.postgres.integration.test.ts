@@ -451,16 +451,17 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
     expect(activity?.source).toBe('routing');
   }, 120_000);
 
-  it('a live share no longer keeps a previous holder in once the Status is routed (Phase 20)', async () => {
-    // Before Phase 20, a share (`user_access_grants`) was an independent OR
-    // branch that Status Visibility never touched unless an admin had
-    // explicitly restricted the Status by Role. Phase 20 ties Status
-    // Visibility to routing itself: `routedStatus`, the moment a rule
-    // exists on it (as every test in this file gives it), restricts
-    // visibility to the new assignee and their reporting-hierarchy
-    // ancestors — a share is "explicit visibility to someone else," exactly
-    // what routing now decides instead. `repA` holds a share but is not
-    // `repB`'s manager, so the share no longer bypasses it.
+  it('a live share keeps the previous holder’s view access even once the Status is routed (Phase 21)', async () => {
+    // Phase 20 made Status Visibility's routing-based narrowing
+    // unconditional, so a share (`user_access_grants`) to `repA` — who is
+    // not `repB`'s manager — stopped working the instant routing
+    // reassigned the lead to `repB`. Phase 21 reverses that: a direct grant
+    // is a deliberate, individual-record exception to the general rules —
+    // that is its entire purpose, and it already works that way against
+    // ordinary DataScope — so it must survive Status Visibility's
+    // routing-based narrowing too, not just widen access when routing isn't
+    // in play. This is exactly the scenario a Part 2 reassignment-grace
+    // grant needs to survive.
     const lead = await seedLead(repA);
     await putRule({ assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] });
     await prisma.userAccessGrant.create({
@@ -477,11 +478,64 @@ describe.runIf(shouldRunAdminPostgres)('Phase 14b per-status assignment routing'
 
     // The assignment is gone…
     expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
-    // …and so, now, is the share's own reach — Status Visibility narrows it
-    // below what the grant alone used to permit.
+    // …but the share's own reach is not: the grant is its own exception to
+    // Status Visibility, exactly like it already is to ordinary data scope.
+    const after = await repSees(repA, lead.leadId);
+    expect(after.detail.statusCode).toBe(200);
+    expect(after.list.body).toContain(lead.leadId);
+    // `repSees`'s own `decision` call names no Status (so it can't observe
+    // this axis at all — see the companion test below); this one names the
+    // routed Status directly, against the real Postgres-backed repository,
+    // proving the grant overrides STATUS_VISIBILITY_DENIED specifically,
+    // not merely RECORD_SCOPE_DENIED (which a grant already overrode before
+    // this phase).
+    const withStatus = await resolveAuthorization({
+      repository: new PrismaPermissionRepository(prisma as never),
+      request: {
+        organizationId: org,
+        userId: repA,
+        module: 'leads',
+        action: 'view',
+        journeyId: journey,
+        statusId: routedStatus,
+        leadId: lead.leadId,
+        assignmentTypes: [assignmentType],
+      },
+    });
+    expect(withStatus.allowed).toBe(true);
+    expect(withStatus.deniedReasons).not.toContain('STATUS_VISIBILITY_DENIED');
+    expect(withStatus.directGrantId).not.toBeNull();
+  }, 120_000);
+
+  it('without a share, Status Visibility still denies a non-hierarchy user once the Status is routed', async () => {
+    // The companion to the test above: the fix is that a *grant* overrides
+    // Status Visibility, not that Status Visibility stopped applying.
+    // Identical setup, minus the grant.
+    const lead = await seedLead(repA);
+    await putRule({ assignmentType, algorithm: 'round_robin', poolType: 'users', userIds: [repB] });
+
+    await moveToStatus(lead, routedStatus);
+
+    expect(await currentOwner(lead.processInstanceId)).toEqual({ userId: repB });
     const after = await repSees(repA, lead.leadId);
     expect(after.detail.statusCode).toBe(403);
     expect(after.list.body).not.toContain(lead.leadId);
+    const withStatus = await resolveAuthorization({
+      repository: new PrismaPermissionRepository(prisma as never),
+      request: {
+        organizationId: org,
+        userId: repA,
+        module: 'leads',
+        action: 'view',
+        journeyId: journey,
+        statusId: routedStatus,
+        leadId: lead.leadId,
+        assignmentTypes: [assignmentType],
+      },
+    });
+    expect(withStatus.allowed).toBe(false);
+    expect(withStatus.deniedReasons).toContain('STATUS_VISIBILITY_DENIED');
+    expect(withStatus.directGrantId).toBeNull();
   }, 120_000);
 
   /* ---------------------------------------------------------------- Firing */

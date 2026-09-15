@@ -56,7 +56,10 @@ const MOCK_SHARES: Array<{
   grantedByUserId: string;
   capabilities: string[];
   createdAt: string;
+  expiresAt: string | null;
 }> = [];
+
+const shareDurationsDays = [7, 30, 60];
 
 interface MockActivityEntry {
   id: string;
@@ -535,7 +538,22 @@ export const handlers = [
       email: user.email,
       roleId: user.roleId,
       roleName: user.roleName,
+      retainViewAfterReassignment: user.retainViewAfterReassignment,
     });
+  }),
+  http.patch(`${API_BASE}/auth/preferences`, async ({ request }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    const body = (await request.json()) as { retainViewAfterReassignment: boolean };
+    if (
+      body.retainViewAfterReassignment &&
+      !user.permissions.some(
+        (p) => p.module === 'leads' && p.action === 'retain_view_after_reassignment',
+      )
+    )
+      return HttpResponse.json(errorBody('ineligible'), { status: 400 });
+    user.retainViewAfterReassignment = body.retainViewAfterReassignment;
+    return HttpResponse.json({ retainViewAfterReassignment: user.retainViewAfterReassignment });
   }),
   http.get(`${API_BASE}/auth/capabilities`, () => {
     const user = requireUser();
@@ -1488,7 +1506,13 @@ export const handlers = [
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),
   ),
   http.post(`${API_BASE}/leads/:id/shares`, async ({ request, params }) => {
-    const body = (await request.json()) as { userId: string; capabilities: string[] };
+    const body = (await request.json()) as {
+      userId: string;
+      capabilities: string[];
+      durationDays?: number;
+    };
+    if (!shareDurationsDays.includes(body.durationDays as number))
+      return HttpResponse.json(errorBody('invalid_duration'), { status: 400 });
     const user = USERS.find((u) => u.id === body.userId);
     const share = {
       id: `share-${Date.now()}`,
@@ -1498,6 +1522,7 @@ export const handlers = [
       grantedByUserId: USERS[0]!.id,
       capabilities: body.capabilities,
       createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + body.durationDays! * 24 * 60 * 60 * 1000).toISOString(),
     };
     MOCK_SHARES.push(share);
     return HttpResponse.json(share, { status: 201 });

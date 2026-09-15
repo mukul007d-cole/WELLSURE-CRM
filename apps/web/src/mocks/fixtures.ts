@@ -118,6 +118,8 @@ export interface MockUser {
   /** Field ids this role cannot view/edit — the concrete permission-engine demo. */
   restrictedFieldIds: string[];
   permissions: Array<{ module: string; action: string; scope: 'SELF' | 'ORGANIZATION' }>;
+  /** Phase 21 Part 2 — the personal reassignment-grace opt-in, mutable via PATCH /auth/preferences. */
+  retainViewAfterReassignment: boolean;
 }
 
 export const USERS: MockUser[] = [
@@ -162,10 +164,12 @@ export const USERS: MockUser[] = [
       'leads:edit',
       'leads:export',
       'leads:import',
+      'leads:retain_view_after_reassignment',
     ].map((value) => {
       const [module, action] = value.split(':') as [string, string];
       return { module, action, scope: 'ORGANIZATION' as const };
     }),
+    retainViewAfterReassignment: false,
   },
   {
     id: 'user-rep',
@@ -177,6 +181,7 @@ export const USERS: MockUser[] = [
     dataScope: 'SELF',
     restrictedFieldIds: ['field-deal-value'],
     permissions: [{ module: 'leads', action: 'view', scope: 'SELF' }],
+    retainViewAfterReassignment: false,
   },
 ];
 

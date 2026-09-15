@@ -142,18 +142,26 @@ model Role {
 }
 
 model User {
-  id             String   @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  email          String
-  roleId         String   @map("role_id") @db.Uuid
-  departmentId   String?  @map("department_id") @db.Uuid
-  designationId  String?  @map("designation_id") @db.Uuid
-  managerId      String?  @map("manager_id") @db.Uuid
-  active         Boolean  @default(true)
-  passwordHash   String?  @map("password_hash")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                          String   @default(uuid()) @db.Uuid
+  organizationId              String   @map("organization_id") @db.Uuid
+  name                        String
+  email                       String
+  roleId                      String   @map("role_id") @db.Uuid
+  departmentId                String?  @map("department_id") @db.Uuid
+  designationId               String?  @map("designation_id") @db.Uuid
+  managerId                   String?  @map("manager_id") @db.Uuid
+  active                      Boolean  @default(true)
+  passwordHash                String?  @map("password_hash")
+  /// Phase 21 Part 2 — a personal, self-service opt-in: keep 30 days of
+  /// view-only access to a lead after this user stops being its assignee,
+  /// manually or via Status Routing. Visible/settable only when the user's
+  /// current Role holds `leads:retain_view_after_reassignment`; the flag
+  /// itself is not force-cleared if that eligibility is later revoked — it
+  /// simply goes dormant, re-checked live at every reassignment. See
+  /// ADR-0023.
+  retainViewAfterReassignment Boolean  @default(false) @map("retain_view_after_reassignment")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   role                     Role                      @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)

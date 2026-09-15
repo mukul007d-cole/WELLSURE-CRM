@@ -75,6 +75,7 @@ export async function resolveAuthorization(input: {
   if (permission === null) {
     deniedReasons.push('FEATURE_ACTION_DENIED');
   }
+  const effectiveScope = permission?.scope ?? null;
 
   const accessibleJourneyIds =
     input.request.journeyId === undefined
@@ -139,6 +140,41 @@ export async function resolveAuthorization(input: {
     return hierarchyUserIdsPromise;
   };
 
+  /*
+   * A direct record grant (Phase 9) is a deliberate, individual-record
+   * exception to the general rules — that is its entire purpose, and it
+   * already works that way against ordinary DataScope (below: a matching
+   * grant overrides RECORD_SCOPE_DENIED even when the caller's own scope
+   * would refuse the record). Phase 21 fixes an inconsistency Phase 20
+   * introduced: Status Visibility's routing-based narrowing was checked
+   * unconditionally, so a live share to someone outside the new assignee's
+   * management chain stopped working the instant routing reassigned the
+   * lead — silently defeating the one purpose a direct grant exists for,
+   * in exactly the scenario (a routed reassignment) it matters most. A
+   * grant never bypasses feature/action, Journey, or field checks (only
+   * `effectiveScope !== null` — the Role already holds this action at some
+   * scope — makes it eligible at all), but once eligible it now overrides
+   * Status Visibility exactly as it already overrides ordinary scope.
+   * Loaded lazily and cached so the two call sites (here, and the
+   * RECORD_SCOPE_DENIED block below) share one lookup.
+   */
+  let directGrantPromise: Promise<
+    Awaited<ReturnType<PermissionRepository['getActiveDirectGrant']>>
+  > | null = null;
+  const loadDirectGrant = () => {
+    directGrantPromise ??=
+      effectiveScope === null || input.request.leadId === undefined
+        ? Promise.resolve(null)
+        : input.repository.getActiveDirectGrant({
+            organizationId: input.request.organizationId,
+            userId: user.id,
+            leadId: input.request.leadId,
+            now,
+            action: input.request.action,
+          });
+    return directGrantPromise;
+  };
+
   const statusVisible = await (async () => {
     if (input.request.statusId === undefined) return true;
     if (statusVisibilityBypass) return true;
@@ -148,6 +184,7 @@ export async function resolveAuthorization(input: {
     });
     if (!hasActiveRoutingRule) return true;
     if (input.request.leadId === undefined) return true;
+    if ((await loadDirectGrant()) !== null) return true;
     return assignmentScopeAllowsLead({
       assignments: await loadCurrentAssignments(),
       leadId: input.request.leadId,
@@ -179,7 +216,6 @@ export async function resolveAuthorization(input: {
     deniedReasons.push('FIELD_EDIT_DENIED');
   }
 
-  const effectiveScope = permission?.scope ?? null;
   let recordAllowed = input.request.leadId === undefined;
   let directGrantId: string | null = null;
   let recordPredicate: RecordPredicate | null = null;
@@ -216,13 +252,7 @@ export async function resolveAuthorization(input: {
         journeyIds: predicateJourneyIds,
       });
 
-      const grant = await input.repository.getActiveDirectGrant({
-        organizationId: input.request.organizationId,
-        userId: user.id,
-        leadId: input.request.leadId,
-        now,
-        action: input.request.action,
-      });
+      const grant = await loadDirectGrant();
       if (grant !== null) {
         recordAllowed = true;
         directGrantId = grant.id;
