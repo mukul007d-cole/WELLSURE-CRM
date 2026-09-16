@@ -21,6 +21,7 @@ import { RoleDetailPage } from './pages/admin/RoleDetailPage';
 import { NotificationRulesPage } from './pages/admin/NotificationRulesPage';
 import { OrgChartPage } from './pages/admin/OrgChartPage';
 import { CampaignsPage } from './pages/admin/campaigns/CampaignsPage';
+import { ToolsPage } from './pages/tools/ToolsPage';
 import { ImportPage } from './pages/import/ImportPage';
 import { UserManagementPage } from './pages/admin/UserManagementPage';
 import { BoardPage } from './pages/board/BoardPage';
@@ -46,6 +47,9 @@ export function App() {
                   <Route path="/sellers/new" element={<LeadFormPage />} />
                   <Route path="/sellers/:sellerId" element={<Seller360Page />} />
                   <Route path="/sellers/:sellerId/edit" element={<LeadFormPage />} />
+                  <Route element={<PermissionRoute module="tools" />}>
+                    <Route path="/tools" element={<ToolsPage />} />
+                  </Route>
                   <Route element={<PermissionRoute module="journeys_statuses" />}>
                     <Route path="/admin/journeys" element={<JourneysPage />} />
                     <Route path="/admin/journeys/:journeyId" element={<JourneyDetailPage />} />

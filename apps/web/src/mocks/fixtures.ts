@@ -165,6 +165,10 @@ export const USERS: MockUser[] = [
       'leads:export',
       'leads:import',
       'leads:retain_view_after_reassignment',
+      'tools:view',
+      'tools:create',
+      'tools:edit',
+      'tools:delete',
     ].map((value) => {
       const [module, action] = value.split(':') as [string, string];
       return { module, action, scope: 'ORGANIZATION' as const };
@@ -180,7 +184,10 @@ export const USERS: MockUser[] = [
     roleName: 'Synthetic role B',
     dataScope: 'SELF',
     restrictedFieldIds: ['field-deal-value'],
-    permissions: [{ module: 'leads', action: 'view', scope: 'SELF' }],
+    permissions: [
+      { module: 'leads', action: 'view', scope: 'SELF' },
+      { module: 'tools', action: 'view', scope: 'ORGANIZATION' },
+    ],
     retainViewAfterReassignment: false,
   },
 ];

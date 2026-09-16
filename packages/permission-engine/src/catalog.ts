@@ -117,6 +117,21 @@ export const permissionCatalog = [
     actions: ['view', 'create', 'edit', 'send'],
   },
   {
+    module: 'tools',
+    label: 'Tools',
+    // `view` is the floor gate for the Tools tab itself; which *specific*
+    // Resources a viewer actually sees is additionally narrowed by the
+    // `resource_visibility` allow-list — the same two-layer shape `leads:view`
+    // plus the permission engine's other axes already use. `create`/`edit`/
+    // `delete` are the admin capability and are deliberately independent of
+    // `view` — the same split `campaigns:send`/`campaigns:edit` and
+    // `lead_routing:configure`/`operate` already use. `delete` deactivates,
+    // never hard-deletes, matching every configuration module. Per-resource
+    // role-gating writes are gated on `roles_permissions`, not `tools` — see
+    // docs/planning/phase-22-tools-resource-library.md.
+    actions: ['view', 'create', 'edit', 'delete'],
+  },
+  {
     module: 'lead_routing',
     label: 'Lead Routing',
     // `configure` decides who *may* receive leads at a Status; `operate` moves

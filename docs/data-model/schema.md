@@ -207,6 +207,30 @@ attachments
   id, organization_id, lead_id, field_id (nullable), s3_key,
   uploaded_by, uploaded_at, active, version
 
+resources                        -- Tools resource library (Phase 22)
+  id, organization_id, name, description (nullable), category (nullable),
+  type (link | file), url (nullable), s3_key (nullable), file_name (nullable),
+  mime_type (nullable), size_bytes (nullable), instructions (JSONB, nullable),
+  sort_order, active, version,
+  created_by, updated_by, created_at, updated_at
+  -- One row per Resource, not one per file version: s3_key/file_name/
+  --   mime_type/size_bytes are overwritten in place on a file replace,
+  --   matching attachments.version's own accepted, never-completed
+  --   versioning story (ADR-0012) rather than building it here.
+  -- Reuses the same S3-compatible storage port attachments uses (same
+  --   S3_* config, same optional-when-unconfigured behaviour) — a `link`
+  --   Resource needs no storage at all.
+  -- instructions is a StructuredDocument (@falcon/validation's document.ts,
+  --   the same safe-document model campaigns.body_document uses).
+
+resource_visibility               -- reverse allow-list; no row = hidden
+  id, organization_id, resource_id, role_id, created_at
+  UNIQUE (organization_id, resource_id, role_id)
+  -- Membership only, no access_level — unlike field_visibility, there is no
+  --   view/download distinction for a Resource. Absence means hidden,
+  --   matching field_visibility's default, not the superseded
+  --   status_visibility one — see docs/permissions/access-model.md item F.
+
 import_jobs
   id, organization_id, source, file_key, status, mapping_json, file_name,
   row_count, created_count, skipped_count, rejected_count,

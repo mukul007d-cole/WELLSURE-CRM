@@ -39,6 +39,7 @@ import type {
   ImportAnalysis,
   ImportMapping,
   ImportRunResult,
+  Resource,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -74,9 +75,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
  * on any body — and for a FormData body the browser must set the header itself,
  * since only it knows the multipart boundary.
  */
-async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+async function requestMultipart<T>(
+  path: string,
+  form: FormData,
+  method: 'POST' | 'PUT' = 'POST',
+): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
+    method,
     credentials: 'include',
     body: form,
   });
@@ -453,6 +458,65 @@ const leadContextQuery = (context: LeadContext) =>
     journeyId: context.journeyId,
     assignmentTypes: context.assignmentTypes.join(','),
   });
+
+/**
+ * Tools resource library (Phase 22). Create/edit always go through
+ * `FormData`, even for a `link` Resource with no file — a metadata-only edit
+ * of an existing `file` Resource sends fields with no file part, and one
+ * request shape covers both rather than branching on type client-side.
+ */
+function resourceForm(input: {
+  name: string;
+  description: string | null;
+  category: string | null;
+  type: 'link' | 'file';
+  url: string | null;
+  instructions: Resource['instructions'];
+  file?: File;
+}): FormData {
+  const form = new FormData();
+  form.append('name', input.name);
+  if (input.description !== null) form.append('description', input.description);
+  if (input.category !== null) form.append('category', input.category);
+  form.append('type', input.type);
+  if (input.type === 'link' && input.url !== null) form.append('url', input.url);
+  if (input.instructions !== null) form.append('instructions', JSON.stringify(input.instructions));
+  // File last: the server reads the preceding fields from what busboy has
+  // already parsed by the time the file part arrives — same ordering
+  // `attachmentsApi.upload` relies on.
+  if (input.file) form.append('file', input.file);
+  return form;
+}
+
+export const toolsApi = {
+  list: (
+    input: {
+      admin?: boolean | undefined;
+      active?: boolean | undefined;
+      page?: number | undefined;
+      pageSize?: number | undefined;
+    } = {},
+  ) =>
+    request<Page<Resource>>(
+      `/tools${toQuery({
+        admin: input.admin ? 'true' : undefined,
+        active: input.active === undefined ? undefined : String(input.active),
+        page: input.page,
+        pageSize: input.pageSize ?? ADMIN_PAGE_SIZE,
+      })}`,
+    ),
+  get: (id: string, admin = false) =>
+    request<Resource>(`/tools/${id}${toQuery({ admin: admin ? 'true' : undefined })}`),
+  download: (id: string) => requestBlob(`/tools/${id}/download`),
+  create: (input: Parameters<typeof resourceForm>[0]) =>
+    requestMultipart<Resource>('/tools', resourceForm(input)),
+  update: (id: string, input: Parameters<typeof resourceForm>[0]) =>
+    requestMultipart<Resource>(`/tools/${id}`, resourceForm(input), 'PUT'),
+  deactivate: (id: string) => request<Resource>(`/tools/${id}/deactivate`, json('POST', {})),
+  visibility: (id: string) => request<{ roleIds: string[] }>(`/tools/${id}/visibility`),
+  saveVisibility: (id: string, roleIds: string[]) =>
+    request<{ roleIds: string[] }>(`/tools/${id}/visibility`, json('PUT', { roleIds })),
+};
 
 export const notificationsApi = {
   list: (page = 1) =>

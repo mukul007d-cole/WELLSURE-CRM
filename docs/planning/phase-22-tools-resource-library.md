@@ -912,3 +912,69 @@ proposed here.
    itself is only ever deactivated, never hard-deleted.
 
 **Nothing in this phase is implemented. Awaiting approval before any code is written.**
+
+---
+
+## Amendments found during implementation
+
+Approved in full; implemented as planned with the following findings, per
+every prior phase's practice of recording what implementation surfaced
+rather than silently absorbing it.
+
+- **Phase 16's own purge-coverage test caught a real omission.**
+  `resource_visibility.role_id` is a foreign key onto `roles`, a purgeable
+  entity (ADR-0017), and `phase16.postgres.integration.test.ts`'s
+  "classifies every foreign key that points at a purgeable table" test
+  failed the moment the new table existed, exactly as designed. Fixed by
+  adding `resourceVisibility` as a **cascade** (not a blocker) under the
+  `role` purge descriptor in `apps/api/src/configuration/purge.ts` — a
+  pure grant row naming only the Role's own participation, the identical
+  treatment `fieldVisibility` already gets there. Not called out as a
+  distinct decision in the plan because it is mechanical once the general
+  rule ("per-item grant rows are cascades, entities-with-their-own-identity
+  are blockers") is applied — but flagged here since it is a real file this
+  plan's own "Files to touch" list did not name in advance.
+- **The `?admin=true` list/detail duality (§8) needed one clarification
+  beyond the plan's text**: whether admin mode bypasses `resource_visibility`
+  for **detail** fetches the same way it does for the list. It does —
+  `GET /tools/:id?admin=true`, re-derived server-side exactly like the list,
+  returns the raw row regardless of the caller's own grant, which is what
+  lets an admin open the editor for a Resource their own Role cannot access.
+  Download never gets this bypass, per §Proposed approach 6/ADR-0024
+  Decision 3 — confirmed by a dedicated test.
+- **Local environment note, not a code decision**: this implementation ran
+  without Docker available, so the real-Postgres integration suite ran
+  against a locally-installed PostgreSQL 16 server (`falcon`/`falcon_test`
+  databases) rather than the MinIO-backed dev stack `pnpm infra:up`
+  normally provides. Object storage in the integration test suite is
+  therefore a Map-backed in-memory fake implementing the exact
+  `AttachmentStorage` port (`InMemoryStorage` in
+  `phase22.postgres.integration.test.ts`), not real MinIO/S3 — the database
+  is real, the object store is faithfully faked. This does not weaken the
+  security assertions (which are about authorization, not S3 behavior) and
+  matches this project's own precedent of treating storage as swappable
+  behind the port.
+- **Frontend file-upload testing hit a genuine jsdom/Node interop gap**,
+  recorded here rather than worked around silently: Node's native `fetch`
+  validates a `FormData`-appended `File` against its own WebIDL brand check
+  once a request handler calls `request.formData()`, and a jsdom-
+  constructed `File` fails that check — a limitation this codebase had
+  simply never hit before (no prior test combined a real `File` with a
+  mock handler that parses the body; `importApi`'s own upload paths are
+  only ever exercised against handlers that don't parse it either). The
+  Tools frontend test for file creation therefore verifies the React
+  layer only (the file input gates Save; a successful response is
+  reflected in the UI) without a mock handler that inspects the multipart
+  body — the actual multipart parsing, field ordering, and file-content
+  validation are already covered end-to-end against a real Fastify server
+  in `phase22.postgres.integration.test.ts`.
+- All 12 subsections of §Proposed approach, the full §Files to touch list,
+  and every item in §Test plan were implemented as written. `pnpm lint`,
+  `pnpm typecheck` (both apps and all packages), the full `apps/api` and
+  `apps/web` Vitest suites (including the real-Postgres suite), and
+  `pnpm build` all ran and passed — see the PR for the actual command
+  output, not asserted here in advance.
+- ADR-0024 records the three decisions this document flagged as most
+  consequential (hidden-by-default, storage-port reuse, server-proxied
+  downloads), written after implementation per this project's own stated
+  practice.

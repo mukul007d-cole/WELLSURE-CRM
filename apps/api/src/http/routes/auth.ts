@@ -113,7 +113,7 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
         response: {
           200: {
             type: 'object',
-            required: ['permissions', 'journeyIds', 'fieldVisibility'],
+            required: ['permissions', 'journeyIds', 'fieldVisibility', 'hasAccessibleTools'],
             properties: {
               permissions: { type: 'array', items: { type: 'object', additionalProperties: true } },
               journeyIds: { type: 'array', items: { type: 'string' } },
@@ -121,6 +121,7 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
                 type: 'array',
                 items: { type: 'object', additionalProperties: true },
               },
+              hasAccessibleTools: { type: 'boolean' },
             },
           },
           401: errorSchema,

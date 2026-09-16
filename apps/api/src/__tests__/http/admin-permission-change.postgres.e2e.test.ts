@@ -8,6 +8,8 @@ import { PrismaConfigurationRepository } from '../../configuration/prisma-config
 import { buildServer } from '../../http/build-server.js';
 import { PrismaLeadRepository } from '../../leads/prisma-lead-repository.js';
 import { PrismaPermissionRepository } from '../../permissions/prisma-permission-repository.js';
+import { PrismaResourceRepository } from '../../tools/prisma-resource-repository.js';
+import { ResourceService } from '../../tools/service.js';
 import {
   applyMigrations,
   createAdminPostgres,
@@ -128,6 +130,7 @@ describe.runIf(shouldRunAdminPostgres)(
         leadRepository: new PrismaLeadRepository(db.prisma as never),
         configurationRepository: new PrismaConfigurationRepository(db.prisma),
         adminRepository: new PrismaAdminRepository(db.prisma),
+        resourceService: new ResourceService(new PrismaResourceRepository(db.prisma), undefined),
         authConfig,
         corsOrigins: [],
       });

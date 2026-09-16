@@ -24,6 +24,7 @@ import type { NotificationService } from '../notifications/service.js';
 import type { AttachmentService } from '../attachments/service.js';
 import type { ImportService } from '../import/service.js';
 import type { ExportAuditWriter, ExportFieldRepository } from '../routes/export.js';
+import type { ResourceService } from '../tools/service.js';
 
 export interface ServerDependencies {
   authRepository: LoginRepository &
@@ -46,6 +47,13 @@ export interface ServerDependencies {
   notificationService?: NotificationService;
   /** Absent when object storage isn't configured; the locker degrades to 503. */
   attachmentService?: AttachmentService;
+  /**
+   * Tools resource library (Phase 22). Always present, unlike
+   * `attachmentService` — a `link`-type Resource needs no object storage, so
+   * only its file-upload/download operations degrade (to
+   * `storage_not_configured`) when a bucket isn't configured.
+   */
+  resourceService: ResourceService;
   /**
    * Bulk import. Needs a real database client for its own transaction — the run
    * holds one open across the whole file — so a deployment wired without one has

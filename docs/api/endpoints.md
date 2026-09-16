@@ -307,6 +307,45 @@ GET    /attachments/:id                -- streams the object; attachments:downlo
 DELETE /attachments/:id                -- soft delete (active=false); attachments:delete
 ```
 
+### Tools (resource library, Phase 22)
+
+Always registered, unlike Attachments — a `link`-type Resource needs no object
+storage, so only the file-bearing operations (`file`-type create/edit,
+download) answer `503 storage_not_configured` when `S3_*` isn't set; list,
+detail, deactivate, and the visibility pair all still work.
+
+```
+GET    /tools                          -- ?admin=true&active=&page=&pageSize= ; tools:view.
+                                           Browse mode (default): active Resources the caller's
+                                           Role is granted, via resource_visibility. Admin mode
+                                           (?admin=true) is honored only when the caller also holds
+                                           tools:create/edit/delete, re-derived server-side — every
+                                           Resource, filtered only by `active`.
+GET    /tools/:id                      -- same admin/browse duality as the list; tools:view
+GET    /tools/:id/download             -- file types only; streamed, never admin-bypassed —
+                                           the caller's Role must hold a resource_visibility grant
+                                           regardless of admin capability. tools:view
+POST   /tools                          -- multipart; fields: name, description, category, type,
+                                           url (type=link), instructions (JSON-encoded), file
+                                           (required when type=file). tools:create
+PUT    /tools/:id                      -- multipart, same shape; an absent file part keeps the
+                                           existing one (a metadata-only edit). tools:edit
+POST   /tools/:id/deactivate           -- soft delete (active=false); tools:delete
+GET    /tools/:id/visibility           -- { roleIds } — the reverse allow-list, mirroring
+                                           /fields/:id/visibility's shape (Phase 13a). roles_permissions:view
+PUT    /tools/:id/visibility           -- full replace; { roleIds }. Gated on roles_permissions,
+                                           never tools, to prevent an admin holding only tools:edit
+                                           from granting their own Role a Resource it's denied — the
+                                           same self-escalation rule field_visibility uses.
+                                           roles_permissions:edit
+```
+
+No row in `resource_visibility` means hidden — the opposite of the
+(superseded) Status Visibility default, deliberately: a Resource is a
+brand-new entity type with zero prior existence in any organization, not an
+already-visible one a hidden-by-default would black out. See
+`docs/planning/phase-22-tools-resource-library.md` and ADR-0024.
+
 ### Finance
 
 **Not implemented.** No route file exists. Paths below are the V1 target, not the current surface.

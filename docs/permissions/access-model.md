@@ -31,6 +31,7 @@ ALLOW =
 | Campaigns | view, create, edit, send |
 | Lead Routing | view, configure, operate |
 | Integrations | configure |
+| Tools | view, create, edit, delete |
 
 `leads:bulk_reassign`/`leads:bulk_status_change` and the entire `reports`
 module (`view_standard`/`view_financial`/`build_custom`, a Phase 2
@@ -141,6 +142,26 @@ The same rows are editable from either direction — one role's access to every 
 **`leads:bypass_status_visibility` (ADR-0021)** is the one deliberate exception: a Role holding it skips this narrowing entirely, on every request, as if no Status it ever asks about had an active routing rule. It grants no reach beyond that Role's own configured data scope — a `SELF`-scoped Role with the bypass still can't see someone else's lead — it only turns off the *extra* restriction routing would otherwise layer on top. A narrow backstop for specifically-designated admin/oversight Roles, not a general escape hatch: granted to the bootstrap administrator by default (unlike `purge`, so the very first admin is never the one who gets locked out), but not implied by `ORGANIZATION` scope, `roles_permissions:edit`, or anything else — an admin grants it to any other Role deliberately.
 
 Status Visibility is `AND`ed onto A–D, never `OR`ed: being the assignee or their manager gains no new reach beyond what the caller's own data scope already grants for the module action in question, and still only shows a lead that is *also* within ordinary data scope and Journey access — narrower, in fact, than Phase 19 ever was, since it can now cut below `DEPARTMENT`/`ORGANIZATION` scope for any Role once routing is active, not just a Role an admin explicitly excluded. A lead with process instances in more than one Journey stays visible through any one process instance an ordinarily-authorized caller can also see there — the same per-process union Journey access already uses — so one denied Status never hides a lead a caller can otherwise reach through a different, unrestricted process instance, or one where they are the assignee or a manager. Evaluated fresh against the process instance's *current* Status and its *current* assignment on every request: moving a lead's Status, or reassigning it (automatically or via a manual routing override), changes who can see it immediately, with no transition-specific invalidation. **A direct grant (`user_access_grants`) is the one deliberate exception (Phase 21):** it overrides this narrowing exactly as it already overrides ordinary data scope, rather than being subject to it — a share to someone outside the new assignee's management chain keeps working after a routed reassignment, instead of being silently defeated by it. This matters most for the reassignment-grace grants below, whose entire purpose is surviving exactly that event. There is no more configuration surface for this axis at all; `status_routing_permissions` (who may configure or operate a Status's assignment routing) is unchanged and still separate — that gates the routing feature itself, not lead visibility.
+
+**F. Tools resource visibility (Phase 22)** — gates which Roles may see and
+access (view, or download for a `file`-type Resource) each item in the Tools
+resource library, via a reverse allow-list in `resource_visibility` —
+`(organizationId, resourceId, roleId)`, plain membership, no access level.
+Mirrors `field_visibility`'s **write shape** (`GET`/`PUT
+/tools/:id/visibility`, full-replace) exactly, but its **default** matches
+`field_visibility`'s "no row = hidden" specifically, not Status Visibility's:
+a Resource is a brand-new entity type with zero rows in any organization on
+the day this shipped — exactly Field's situation when a new Field is
+created — not Status's, where the default had to flip because every Status
+(and the leads already sitting in it) predated the feature and was already
+visible. `tools:view` is the floor module gate for the Tools tab itself;
+`resource_visibility` narrows which specific Resources a Role sees within
+it — the same two-layer shape `leads:view` plus data scope already uses.
+Both the reverse endpoint and the module actions (`tools:create/edit/
+delete`) are genuinely independent, and the visibility write is gated on
+`roles_permissions`, never `tools`, for the identical self-escalation reason
+`field_visibility`'s reverse endpoint is. See
+`docs/planning/phase-22-tools-resource-library.md` and ADR-0024.
 
 ## Additional mechanism: direct record grants
 
