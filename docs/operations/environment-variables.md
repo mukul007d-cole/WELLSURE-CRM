@@ -83,6 +83,23 @@ The document locker is **not enabled** on the environment phase 17 stands up.
 Turning it on is a follow-up that fills in the `object-storage` Terraform module
 and adds these five to the service.
 
+## Worker (apps/worker) — scheduled campaign delivery
+
+Closes finding #4: `drainPending` previously had exactly one production
+caller (`POST /campaigns/:id/send`), so a triggered campaign's pending rows
+sat forever unless an unrelated manual send happened to run in the same
+organization. `apps/worker` is a small standalone process that polls the
+API's `/internal/campaigns/drain` route on an interval — it holds no
+database credentials of its own and reuses the existing `CampaignSendService`
+inside the API process, so no new queue dependency was introduced (see the
+Redis row below).
+
+| Variable | Read by | What it is | Local | Real |
+| --- | --- | --- | --- | --- |
+| `FALCON_INTERNAL_WORKER_TOKEN` | API and worker | Shared secret gating `/internal/*`. **Must be identical on both.** Optional on the API: absent, those routes answer `503 internal_worker_not_configured` rather than the API refusing to boot — a deployment that hasn't set one up yet is simply missing scheduled delivery, not missing a server. | Any local-only value. | From the secret store. |
+| `FALCON_API_INTERNAL_URL` | worker only | Base URL of the running API. | `http://localhost:3000` | Wherever the API process listens — a private/internal address if the platform has one, since this call carries no user session. |
+| `FALCON_WORKER_POLL_INTERVAL_MS` | worker only | Poll interval, in milliseconds. | `30000` | Tuned to acceptable delivery latency vs. load; the route itself is cheap (one indexed query when nothing is pending). |
+
 ## Local tooling only
 
 Not read by the application. None of these has a deployed counterpart.
@@ -94,7 +111,7 @@ Not read by the application. None of these has a deployed counterpart.
 | `FALCON_POSTGRES_URL` | test suites | Enables the PostgreSQL integration suites. **Without it around 60 tests skip silently.** |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` | Docker Compose | Local PostgreSQL container. |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_API_PORT`, `MINIO_CONSOLE_PORT` | Docker Compose | Local MinIO container. |
-| `REDIS_PORT`, `REDIS_URL` | Docker Compose | Local Redis. **Nothing in the application reads Redis** — there is no client, no queue library and no `REDIS_URL` reader anywhere in the source. Started for parity with a future worker that does not exist yet. |
+| `REDIS_PORT`, `REDIS_URL` | Docker Compose | Local Redis. **Nothing in the application reads Redis** — there is no client, no queue library and no `REDIS_URL` reader anywhere in the source. `apps/worker` now exists (see above) and deliberately does not use it either: a plain interval poll against the existing `/internal/campaigns/drain` route was enough, so no queue dependency was added. Kept started in case a real future need for it turns up. |
 
 ### Bootstrap CLI
 
@@ -122,5 +139,6 @@ registered without a `secret`, and sessions are opaque 256-bit random tokens
 stored only as SHA-256 hashes and resolved by database lookup
 (`apps/api/src/auth/tokens.ts`). There is nothing to forge and nothing to sign.
 If you are looking for a `SESSION_SECRET` to set, there isn't one — the complete
-list of secrets is the database URL, the email API key, and the two `S3_*`
-credentials if the locker is enabled.
+list of secrets is the database URL, the email API key, the two `S3_*`
+credentials if the locker is enabled, and `FALCON_INTERNAL_WORKER_TOKEN` if
+the worker is enabled.

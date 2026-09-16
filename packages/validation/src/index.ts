@@ -46,3 +46,6 @@ export type {
   StructuredDocument,
   TextSpan,
 } from './document.js';
+
+export { allowedFileTypes, checkFileType } from './file-type.js';
+export type { FileTypeCheckResult, FileTypeRule } from './file-type.js';

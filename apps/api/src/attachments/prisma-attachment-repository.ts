@@ -12,13 +12,20 @@ interface AttachmentRow {
   uploadedBy?: { id: string; name: string } | null;
 }
 
-export interface PrismaAttachmentClient {
+interface PrismaAttachmentTransactionClient {
   attachment: {
-    findMany(args: unknown): Promise<AttachmentRow[]>;
     findFirst(args: unknown): Promise<AttachmentRow | null>;
     create(args: unknown): Promise<AttachmentRow>;
-    update(args: unknown): Promise<unknown>;
+    update(args: unknown): Promise<AttachmentRow>;
   };
+  activityLog: { create(args: unknown): Promise<unknown> };
+}
+
+export interface PrismaAttachmentClient extends PrismaAttachmentTransactionClient {
+  attachment: PrismaAttachmentTransactionClient['attachment'] & {
+    findMany(args: unknown): Promise<AttachmentRow[]>;
+  };
+  $transaction<T>(work: (tx: PrismaAttachmentTransactionClient) => Promise<T>): Promise<T>;
 }
 
 export class PrismaAttachmentRepository implements AttachmentRepository {
@@ -42,6 +49,14 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
     return row === null ? null : toRecord(row);
   }
 
+  /**
+   * The row and its `attachment_uploaded` activity commit together — a
+   * reader must never observe one without the other. `processInstanceId`
+   * is deliberately null: a lead's document locker is shared across every
+   * journey it belongs to, not scoped to one process instance, matching
+   * how `findLeadActivity` already treats a null-process activity as
+   * lead-level and visible to anyone who can see the lead at all.
+   */
   async create(input: {
     organizationId: string;
     leadId: string;
@@ -51,25 +66,77 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
     sizeBytes: number;
     uploadedById: string;
   }): Promise<AttachmentRecord> {
-    const row = await this.prisma.attachment.create({
-      data: {
-        organizationId: input.organizationId,
-        leadId: input.leadId,
-        s3Key: input.s3Key,
-        fileName: input.fileName,
-        mimeType: input.mimeType,
-        sizeBytes: BigInt(input.sizeBytes),
-        uploadedById: input.uploadedById,
-      },
-      include: { uploadedBy: { select: { id: true, name: true } } },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.attachment.create({
+        data: {
+          organizationId: input.organizationId,
+          leadId: input.leadId,
+          s3Key: input.s3Key,
+          fileName: input.fileName,
+          mimeType: input.mimeType,
+          sizeBytes: BigInt(input.sizeBytes),
+          uploadedById: input.uploadedById,
+        },
+        include: { uploadedBy: { select: { id: true, name: true } } },
+      });
+      await tx.activityLog.create({
+        data: {
+          organizationId: input.organizationId,
+          leadId: input.leadId,
+          processInstanceId: null,
+          actorUserId: input.uploadedById,
+          actionType: 'attachment_uploaded',
+          source: 'user',
+          oldValue: null,
+          newValue: {
+            attachmentId: created.id,
+            fileName: input.fileName,
+            mimeType: input.mimeType,
+            sizeBytes: input.sizeBytes,
+          },
+        },
+      });
+      return created;
     });
     return toRecord(row);
   }
 
-  async deactivate(organizationId: string, attachmentId: string): Promise<void> {
-    await this.prisma.attachment.update({
-      where: { organizationId_id: { organizationId, id: attachmentId } },
-      data: { active: false },
+  /** Same atomicity as `create`, for the `active = false` row and its `attachment_deleted` event. */
+  async deactivate(input: {
+    organizationId: string;
+    attachmentId: string;
+    deletedById: string;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.attachment.findFirst({
+        where: { organizationId: input.organizationId, id: input.attachmentId },
+      });
+      const updated = await tx.attachment.update({
+        where: {
+          organizationId_id: { organizationId: input.organizationId, id: input.attachmentId },
+        },
+        data: { active: false },
+      });
+      await tx.activityLog.create({
+        data: {
+          organizationId: input.organizationId,
+          leadId: updated.leadId,
+          processInstanceId: null,
+          actorUserId: input.deletedById,
+          actionType: 'attachment_deleted',
+          source: 'user',
+          oldValue: {
+            attachmentId: input.attachmentId,
+            fileName: before?.fileName ?? null,
+            mimeType: before?.mimeType ?? null,
+            sizeBytes:
+              before?.sizeBytes === null || before?.sizeBytes === undefined
+                ? null
+                : Number(before.sizeBytes),
+          },
+          newValue: { active: false },
+        },
+      });
     });
   }
 }

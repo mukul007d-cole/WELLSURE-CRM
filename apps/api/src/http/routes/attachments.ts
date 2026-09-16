@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { resolveAuthorization } from '@falcon/permission-engine';
+import { checkFileType } from '@falcon/validation';
 
 import { MAX_ATTACHMENT_BYTES } from '../../attachments/service.js';
 import { authenticate } from '../plugins/authenticate.js';
@@ -127,6 +128,25 @@ export function registerAttachmentRoutes(server: FastifyInstance, deps: ServerDe
           : '';
       const fileName = provided || file.filename || 'document';
 
+      // Declared MIME/extension alone is client-asserted and trivially
+      // spoofable, so an allow-list plus a magic-byte signature check runs
+      // before anything reaches object storage — the same gate the Tools
+      // resource library already uses (`@falcon/validation`'s
+      // `checkFileType`), closing the gap ADR-0024 found here.
+      const typeCheck = checkFileType({
+        fileName,
+        mimeType: file.mimetype || null,
+        sizeBytes: body.byteLength,
+        body,
+        maxBytes: MAX_ATTACHMENT_BYTES,
+      });
+      if (!typeCheck.ok) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          details: { reason: typeCheck.reason, ...typeCheck.details },
+        });
+      }
+
       const record = await attachments.upload({
         organizationId: request.auth.user.organizationId,
         leadId: id,
@@ -169,7 +189,7 @@ export function registerAttachmentRoutes(server: FastifyInstance, deps: ServerDe
     if (!(await allowedOnLead(request, record.leadId, 'attachments', 'delete', context))) {
       return reply.status(403).send({ error: 'forbidden' });
     }
-    await attachments.remove(request.auth.user.organizationId, record);
+    await attachments.remove(request.auth.user.organizationId, record, request.auth.user.id);
     return reply.status(204).send();
   });
 }

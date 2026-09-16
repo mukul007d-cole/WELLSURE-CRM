@@ -75,6 +75,7 @@ const server = buildServer({
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,
   ...(env.webRoot ? { webRoot: env.webRoot } : {}),
+  ...(env.internalWorkerToken ? { internalWorkerToken: env.internalWorkerToken } : {}),
 });
 
 let shuttingDown = false;

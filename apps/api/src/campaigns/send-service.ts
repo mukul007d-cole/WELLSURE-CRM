@@ -121,6 +121,46 @@ export class CampaignSendService {
   }
 
   /**
+   * Every organization with at least one `pending` row right now — a single
+   * indexed query (`campaign_sends_pending_idx`), so a scheduled worker can
+   * find the handful of organizations with real work instead of iterating
+   * every organization in the system on each poll.
+   */
+  async organizationsWithPending(): Promise<string[]> {
+    const rows = await this.prisma.campaignSend.findMany({
+      where: { status: 'pending' },
+      select: { organizationId: true },
+      distinct: ['organizationId'],
+    });
+    return rows.map((row) => row.organizationId);
+  }
+
+  /**
+   * Drains every organization that currently has pending work. This is the
+   * organization-wide shape a scheduled worker calls — see
+   * `drainPending`'s own doc for why a manual send instead always scopes to
+   * one campaign.
+   */
+  async drainAllPending(): Promise<{
+    organizations: number;
+    sent: number;
+    failed: number;
+    skippedNoEmail: number;
+  }> {
+    const organizationIds = await this.organizationsWithPending();
+    let sent = 0;
+    let failed = 0;
+    let skippedNoEmail = 0;
+    for (const organizationId of organizationIds) {
+      const result = await this.drainPending(organizationId);
+      sent += result.sent;
+      failed += result.failed;
+      skippedNoEmail += result.skippedNoEmail;
+    }
+    return { organizations: organizationIds.length, sent, failed, skippedNoEmail };
+  }
+
+  /**
    * Re-offers a campaign's `failed` rows for another attempt, bounded by
    * `maxCampaignSendAttempts`. Rows already at the cap stay `failed` and
    * are reported separately rather than silently skipped, so a caller can
