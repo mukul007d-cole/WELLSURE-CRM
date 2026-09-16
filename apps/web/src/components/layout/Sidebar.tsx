@@ -112,12 +112,20 @@ function SectionHeading({
 
 export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { can, capabilities } = useAuth();
+  const canAdministerTools =
+    can('tools', 'create') || can('tools', 'edit') || can('tools', 'delete');
   const primaryItems: NavItem[] = [
     ...PRIMARY,
     // Gated on the module permission *and* actually having something to see —
     // no existing nav entry needed this second check before, since none of
-    // them hide behind a per-item allow-list the way Tools resources do.
-    ...(can('tools', 'view') && capabilities?.hasAccessibleTools ? [TOOLS_ITEM] : []),
+    // them hide behind a per-item allow-list the way Tools resources do. An
+    // admin capability opens it too, independent of hasAccessibleTools: on a
+    // library with zero resources granted to their own Role, that flag is
+    // false for everyone including the admin who needs to create the first
+    // one, and ToolsPage's own admin mode never required it either.
+    ...(can('tools', 'view') && (capabilities?.hasAccessibleTools || canAdministerTools)
+      ? [TOOLS_ITEM]
+      : []),
   ];
   /**
    * Grouped by what the user is doing, not by which table it writes to:

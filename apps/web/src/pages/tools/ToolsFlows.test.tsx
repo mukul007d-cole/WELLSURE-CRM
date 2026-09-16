@@ -170,4 +170,31 @@ describe('Tools resource library flows', () => {
     renderPage('user-rep', <Sidebar />);
     expect(await screen.findByText('Tools')).toBeInTheDocument();
   });
+
+  /**
+   * On a library with zero resources (or zero granted to the admin's own
+   * Role), `hasAccessibleTools` is false for everyone, including whoever is
+   * supposed to create the first one. The nav entry must still open for
+   * Tools admin capability alone — otherwise there's no discoverable way to
+   * reach the page ToolsPage already lets them administer.
+   */
+  it('shows the Tools nav entry for a Tools admin even when hasAccessibleTools is false', async () => {
+    server.use(
+      http.get('/api/v1/auth/capabilities', () =>
+        HttpResponse.json({
+          permissions: [
+            { module: 'tools', action: 'view', scope: 'ORGANIZATION' },
+            { module: 'tools', action: 'create', scope: 'ORGANIZATION' },
+            { module: 'tools', action: 'edit', scope: 'ORGANIZATION' },
+            { module: 'tools', action: 'delete', scope: 'ORGANIZATION' },
+          ],
+          journeyIds: [],
+          fieldVisibility: [],
+          hasAccessibleTools: false,
+        }),
+      ),
+    );
+    renderPage('user-admin', <Sidebar />);
+    expect(await screen.findByText('Tools')).toBeInTheDocument();
+  });
 });
