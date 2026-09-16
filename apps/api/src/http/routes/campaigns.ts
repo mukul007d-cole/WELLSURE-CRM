@@ -4,6 +4,7 @@ import {
   createCampaign,
   getCampaign,
   listCampaigns,
+  retryCampaign,
   sendCampaign,
   setCampaignActive,
   updateCampaign,
@@ -84,6 +85,12 @@ export function registerCampaignRoutes(server: FastifyInstance, deps: ServerDepe
     { preHandler, schema: { tags: ['campaigns'] } },
     async (r, reply) =>
       send(reply, await sendCampaign({ ...base(r), id: String((r.params as Json).id) })),
+  );
+  server.post(
+    '/api/v1/campaigns/:id/retry',
+    { preHandler, schema: { tags: ['campaigns'] } },
+    async (r, reply) =>
+      send(reply, await retryCampaign({ ...base(r), id: String((r.params as Json).id) })),
   );
 }
 

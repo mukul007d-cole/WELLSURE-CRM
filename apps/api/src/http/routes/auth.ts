@@ -189,7 +189,6 @@ export function registerAuthRoutes(server: FastifyInstance, deps: ServerDependen
         reply,
         await completePasswordResetRoute({
           repository: deps.authRepository,
-          audit: deps.audit,
           body: request.body as { token: string; newPassword: string },
         }),
       ),

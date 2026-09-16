@@ -269,12 +269,17 @@ campaigns
 
 campaign_sends
   id, organization_id, campaign_id, lead_id,
-  status (pending | sent | failed | skipped_no_email), error (nullable),
-  sent_at (nullable), created_at
+  status (pending | sending | sent | failed | skipped_no_email), error (nullable),
+  sent_at (nullable), created_at, claimed_at (nullable), attempts (default 0)
   -- Unique on (organization_id, campaign_id, lead_id): the idempotency
   -- guarantee itself, so a lead re-entering a triggered status is not
   -- emailed twice. Written inside the mutation transaction as `pending`;
   -- delivery happens after it commits.
+  -- `sending` is a claimed-but-unresolved lease (`claimed_at` set), taken
+  -- atomically immediately before the transport is called so two
+  -- concurrent drains can never both call it for the same row. A lease
+  -- older than `campaignSendLeaseMs` is reclaimed to `pending`. `attempts`
+  -- increments on every claim and bounds `POST /campaigns/:id/retry`.
 
 settings
   id, organization_id, key, value (JSONB), version, updated_by, updated_at

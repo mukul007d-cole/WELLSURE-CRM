@@ -247,6 +247,8 @@ export interface CampaignStats {
   sent: number;
   failed: number;
   pending: number;
+  /** Claimed by a drain but not yet resolved — normally near-zero; persistently non-zero signals a stuck lease. */
+  sending: number;
   skippedNoEmail: number;
 }
 
@@ -260,6 +262,7 @@ function statsFor(
     sent: of('sent'),
     failed: of('failed'),
     pending: of('pending'),
+    sending: of('sending'),
     skippedNoEmail: of('skipped_no_email'),
   };
 }

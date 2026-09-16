@@ -22,6 +22,10 @@ export interface PasswordResetTokenRecord {
   userAgent: string | null;
 }
 
+export type CompletePasswordResetResult =
+  | { ok: true; userId: string; organizationId: string; revokedSessions: number }
+  | { ok: false; reason: 'invalid_token' | 'expired_token' };
+
 export interface PasswordResetRepository {
   findUserForPasswordReset(
     organizationId: string,
@@ -30,10 +34,30 @@ export interface PasswordResetRepository {
   createPasswordResetToken(
     input: Omit<PasswordResetTokenRecord, 'id'>,
   ): Promise<PasswordResetTokenRecord>;
-  findPasswordResetToken(tokenHash: string): Promise<PasswordResetTokenRecord | null>;
-  markPasswordResetTokenUsed(id: string, organizationId: string, usedAt: Date): Promise<void>;
-  setUserPasswordHash(userId: string, organizationId: string, passwordHash: string): Promise<void>;
-  revokeUserSessions(userId: string, organizationId: string, revokedAt: Date): Promise<number>;
+  /**
+   * Atomically claims a still-valid, unused token and applies every
+   * security-relevant change as one unit: password hash, token consumption,
+   * session revocation, and the audit row.
+   *
+   * The claim itself must be a single conditional write (e.g. `UPDATE ...
+   * WHERE id = $id AND used_at IS NULL`, checking the affected row count) so
+   * two concurrent calls racing the same token can never both succeed —
+   * Postgres serializes concurrent writers to the same row, so the loser's
+   * conditional write always sees the winner's committed `used_at` and
+   * matches zero rows. A token that is unknown, already used, or lost that
+   * race all return `invalid_token` — deliberately indistinguishable, so a
+   * caller can never tell a genuine replay from a lost race.
+   *
+   * Everything here — including the audit write — must happen inside one
+   * database transaction: a failure partway through (a transient error
+   * before the audit row, say) must never leave the password changed while
+   * the token stays valid and replayable.
+   */
+  completePasswordResetTransaction(input: {
+    tokenHash: string;
+    newPasswordHash: string;
+    now: Date;
+  }): Promise<CompletePasswordResetResult>;
 }
 
 export interface PasswordChangeRepository {
@@ -156,7 +180,6 @@ export async function requestPasswordReset(input: {
 
 export async function completePasswordReset(input: {
   repository: PasswordResetRepository;
-  audit: SecurityAuditWriter;
   token: string;
   newPassword: string;
   now?: Date | undefined;
@@ -165,29 +188,17 @@ export async function completePasswordReset(input: {
   | { ok: false; reason: 'invalid_token' | 'expired_token' | 'weak_password'; details?: string[] }
 > {
   const now = input.now ?? new Date();
-  const record = await input.repository.findPasswordResetToken(hashOpaqueToken(input.token));
-  if (record === null || record.usedAt !== null) return { ok: false, reason: 'invalid_token' };
-  if (record.expiresAt <= now) return { ok: false, reason: 'expired_token' };
+  // Checked before touching the database: a doomed-to-fail password never
+  // needs to reach the atomic claim below.
   const policyReasons = passwordPolicyReasons(input.newPassword);
   if (policyReasons.length) return { ok: false, reason: 'weak_password', details: policyReasons };
   const passwordHash = await hashPassword(input.newPassword);
-  await input.repository.setUserPasswordHash(record.userId, record.organizationId, passwordHash);
-  await input.repository.markPasswordResetTokenUsed(record.id, record.organizationId, now);
-  const revokedSessions = await input.repository.revokeUserSessions(
-    record.userId,
-    record.organizationId,
+  const result = await input.repository.completePasswordResetTransaction({
+    tokenHash: hashOpaqueToken(input.token),
+    newPasswordHash: passwordHash,
     now,
-  );
-  await input.audit.writeSystemAudit({
-    organizationId: record.organizationId,
-    actorUserId: record.userId,
-    entityType: 'user',
-    entityId: record.userId,
-    action: 'auth.password_reset_completed',
-    oldValue: { passwordHashSet: false, resetTokenUsedAt: null },
-    newValue: { passwordHashSet: true, resetTokenUsedAt: now.toISOString(), revokedSessions },
   });
-  return { ok: true };
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 }
 
 export async function changeAuthenticatedPassword(input: {

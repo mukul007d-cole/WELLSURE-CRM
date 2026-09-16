@@ -269,31 +269,54 @@ export function createPostgresAuthRepository(
       `;
       return fromResetTokenRow(row!);
     },
-    async findPasswordResetToken(tokenHash) {
-      const [row] = await sql<ResetTokenDbRow[]>`
-        SELECT * FROM auth_test_password_reset_tokens WHERE token_hash = ${tokenHash}
-      `;
-      return row === undefined ? null : fromResetTokenRow(row);
-    },
-    async markPasswordResetTokenUsed(id, organizationId, usedAt) {
-      await sql`
-        UPDATE auth_test_password_reset_tokens SET used_at = ${usedAt}
-        WHERE id = ${id} AND organization_id = ${organizationId}
-      `;
-    },
-    async setUserPasswordHash(userId, organizationId, passwordHash) {
-      await sql`
-        UPDATE auth_test_users SET password_hash = ${passwordHash}
-        WHERE id = ${userId} AND organization_id = ${organizationId}
-      `;
-    },
-    async revokeUserSessions(userId, organizationId, revokedAt) {
-      const rows = await sql<{ id: string }[]>`
-        UPDATE auth_test_sessions SET revoked_at = ${revokedAt}
-        WHERE user_id = ${userId} AND organization_id = ${organizationId} AND revoked_at IS NULL
-        RETURNING id
-      `;
-      return rows.length;
+    async completePasswordResetTransaction(input) {
+      return sql.begin(async (tx) => {
+        const [record] = await tx<ResetTokenDbRow[]>`
+          SELECT * FROM auth_test_password_reset_tokens WHERE token_hash = ${input.tokenHash}
+        `;
+        if (record === undefined || record.used_at !== null) {
+          return { ok: false, reason: 'invalid_token' } as const;
+        }
+        if (record.expires_at <= input.now) return { ok: false, reason: 'expired_token' } as const;
+
+        // The atomic claim — see `PasswordResetRepository`'s doc comment for
+        // why a concurrent racer can never also win this.
+        const claimed = await tx<{ id: string }[]>`
+          UPDATE auth_test_password_reset_tokens SET used_at = ${input.now}
+          WHERE id = ${record.id} AND organization_id = ${record.organization_id} AND used_at IS NULL
+          RETURNING id
+        `;
+        if (claimed.length === 0) return { ok: false, reason: 'invalid_token' } as const;
+
+        await tx`
+          UPDATE auth_test_users SET password_hash = ${input.newPasswordHash}
+          WHERE id = ${record.user_id} AND organization_id = ${record.organization_id}
+        `;
+        const revoked = await tx<{ id: string }[]>`
+          UPDATE auth_test_sessions SET revoked_at = ${input.now}
+          WHERE user_id = ${record.user_id} AND organization_id = ${record.organization_id}
+            AND revoked_at IS NULL
+          RETURNING id
+        `;
+        await tx`
+          INSERT INTO auth_test_system_audit_logs
+            (organization_id, actor_user_id, entity_type, entity_id, action, old_value, new_value)
+          VALUES (${record.organization_id}, ${record.user_id}, 'user', ${record.user_id},
+                  'auth.password_reset_completed',
+                  ${sql.json({ passwordHashSet: false, resetTokenUsedAt: null })},
+                  ${sql.json({
+                    passwordHashSet: true,
+                    resetTokenUsedAt: input.now.toISOString(),
+                    revokedSessions: revoked.length,
+                  })})
+        `;
+        return {
+          ok: true,
+          userId: record.user_id,
+          organizationId: record.organization_id,
+          revokedSessions: revoked.length,
+        } as const;
+      });
     },
     async writeSystemAudit(input: SecurityAuditInput) {
       await sql`
