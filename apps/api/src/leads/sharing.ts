@@ -2,9 +2,16 @@ import type { FalconPrismaClient } from '@falcon/database';
 import { NotificationService } from '../notifications/service.js';
 import { CampaignTriggerService } from '../campaigns/trigger-service.js';
 import { TriggerDispatcher } from './trigger-dispatch.js';
+import {
+  createTimedAccessGrant,
+  shareDurationsDays,
+  type ShareDurationDays,
+} from './access-grants.js';
+import { maybeGrantReassignmentGrace } from './reassignment-grace.js';
 
 export const shareCapabilities = ['view', 'edit', 'comment'] as const;
 export type ShareCapability = (typeof shareCapabilities)[number];
+export { shareDurationsDays, type ShareDurationDays };
 
 export interface LeadShare {
   id: string;
@@ -13,6 +20,7 @@ export interface LeadShare {
   grantedByUserId: string;
   capabilities: readonly ShareCapability[];
   createdAt: Date;
+  expiresAt: Date | null;
 }
 
 export class LeadSharingService {
@@ -41,6 +49,7 @@ export class LeadSharingService {
           grantedByUserId: row.grantedByUserId,
           capabilities: row.actions as ShareCapability[],
           createdAt: row.createdAt,
+          expiresAt: row.expiresAt,
         })),
       );
   }
@@ -51,8 +60,10 @@ export class LeadSharingService {
     userId: string;
     actorUserId: string;
     capabilities: readonly string[];
+    durationDays: unknown;
   }) {
     const capabilities = validateCapabilities(input.capabilities);
+    const durationDays = validateDuration(input.durationDays);
     if (input.userId === input.actorUserId) throw new Error('self_share');
     return this.prisma.$transaction(async (tx) => {
       const [lead, user, existing] = await Promise.all([
@@ -73,14 +84,13 @@ export class LeadSharingService {
       ]);
       if (!lead || !user) throw new Error('not_found');
       if (existing) throw new Error('already_shared');
-      const share = await tx.userAccessGrant.create({
-        data: {
-          organizationId: input.organizationId,
-          leadId: input.leadId,
-          userId: input.userId,
-          grantedByUserId: input.actorUserId,
-          actions: capabilities,
-        },
+      const share = await createTimedAccessGrant(tx as never, {
+        organizationId: input.organizationId,
+        leadId: input.leadId,
+        userId: input.userId,
+        grantedByUserId: input.actorUserId,
+        actions: capabilities,
+        durationDays,
       });
       await tx.activityLog.create({
         data: {
@@ -89,7 +99,13 @@ export class LeadSharingService {
           actorUserId: input.actorUserId,
           actionType: 'share_changed',
           source: 'lead_api',
-          newValue: { shareId: share.id, userId: input.userId, capabilities },
+          newValue: {
+            shareId: share.id,
+            userId: input.userId,
+            capabilities,
+            durationDays,
+            expiresAt: share.expiresAt?.toISOString() ?? null,
+          },
         },
       });
       return share;
@@ -239,6 +255,15 @@ export class LeadSharingService {
           newValue: { assignmentType: input.assignmentType, userId: input.userId },
         },
       });
+      // Phase 21 Part 2 — same transaction as the reassignment itself. A
+      // no-op unless `old.userId` opted in and is currently eligible.
+      await maybeGrantReassignmentGrace(tx as never, {
+        organizationId: input.organizationId,
+        leadId: input.leadId,
+        actorUserId: input.actorUserId,
+        previousUserId: old.userId,
+        newUserId: input.userId,
+      });
       /*
        * Through the shared dispatcher, not straight at one consumer.
        *
@@ -319,4 +344,10 @@ function validateCapabilities(values: readonly string[]): ShareCapability[] {
   )
     throw new Error('invalid_capabilities');
   return unique as ShareCapability[];
+}
+
+function validateDuration(value: unknown): ShareDurationDays {
+  if (typeof value !== 'number' || !shareDurationsDays.includes(value as ShareDurationDays))
+    throw new Error('invalid_duration');
+  return value as ShareDurationDays;
 }

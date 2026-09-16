@@ -571,45 +571,50 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19/20 Status Visibility', () => {
     expect((await detail(asWide(), lead.leadId)).statusCode).toBe(200);
   }, 120_000);
 
-  it('does not let a direct grant bypass Status Visibility, on the plain list, shared_with_me, or detail', async () => {
+  it('a direct grant bypasses Status Visibility, on the plain list, shared_with_me, and detail (Phase 21)', async () => {
     // Assigned to someone else, so SELF scope's own assignment-based path
     // already excludes userSelf regardless of Status Visibility — a direct
     // grant is the *only* route in either lead below, isolating exactly the
     // two arms `accessClause()` compiles from `user_access_grants`: the
     // dedicated `shared_with_me` branch, and the default `all` branch's own
     // shared-record OR-arm. Neither routes through `processExists()`, so
-    // neither inherited the fix that lives inside it.
-    const deniedGate = await makeStatus(journey1, 'grant_gate_denied');
-    await activateRouting(deniedGate);
-    const deniedLead = await seedLead(deniedGate, journey1, userOtherOwner);
+    // neither is subject to the routing-based narrowing that check applies —
+    // a grant is its own individual-record exception to it (Phase 21),
+    // exactly like it already is to ordinary DataScope.
+    const routedGate = await makeStatus(journey1, 'grant_gate_routed');
+    await activateRouting(routedGate);
+    const routedLead = await seedLead(routedGate, journey1, userOtherOwner);
     await prisma.userAccessGrant.create({
       data: {
         organizationId: org,
-        leadId: deniedLead.leadId,
+        leadId: routedLead.leadId,
         userId: userSelf,
         grantedByUserId: adminUser,
         actions: ['view'],
       },
     });
 
-    // userSelf is not userOtherOwner's manager (nor userOtherOwner), so the
-    // hierarchy check excludes them even with a grant in hand.
-    const plainDenied = await list(asSelf());
-    expect(plainDenied.body).not.toContain(deniedLead.leadId);
+    // userSelf is not userOtherOwner's manager (nor userOtherOwner) — the
+    // hierarchy check alone would exclude them — but the grant overrides it.
+    const plainAllowed = await list(asSelf());
+    expect(plainAllowed.body).toContain(routedLead.leadId);
 
-    const sharedDenied = await list(asSelf(), '&accessMode=shared_with_me');
-    expect(sharedDenied.body).not.toContain(deniedLead.leadId);
-    const sharedDeniedBody = JSON.parse(sharedDenied.body) as { total: number; rows: unknown[] };
-    expect(sharedDeniedBody.total).toBe(sharedDeniedBody.rows.length);
-    expect(sharedDeniedBody.rows).toHaveLength(0);
+    const sharedAllowed = await list(asSelf(), '&accessMode=shared_with_me');
+    expect(sharedAllowed.body).toContain(routedLead.leadId);
+    const sharedAllowedBody = JSON.parse(sharedAllowed.body) as { total: number; rows: unknown[] };
+    expect(sharedAllowedBody.total).toBe(sharedAllowedBody.rows.length);
 
-    expect((await detail(asSelf(), deniedLead.leadId)).statusCode).toBe(403);
+    expect((await detail(asSelf(), routedLead.leadId)).statusCode).toBe(200);
 
-    // Not vacuous: the identical mismatch (grant recipient isn't the
-    // assignee or their manager) — but an *unrouted* Status imposes no
-    // restriction at all, so the grant alone is sufficient. Proves the
-    // absence above is Status Visibility denying it, not the grant
-    // mechanism failing outright.
+    // Not vacuous: without the grant, the identical hierarchy mismatch is
+    // still denied on the routed Status — proving the above is the grant's
+    // own bypass, not routing having stopped narrowing anything.
+    const ungrantedLead = await seedLead(routedGate, journey1, userOtherOwner);
+    expect((await list(asSelf())).body).not.toContain(ungrantedLead.leadId);
+    expect((await detail(asSelf(), ungrantedLead.leadId)).statusCode).toBe(403);
+
+    // And an *unrouted* Status imposes no restriction at all regardless of a
+    // grant, matching the safe default this axis has always had.
     const allowedLead = await seedLead(openStatus1, journey1, userOtherOwner);
     await prisma.userAccessGrant.create({
       data: {

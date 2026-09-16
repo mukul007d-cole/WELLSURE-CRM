@@ -28,3 +28,21 @@ export type {
   ReferenceableField,
   TemplateCalculation,
 } from './calculation.js';
+
+export {
+  blockTypes,
+  escapeHtml,
+  markTypes,
+  maxBlocks,
+  maxSpansPerBlock,
+  parseDocument,
+  renderDocument,
+  StructuredDocumentError,
+} from './document.js';
+export type {
+  BlockType,
+  DocumentBlock,
+  MarkType,
+  StructuredDocument,
+  TextSpan,
+} from './document.js';

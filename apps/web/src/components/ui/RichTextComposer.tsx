@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Button } from '../../../components/ui/Button';
-import type { CampaignDocument } from '../../../types/domain';
-import { documentFromElement, elementHtmlFromDocument } from './campaign-document';
+import { Button } from './Button';
+import type { CampaignDocument } from '../../types/domain';
+import { documentFromElement, elementHtmlFromDocument } from '../../lib/structured-document';
 
 /**
  * Bold/italic/underline/lists over a `contentEditable` region.
@@ -12,15 +12,21 @@ import { documentFromElement, elementHtmlFromDocument } from './campaign-documen
  * the browser's HTML — so the usual reason to reach for a framework (taming
  * contentEditable's markup) doesn't apply. The markup here is a means, not the
  * stored artifact.
+ *
+ * Originally built for the campaign composer and relocated here, unchanged
+ * apart from a configurable `ariaLabel`, once the Tools resource library's
+ * usage-instructions field needed the identical editor.
  */
 export function RichTextComposer({
   value,
   onChange,
   onInsertToken,
+  ariaLabel = 'Campaign body',
 }: {
   value: CampaignDocument;
   onChange: (document: CampaignDocument) => void;
   onInsertToken?: (insert: (token: string) => void) => void;
+  ariaLabel?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const synced = useRef<string>('');
@@ -87,7 +93,7 @@ export function RichTextComposer({
       <div
         ref={ref}
         role="textbox"
-        aria-label="Campaign body"
+        aria-label={ariaLabel}
         aria-multiline="true"
         tabIndex={0}
         contentEditable

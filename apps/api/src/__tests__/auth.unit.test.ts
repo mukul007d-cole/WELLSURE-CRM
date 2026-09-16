@@ -98,12 +98,14 @@ describe('self capabilities', () => {
         listRolePermissions: async () => [{ module: 'users', action: 'view', scope: 'TEAM' }],
         listAccessibleJourneyIds: async () => ['journey-b', 'journey-a'],
         listFieldVisibility: async () => [{ fieldId: 'field-a', accessLevel: 'VIEW' }],
+        hasAnyResourceVisibility: async () => true,
       } as never,
     });
     expect(body.body).toEqual({
       permissions: [{ module: 'users', action: 'view', scope: 'TEAM' }],
       journeyIds: ['journey-a', 'journey-b'],
       fieldVisibility: [{ fieldId: 'field-a', accessLevel: 'VIEW' }],
+      hasAccessibleTools: true,
     });
   });
 });

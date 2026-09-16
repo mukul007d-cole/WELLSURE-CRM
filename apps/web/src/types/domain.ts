@@ -215,6 +215,9 @@ export interface AttachmentRecord {
 }
 
 export type ShareCapability = 'view' | 'edit' | 'comment';
+/** A fixed set, required on every share — no "permanent" option (Phase 21). */
+export const shareDurationsDays = [7, 30, 60] as const;
+export type ShareDurationDays = (typeof shareDurationsDays)[number];
 export interface LeadShare {
   id: string;
   userId: string;
@@ -222,6 +225,7 @@ export interface LeadShare {
   grantedByUserId: string;
   capabilities: ShareCapability[];
   createdAt: string;
+  expiresAt: string | null;
 }
 export interface NotificationItem {
   id: string;
@@ -322,12 +326,15 @@ export interface SessionUser {
   email: string;
   roleId: string;
   roleName: string;
+  retainViewAfterReassignment: boolean;
 }
 
 export interface CapabilitySet {
   permissions: Array<{ module: string; action: string; scope: DataScope }>;
   journeyIds: string[];
   fieldVisibility: Array<{ fieldId: string; accessLevel: FieldAccessLevel }>;
+  /** Whether the caller's Role can access at least one Tools resource — gates the nav entry. */
+  hasAccessibleTools: boolean;
 }
 export interface Page<T> {
   page: number;
@@ -398,6 +405,27 @@ export interface FieldRoleVisibility {
   roleId: string;
   accessLevel: FieldAccessLevel;
 }
+/** Tools resource library (Phase 22). */
+export type ResourceType = 'link' | 'file';
+
+export interface Resource {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  type: ResourceType;
+  url: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  /** Reuses the campaign body's safe structured-document model — no separate rich-text mechanism. */
+  instructions: CampaignDocument | null;
+  active: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminUser {
   id: string;
   name: string;

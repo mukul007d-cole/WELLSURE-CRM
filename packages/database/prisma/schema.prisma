@@ -19,6 +19,11 @@ enum FieldAccessLevel {
   EDIT
 }
 
+enum ResourceType {
+  link
+  file
+}
+
 enum OutcomeType {
   open
   closed_won
@@ -46,6 +51,7 @@ model Organization {
   services            Service[]
   statuses            Status[]
   fields              Field[]
+  resources           Resource[]
   leads               Lead[]
   auditLogs           SystemAuditLog[]
   importJobs          ImportJob[]
@@ -126,14 +132,15 @@ model Role {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy       User?                     @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
-  updatedBy       User?                     @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
-  users           User[]
-  permissions     RolePermission[]
-  journeyAccess   RoleJourneyAccess[]
-  fieldVisibility FieldVisibility[]
-  routingGrants   StatusRoutingPermission[]
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy          User?                     @relation("RoleCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy          User?                     @relation("RoleUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  users              User[]
+  permissions        RolePermission[]
+  journeyAccess      RoleJourneyAccess[]
+  fieldVisibility    FieldVisibility[]
+  resourceVisibility ResourceVisibility[]
+  routingGrants      StatusRoutingPermission[]
 
   @@id([organizationId, id])
   @@unique([organizationId, key])
@@ -142,18 +149,26 @@ model Role {
 }
 
 model User {
-  id             String   @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  email          String
-  roleId         String   @map("role_id") @db.Uuid
-  departmentId   String?  @map("department_id") @db.Uuid
-  designationId  String?  @map("designation_id") @db.Uuid
-  managerId      String?  @map("manager_id") @db.Uuid
-  active         Boolean  @default(true)
-  passwordHash   String?  @map("password_hash")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                          String   @default(uuid()) @db.Uuid
+  organizationId              String   @map("organization_id") @db.Uuid
+  name                        String
+  email                       String
+  roleId                      String   @map("role_id") @db.Uuid
+  departmentId                String?  @map("department_id") @db.Uuid
+  designationId               String?  @map("designation_id") @db.Uuid
+  managerId                   String?  @map("manager_id") @db.Uuid
+  active                      Boolean  @default(true)
+  passwordHash                String?  @map("password_hash")
+  /// Phase 21 Part 2 — a personal, self-service opt-in: keep 30 days of
+  /// view-only access to a lead after this user stops being its assignee,
+  /// manually or via Status Routing. Visible/settable only when the user's
+  /// current Role holds `leads:retain_view_after_reassignment`; the flag
+  /// itself is not force-cleared if that eligibility is later revoked — it
+  /// simply goes dormant, re-checked live at every reassignment. See
+  /// ADR-0023.
+  retainViewAfterReassignment Boolean  @default(false) @map("retain_view_after_reassignment")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   role                     Role                      @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
@@ -182,6 +197,8 @@ model User {
   statusesUpdated          Status[]                  @relation("StatusUpdatedBy")
   fieldsCreated            Field[]                   @relation("FieldCreatedBy")
   fieldsUpdated            Field[]                   @relation("FieldUpdatedBy")
+  resourcesCreated         Resource[]                @relation("ResourceCreatedBy")
+  resourcesUpdated         Resource[]                @relation("ResourceUpdatedBy")
   activities               ActivityLog[]
   auditLogs                SystemAuditLog[]
   assignedTasks            Task[]
@@ -709,6 +726,78 @@ model Attachment {
   @@unique([organizationId, s3Key, version])
   @@index([organizationId, leadId, uploadedAt(sort: Desc)])
   @@map("attachments")
+}
+
+/// A Tools resource: a link or an uploaded file, plus optional usage
+/// instructions (a StructuredDocument, `@falcon/validation`'s `document.ts`),
+/// gated per-Role by `ResourceVisibility` (Phase 22).
+///
+/// One row per resource, not one row per file version: `s3Key`/`fileName`/
+/// `mimeType`/`sizeBytes` are overwritten in place when an admin replaces a
+/// file, mirroring `Attachment.version`'s own accepted, never-completed
+/// versioning story (ADR-0012) rather than building it here. The row itself
+/// is only ever deactivated, never hard-deleted.
+model Resource {
+  id             String       @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  category       String?
+  type           ResourceType
+  /// Set when type = link; null when type = file.
+  url            String?
+  /// Set when type = file; null when type = link.
+  s3Key          String?      @map("s3_key")
+  fileName       String?      @map("file_name")
+  mimeType       String?      @map("mime_type")
+  sizeBytes      BigInt?      @map("size_bytes")
+  /// A StructuredDocument (`@falcon/validation`), or null.
+  instructions   Json?        @db.JsonB
+  sortOrder      Int          @default(0) @map("sort_order")
+  active         Boolean      @default(true)
+  version        Int          @default(1)
+  createdById    String?      @map("created_by") @db.Uuid
+  updatedById    String?      @map("updated_by") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?                @relation("ResourceCreatedBy", fields: [organizationId, createdById], references: [organizationId, id], onDelete: Restrict)
+  updatedBy    User?                @relation("ResourceUpdatedBy", fields: [organizationId, updatedById], references: [organizationId, id], onDelete: Restrict)
+  visibility   ResourceVisibility[]
+
+  @@id([organizationId, id])
+  @@index([organizationId, active, sortOrder])
+  @@map("resources")
+}
+
+/// Reverse allow-list, mirroring `FieldVisibility`'s write direction but
+/// `StatusVisibility`'s (Phase 19, since superseded) plain-membership shape:
+/// a Role either may access this Resource, or the row is absent and it's
+/// hidden. No accessLevel column — there is no view/download distinction for
+/// a Resource the way Field has VIEW vs EDIT.
+///
+/// Absence for a *whole Resource* (no rows at all) means hidden, matching
+/// `FieldVisibility`'s default rather than the (superseded) StatusVisibility
+/// default: a Resource is a brand-new entity type with zero prior existence
+/// in any organization, exactly Field's situation at the moment a new Field
+/// is created — not Status's, where the default had to flip specifically
+/// because Statuses (and the leads already sitting in them) predated the
+/// feature and were already visible. See docs/planning/phase-22-tools-resource-library.md.
+model ResourceVisibility {
+  id             String   @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  resourceId     String   @map("resource_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Restrict)
+  role     Role     @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict)
+
+  @@id([organizationId, id])
+  @@unique([organizationId, resourceId, roleId])
+  @@index([organizationId, roleId])
+  @@map("resource_visibility")
 }
 
 /// One bulk import run.

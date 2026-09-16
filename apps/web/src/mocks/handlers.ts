@@ -40,6 +40,10 @@ function mockSlugify(name: string): string {
   if (base === '') return 'k';
   return /^[a-z]/.test(base) ? base : `k_${base}`;
 }
+/** A `FormDataEntryValue` (string | File) narrowed to a string, or `fallback`. */
+function formString(value: FormDataEntryValue | null, fallback: string): string {
+  return typeof value === 'string' && value !== '' ? value : fallback;
+}
 function mockNextKey(name: string, existingKeys: readonly string[]): string {
   const base = mockSlugify(name);
   const taken = new Set(existingKeys);
@@ -56,7 +60,10 @@ const MOCK_SHARES: Array<{
   grantedByUserId: string;
   capabilities: string[];
   createdAt: string;
+  expiresAt: string | null;
 }> = [];
+
+const shareDurationsDays = [7, 30, 60];
 
 interface MockActivityEntry {
   id: string;
@@ -282,6 +289,65 @@ const MOCK_ADMIN_FIELDS = FIELDS.map((field, index) => ({
   sortOrder: index,
   active: true,
 }));
+interface MockResource {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  type: 'link' | 'file';
+  url: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  instructions: { blocks: unknown[] } | null;
+  active: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  /** Mock-only: the real system stores this in a separate resource_visibility table. */
+  roleIds: string[];
+}
+/** Synthetic resources only, per AGENTS.md — no Wellsure-specific names. */
+const MOCK_RESOURCES: MockResource[] = [
+  {
+    id: 'resource-wiki',
+    name: 'Internal knowledge base',
+    description: 'Company process docs and how-tos.',
+    category: 'Reference',
+    type: 'link',
+    url: 'https://example.test/wiki',
+    fileName: null,
+    mimeType: null,
+    sizeBytes: null,
+    instructions: {
+      blocks: [{ type: 'paragraph', spans: [{ text: 'Sign in with your company account.' }] }],
+    },
+    active: true,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    roleIds: [USERS[0]!.roleId, USERS[1]!.roleId],
+  },
+  {
+    id: 'resource-onboarding',
+    name: 'Onboarding checklist',
+    description: 'Spreadsheet template for new seller onboarding.',
+    category: 'Templates',
+    type: 'file',
+    url: null,
+    fileName: 'onboarding-checklist.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    sizeBytes: 24_576,
+    instructions: null,
+    active: true,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    // Admin-only by default, demonstrating "no row = hidden" for the rep role.
+    roleIds: [USERS[0]!.roleId],
+  },
+];
+
 const MOCK_ADMIN_USERS = [
   ...USERS.map((user) => ({
     id: user.id,
@@ -357,6 +423,7 @@ const INITIAL_ADMIN_STATE = structuredClone({
   users: MOCK_ADMIN_USERS,
   notificationRules: MOCK_NOTIFICATION_RULES,
   journeyFields: MOCK_JOURNEY_FIELDS,
+  resources: MOCK_RESOURCES,
 });
 
 /**
@@ -389,6 +456,7 @@ export function resetAdminMockState() {
   MOCK_ADMIN_USERS.splice(0, MOCK_ADMIN_USERS.length, ...initial.users);
   MOCK_NOTIFICATION_RULES.splice(0, MOCK_NOTIFICATION_RULES.length, ...initial.notificationRules);
   MOCK_JOURNEY_FIELDS.splice(0, MOCK_JOURNEY_FIELDS.length, ...initial.journeyFields);
+  MOCK_RESOURCES.splice(0, MOCK_RESOURCES.length, ...initial.resources);
   MOCK_REQUIRED_FIELD_RULES.splice(0);
 }
 
@@ -535,7 +603,22 @@ export const handlers = [
       email: user.email,
       roleId: user.roleId,
       roleName: user.roleName,
+      retainViewAfterReassignment: user.retainViewAfterReassignment,
     });
+  }),
+  http.patch(`${API_BASE}/auth/preferences`, async ({ request }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    const body = (await request.json()) as { retainViewAfterReassignment: boolean };
+    if (
+      body.retainViewAfterReassignment &&
+      !user.permissions.some(
+        (p) => p.module === 'leads' && p.action === 'retain_view_after_reassignment',
+      )
+    )
+      return HttpResponse.json(errorBody('ineligible'), { status: 400 });
+    user.retainViewAfterReassignment = body.retainViewAfterReassignment;
+    return HttpResponse.json({ retainViewAfterReassignment: user.retainViewAfterReassignment });
   }),
   http.get(`${API_BASE}/auth/capabilities`, () => {
     const user = requireUser();
@@ -547,6 +630,9 @@ export const handlers = [
         fieldId: x.id,
         accessLevel: 'EDIT',
       })),
+      hasAccessibleTools: MOCK_RESOURCES.some(
+        (resource) => resource.active && resource.roleIds.includes(user.roleId),
+      ),
     });
   }),
 
@@ -1484,11 +1570,147 @@ export const handlers = [
     if (index >= 0) MOCK_ATTACHMENTS.splice(index, 1);
     return new HttpResponse(null, { status: 204 });
   }),
+
+  // Tools resource library (Phase 22). `roleIds` lives on the mock resource
+  // itself rather than a separate table, mirroring the real
+  // `resource_visibility` allow-list's "no row = hidden" default: a role not
+  // in `roleIds` never sees the resource, admin mode aside.
+  http.get(`${API_BASE}/tools`, ({ request }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    const url = new URL(request.url);
+    const adminRequested = url.searchParams.get('admin') === 'true';
+    const isAdmin =
+      adminRequested &&
+      user.permissions.some(
+        (p) => p.module === 'tools' && ['create', 'edit', 'delete'].includes(p.action),
+      );
+    const activeParam = url.searchParams.get('active');
+    const rows = isAdmin
+      ? MOCK_RESOURCES.filter((r) => activeParam === null || r.active === (activeParam === 'true'))
+      : MOCK_RESOURCES.filter((r) => r.active && r.roleIds.includes(user.roleId));
+    return HttpResponse.json(pageResponse(request, rows));
+  }),
+  http.get(`${API_BASE}/tools/:id`, ({ params, request }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    const resource = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!resource) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    const isAdmin =
+      new URL(request.url).searchParams.get('admin') === 'true' &&
+      user.permissions.some(
+        (p) => p.module === 'tools' && ['create', 'edit', 'delete'].includes(p.action),
+      );
+    if (isAdmin) return HttpResponse.json(resource);
+    if (!resource.active || !resource.roleIds.includes(user.roleId))
+      return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+    return HttpResponse.json(resource);
+  }),
+  http.get(`${API_BASE}/tools/:id/download`, ({ params }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    const resource = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!resource || !resource.active)
+      return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    if (!resource.roleIds.includes(user.roleId))
+      return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+    if (resource.type !== 'file')
+      return HttpResponse.json(errorBody('validation_error'), { status: 400 });
+    return new HttpResponse(`Mock contents of ${resource.fileName ?? 'file'}`, {
+      status: 200,
+      headers: {
+        'content-type': resource.mimeType ?? 'application/octet-stream',
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(resource.fileName ?? 'download')}`,
+      },
+    });
+  }),
+  http.post(`${API_BASE}/tools`, async ({ request }) => {
+    const form = await request.formData();
+    const type = formString(form.get('type'), 'link') as 'link' | 'file';
+    const file = form.get('file');
+    const instructionsRaw = form.get('instructions');
+    const now = new Date().toISOString();
+    const row: MockResource = {
+      id: `resource-${Date.now()}`,
+      name: formString(form.get('name'), ''),
+      description: (form.get('description') as string | null) ?? null,
+      category: (form.get('category') as string | null) ?? null,
+      type,
+      url: type === 'link' ? ((form.get('url') as string | null) ?? null) : null,
+      fileName: type === 'file' && file instanceof File ? file.name : null,
+      mimeType: type === 'file' && file instanceof File ? file.type || null : null,
+      sizeBytes: type === 'file' && file instanceof File ? file.size : null,
+      instructions:
+        typeof instructionsRaw === 'string' && instructionsRaw
+          ? (JSON.parse(instructionsRaw) as MockResource['instructions'])
+          : null,
+      active: true,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      roleIds: [],
+    };
+    MOCK_RESOURCES.push(row);
+    return HttpResponse.json(row, { status: 201 });
+  }),
+  http.put(`${API_BASE}/tools/:id`, async ({ params, request }) => {
+    const row = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    const form = await request.formData();
+    const type = formString(form.get('type'), row.type) as 'link' | 'file';
+    const file = form.get('file');
+    const instructionsRaw = form.get('instructions');
+    row.name = formString(form.get('name'), row.name);
+    row.description = (form.get('description') as string | null) ?? null;
+    row.category = (form.get('category') as string | null) ?? null;
+    row.type = type;
+    row.url = type === 'link' ? ((form.get('url') as string | null) ?? null) : null;
+    if (type === 'file' && file instanceof File) {
+      row.fileName = file.name;
+      row.mimeType = file.type || null;
+      row.sizeBytes = file.size;
+    } else if (type === 'link') {
+      row.fileName = null;
+      row.mimeType = null;
+      row.sizeBytes = null;
+    }
+    row.instructions =
+      typeof instructionsRaw === 'string' && instructionsRaw
+        ? (JSON.parse(instructionsRaw) as MockResource['instructions'])
+        : null;
+    row.version += 1;
+    row.updatedAt = new Date().toISOString();
+    return HttpResponse.json(row);
+  }),
+  http.post(`${API_BASE}/tools/:id/deactivate`, ({ params }) => {
+    const row = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    row.active = false;
+    return HttpResponse.json(row);
+  }),
+  http.get(`${API_BASE}/tools/:id/visibility`, ({ params }) => {
+    const row = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    return HttpResponse.json({ roleIds: row.roleIds });
+  }),
+  http.put(`${API_BASE}/tools/:id/visibility`, async ({ params, request }) => {
+    const row = MOCK_RESOURCES.find((r) => r.id === params.id);
+    if (!row) return HttpResponse.json(errorBody('not_found'), { status: 404 });
+    const body = (await request.json()) as { roleIds: string[] };
+    row.roleIds = [...body.roleIds].sort();
+    return HttpResponse.json({ roleIds: row.roleIds });
+  }),
   http.get(`${API_BASE}/leads/:id/shares`, ({ params }) =>
     HttpResponse.json(MOCK_SHARES.filter((s) => s.leadId === params.id)),
   ),
   http.post(`${API_BASE}/leads/:id/shares`, async ({ request, params }) => {
-    const body = (await request.json()) as { userId: string; capabilities: string[] };
+    const body = (await request.json()) as {
+      userId: string;
+      capabilities: string[];
+      durationDays?: number;
+    };
+    if (!shareDurationsDays.includes(body.durationDays as number))
+      return HttpResponse.json(errorBody('invalid_duration'), { status: 400 });
     const user = USERS.find((u) => u.id === body.userId);
     const share = {
       id: `share-${Date.now()}`,
@@ -1498,6 +1720,7 @@ export const handlers = [
       grantedByUserId: USERS[0]!.id,
       capabilities: body.capabilities,
       createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + body.durationDays! * 24 * 60 * 60 * 1000).toISOString(),
     };
     MOCK_SHARES.push(share);
     return HttpResponse.json(share, { status: 201 });

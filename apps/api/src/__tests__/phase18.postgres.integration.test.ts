@@ -7,6 +7,8 @@ import { hashPassword } from '../auth/password.js';
 import { PrismaAuthRepository } from '../auth/prisma-auth-repository.js';
 import { buildServer } from '../http/build-server.js';
 import { PrismaPermissionRepository } from '../permissions/prisma-permission-repository.js';
+import { PrismaResourceRepository } from '../tools/prisma-resource-repository.js';
+import { ResourceService } from '../tools/service.js';
 import {
   applyMigrations,
   createAdminPostgres,
@@ -61,6 +63,7 @@ describe.runIf(shouldRunAdminPostgres)('Phase 18 account lifecycle against real 
       audit: authRepository,
       permissionRepository: new PrismaPermissionRepository(prisma as never),
       adminRepository: new PrismaAdminRepository(prisma),
+      resourceService: new ResourceService(new PrismaResourceRepository(prisma), undefined),
       configurationRepository: {} as never,
       leadRepository: {} as never,
       emailSender: {

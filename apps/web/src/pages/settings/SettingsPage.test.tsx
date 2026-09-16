@@ -9,8 +9,8 @@ import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { SettingsPage } from './SettingsPage';
 
-function renderSettings() {
-  document.cookie = setCookieHeader(createSession('user-admin'));
+function renderSettings(userId = 'user-admin') {
+  document.cookie = setCookieHeader(createSession(userId));
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -118,6 +118,32 @@ describe('settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
     expect(await screen.findByText(/confirmation does not match/i)).toBeInTheDocument();
     expect(called).toBe(false);
+  });
+
+  it('shows the reassignment-grace toggle for a user whose Role holds it, and saves changes', async () => {
+    let body: unknown;
+    server.use(
+      http.patch('/api/v1/auth/preferences', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ retainViewAfterReassignment: true });
+      }),
+    );
+    renderSettings();
+    const toggle = await screen.findByLabelText(
+      /keep view-only access for 30 days after a lead is reassigned/i,
+    );
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(body).toEqual({ retainViewAfterReassignment: true });
+  });
+
+  it('hides the reassignment-grace toggle for a user whose Role lacks it', async () => {
+    renderSettings('user-rep');
+    await screen.findByText('Your profile');
+    expect(
+      screen.queryByText(/keep view-only access for 30 days after a lead is reassigned/i),
+    ).not.toBeInTheDocument();
   });
 
   it('says plainly which settings have no backing', async () => {

@@ -13,6 +13,10 @@ import { revokeSession, type SessionRepository } from '../auth/session.js';
 import type { SecurityAuditWriter } from '../auth/audit.js';
 import type { AuthenticatedContext } from '../auth/middleware.js';
 import type { PermissionRepository } from '@falcon/permission-engine';
+import {
+  updateReassignmentGracePreference,
+  type PreferencesRepository,
+} from '../auth/preferences.js';
 
 export interface CapabilityReader {
   listRolePermissions(input: { roleId: string; organizationId: string }): Promise<
@@ -30,6 +34,13 @@ export interface CapabilityReader {
     roleId: string;
     organizationId: string;
   }): Promise<readonly { fieldId: string; accessLevel: 'VIEW' | 'EDIT' }[]>;
+  /**
+   * Whether this Role can access at least one Resource — the one signal the
+   * Tools nav entry needs (`Sidebar.tsx`), reusing this already-fresh-every-
+   * call endpoint rather than a dedicated request. See
+   * docs/planning/phase-22-tools-resource-library.md §Proposed approach 9.
+   */
+  hasAnyResourceVisibility(input: { roleId: string; organizationId: string }): Promise<boolean>;
 }
 
 export async function capabilitiesRoute(input: {
@@ -40,10 +51,11 @@ export async function capabilitiesRoute(input: {
     roleId: input.auth.user.roleId,
     organizationId: input.auth.user.organizationId,
   };
-  const [permissions, journeyIds, fieldVisibility] = await Promise.all([
+  const [permissions, journeyIds, fieldVisibility, hasAccessibleTools] = await Promise.all([
     input.repository.listRolePermissions(identity),
     input.repository.listAccessibleJourneyIds(identity),
     input.repository.listFieldVisibility(identity),
+    input.repository.hasAnyResourceVisibility(identity),
   ]);
   return {
     status: 200 as const,
@@ -51,6 +63,7 @@ export async function capabilitiesRoute(input: {
       permissions,
       journeyIds: [...journeyIds].sort(),
       fieldVisibility,
+      hasAccessibleTools,
     },
   };
 }
@@ -168,6 +181,27 @@ export async function completePasswordResetRoute(input: {
       ...(result.details ? { details: { reasons: result.details } } : {}),
     },
   };
+}
+
+export async function updatePreferencesRoute(input: {
+  repository: PreferencesRepository;
+  permissionRepository: Pick<PermissionRepository, 'getRolePermission'>;
+  auth: AuthenticatedContext;
+  body: { retainViewAfterReassignment: unknown };
+}): Promise<{ status: 200 | 400; body: unknown }> {
+  if (typeof input.body.retainViewAfterReassignment !== 'boolean')
+    return { status: 400, body: { error: 'validation_error' } };
+  const value = input.body.retainViewAfterReassignment;
+  const result = await updateReassignmentGracePreference({
+    repository: input.repository,
+    permissionRepository: input.permissionRepository,
+    userId: input.auth.user.id,
+    organizationId: input.auth.user.organizationId,
+    roleId: input.auth.user.roleId,
+    value,
+  });
+  if (!result.ok) return { status: 400, body: { error: result.reason } };
+  return { status: 200, body: { retainViewAfterReassignment: value } };
 }
 
 export async function changePasswordRoute(input: {

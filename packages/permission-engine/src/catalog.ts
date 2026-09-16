@@ -30,6 +30,12 @@ export const permissionCatalog = [
     // instant routing is turned on there, with no way back in. Granted by
     // bootstrap (unlike `purge`): withholding it by default would leave the
     // very first administrator open to exactly that lockout. See ADR-0021.
+    // `retain_view_after_reassignment` (Phase 21 Part 2) is the same shape
+    // as `bypass_status_visibility`: a Role-level boolean with no per-record
+    // meaning, never a scope. It does not itself grant anything — it only
+    // decides whether a user whose Role holds it may see, and use, the
+    // personal Settings toggle that opts them into a 30-day view-only grant
+    // when a lead is reassigned away from them. See ADR-0023.
     actions: [
       'view',
       'create',
@@ -39,6 +45,7 @@ export const permissionCatalog = [
       'export',
       'import',
       'bypass_status_visibility',
+      'retain_view_after_reassignment',
     ],
     // Which of this module's actions actually consult the granted DataScope
     // — see `scoped()`'s doc comment below for what that means and why most
@@ -108,6 +115,21 @@ export const permissionCatalog = [
     // `send`'s recipient set is bounded by the sender's own `leads:view`
     // scope instead (ADR-0016), the same substitution `leads:export` uses.
     actions: ['view', 'create', 'edit', 'send'],
+  },
+  {
+    module: 'tools',
+    label: 'Tools',
+    // `view` is the floor gate for the Tools tab itself; which *specific*
+    // Resources a viewer actually sees is additionally narrowed by the
+    // `resource_visibility` allow-list — the same two-layer shape `leads:view`
+    // plus the permission engine's other axes already use. `create`/`edit`/
+    // `delete` are the admin capability and are deliberately independent of
+    // `view` — the same split `campaigns:send`/`campaigns:edit` and
+    // `lead_routing:configure`/`operate` already use. `delete` deactivates,
+    // never hard-deletes, matching every configuration module. Per-resource
+    // role-gating writes are gated on `roles_permissions`, not `tools` — see
+    // docs/planning/phase-22-tools-resource-library.md.
+    actions: ['view', 'create', 'edit', 'delete'],
   },
   {
     module: 'lead_routing',

@@ -5,7 +5,34 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 
-import type { AttachmentStorage, StorageConfig } from './storage.js';
+/**
+ * The object store, as a caller needs it.
+ *
+ * A port rather than a direct S3 dependency so a consumer stays testable
+ * without a bucket, and so the production adapter (a real bucket behind IAM,
+ * versus the local MinIO one) is a swap rather than a rewrite.
+ *
+ * Originally built for the Attachments (document locker) feature — see
+ * ADR-0012 — and relocated here, unchanged, once the Tools resource library
+ * became a second, unrelated consumer of the same S3-compatible storage and
+ * the same `S3_*` configuration contract. Each caller keeps its own object-key
+ * scheme and its own metadata table; only the port and its S3 implementation
+ * are shared.
+ */
+export interface AttachmentStorage {
+  put(input: { key: string; body: Buffer; contentType: string | undefined }): Promise<void>;
+  get(key: string): Promise<{ body: NodeJS.ReadableStream; contentType?: string | undefined }>;
+  /** Best-effort: a failed delete must not block the soft-delete of the row it belongs to. */
+  remove(key: string): Promise<void>;
+}
+
+export interface StorageConfig {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+}
 
 /**
  * S3-compatible object storage.
@@ -42,7 +69,7 @@ export class S3AttachmentStorage implements AttachmentStorage {
     const result = await this.client.send(
       new GetObjectCommand({ Bucket: this.config.bucket, Key: key }),
     );
-    if (!result.Body) throw new Error('attachment object has no body');
+    if (!result.Body) throw new Error('stored object has no body');
     return {
       body: result.Body as NodeJS.ReadableStream,
       ...(result.ContentType ? { contentType: result.ContentType } : {}),

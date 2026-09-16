@@ -42,6 +42,14 @@ const PRIMARY: NavItem[] = [
   { label: 'Sellers', to: '/sellers', icon: <Icon d="M4 6h16M4 12h16M4 18h10" /> },
 ];
 
+const TOOLS_ITEM: NavItem = {
+  label: 'Tools',
+  to: '/tools',
+  icon: (
+    <Icon d="M14.7 6.3a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l6-6a1 1 0 0 1 1.4 0ZM7 15l-3 3 2 2 3-3M17 9l3-3-2-2-3 3" />
+  ),
+};
+
 const SETTINGS: NavItem = {
   label: 'Settings',
   to: '/settings',
@@ -103,7 +111,22 @@ function SectionHeading({
 }
 
 export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: SidebarProps) {
-  const { can } = useAuth();
+  const { can, capabilities } = useAuth();
+  const canAdministerTools =
+    can('tools', 'create') || can('tools', 'edit') || can('tools', 'delete');
+  const primaryItems: NavItem[] = [
+    ...PRIMARY,
+    // Gated on the module permission *and* actually having something to see —
+    // no existing nav entry needed this second check before, since none of
+    // them hide behind a per-item allow-list the way Tools resources do. An
+    // admin capability opens it too, independent of hasAccessibleTools: on a
+    // library with zero resources granted to their own Role, that flag is
+    // false for everyone including the admin who needs to create the first
+    // one, and ToolsPage's own admin mode never required it either.
+    ...(can('tools', 'view') && (capabilities?.hasAccessibleTools || canAdministerTools)
+      ? [TOOLS_ITEM]
+      : []),
+  ];
   /**
    * Grouped by what the user is doing, not by which table it writes to:
    * configuration shapes the pipeline, people & access decides who can act.
@@ -219,7 +242,7 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
 
       <nav id="sidebar-nav" className="flex-1 overflow-y-auto px-3 py-2" aria-label="Primary">
         <SectionHeading label="Workspace" collapsed={collapsed} first />
-        <ul className="mt-2 flex flex-col gap-1">{PRIMARY.map(renderLink)}</ul>
+        <ul className="mt-2 flex flex-col gap-1">{primaryItems.map(renderLink)}</ul>
 
         {configurationItems.length ? (
           <>

@@ -438,6 +438,18 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
       },
       // `statusVisibility` (Phase 19) retired in Phase 20 — no more
       // per-Role rows to cascade when a Role is purged.
+      {
+        // Phase 22 — the Tools resource library's reverse allow-list. Same
+        // shape as `fieldVisibility` above: a pure grant row naming only this
+        // Role's participation, nothing else references it by id.
+        name: 'resourceVisibility',
+        table: 'resource_visibility',
+        list: (tx, organizationId, roleId) =>
+          tx.resourceVisibility.findMany({ where: { organizationId, roleId } }),
+        remove: async (tx, organizationId, roleId) => {
+          await tx.resourceVisibility.deleteMany({ where: { organizationId, roleId } });
+        },
+      },
     ],
     remove: async (tx, organizationId, id) => {
       await tx.role.delete({ where: { organizationId_id: { organizationId, id } } });

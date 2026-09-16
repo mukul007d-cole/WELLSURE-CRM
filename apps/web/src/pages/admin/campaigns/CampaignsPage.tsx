@@ -17,7 +17,7 @@ import type { Campaign, CampaignDocument, FieldDefinition, Status } from '../../
 import { FilterBuilder } from '../../sellers/FilterBuilder';
 import { decodeFilter, encodeFilter, type FilterCondition } from '../../sellers/filter-state';
 import { AdminTable } from '../shared';
-import { RichTextComposer } from './RichTextComposer';
+import { RichTextComposer } from '../../../components/ui/RichTextComposer';
 import { documentPreview, emptyDocument } from './campaign-document';
 
 type Draft = {

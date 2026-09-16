@@ -1,7 +1,9 @@
 import { PrismaAdminRepository } from './admin/prisma-admin-repository.js';
 import { PrismaAttachmentRepository } from './attachments/prisma-attachment-repository.js';
-import { S3AttachmentStorage } from './attachments/s3-storage.js';
 import { AttachmentService } from './attachments/service.js';
+import { PrismaResourceRepository } from './tools/prisma-resource-repository.js';
+import { ResourceService } from './tools/service.js';
+import { S3AttachmentStorage } from './storage/object-storage.js';
 import { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 import { PrismaConfigurationRepository } from './configuration/prisma-configuration-repository.js';
 import { PurgeService } from './configuration/purge-service.js';
@@ -27,12 +29,14 @@ const campaignTriggerService = new CampaignTriggerService(prisma);
 const statusRoutingService = new StatusRoutingService(prisma);
 // Only when a bucket is configured. Absent it the locker routes answer 503
 // rather than the API refusing to boot.
-const attachmentService = env.storage
-  ? new AttachmentService(
-      new PrismaAttachmentRepository(prisma),
-      new S3AttachmentStorage(env.storage),
-    )
+const objectStorage = env.storage ? new S3AttachmentStorage(env.storage) : undefined;
+const attachmentService = objectStorage
+  ? new AttachmentService(new PrismaAttachmentRepository(prisma), objectStorage)
   : undefined;
+// Unlike attachmentService, always constructed: a `link`-type Resource needs
+// no object storage, so only ResourceService's own file operations degrade
+// (to `storage_not_configured`) when objectStorage is undefined.
+const resourceService = new ResourceService(new PrismaResourceRepository(prisma), objectStorage);
 const leadRepository = new PrismaLeadRepository(
   prisma as never,
   notificationService,
@@ -66,6 +70,7 @@ const server = buildServer({
   notificationService,
   prisma,
   ...(attachmentService ? { attachmentService } : {}),
+  resourceService,
   authConfig,
   corsOrigins: env.corsOrigins,
   logLevel: env.logLevel,

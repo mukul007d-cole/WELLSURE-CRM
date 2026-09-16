@@ -34,8 +34,39 @@ describe('Phase 9 closed catalogs and validation', () => {
         userId: 'recipient',
         actorUserId: 'actor',
         capabilities: ['edit'],
+        durationDays: 30,
       }),
     ).rejects.toThrow('invalid_capabilities');
+  });
+
+  it('rejects a share with a duration outside the fixed 7/30/60-day set, before persistence', async () => {
+    // Phase 21 Part 1: no "permanent" option and no arbitrary day count —
+    // exactly one of 7, 30, or 60, validated before anything is written.
+    const service = new LeadSharingService({} as never);
+    await expect(
+      service.create({
+        organizationId: 'org',
+        leadId: 'lead',
+        userId: 'recipient',
+        actorUserId: 'actor',
+        capabilities: ['view'],
+        durationDays: 45,
+      }),
+    ).rejects.toThrow('invalid_duration');
+  });
+
+  it('rejects a share with no duration at all — never silently permanent', async () => {
+    const service = new LeadSharingService({} as never);
+    await expect(
+      service.create({
+        organizationId: 'org',
+        leadId: 'lead',
+        userId: 'recipient',
+        actorUserId: 'actor',
+        capabilities: ['view'],
+        durationDays: undefined,
+      }),
+    ).rejects.toThrow('invalid_duration');
   });
 
   it('rejects unknown rule primitives before persistence', async () => {

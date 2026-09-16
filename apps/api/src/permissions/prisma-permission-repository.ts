@@ -28,6 +28,9 @@ interface PrismaPermissionClient {
   };
   statusRoutingRule: { findFirst(args: unknown): Promise<StatusRoutingRuleRow | null> };
   fieldVisibility: { findMany(args: unknown): Promise<FieldVisibilityRow[]> };
+  resourceVisibility: {
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+  };
   lead: { findUnique(args: unknown): Promise<LeadScopeRow | null> };
   assignment: { findMany(args: unknown): Promise<AssignmentRow[]> };
   userAccessGrant: { findFirst(args: unknown): Promise<DirectGrantRow | null> };
@@ -201,6 +204,51 @@ export class PrismaPermissionRepository implements PermissionRepository {
       select: { fieldId: true, accessLevel: true },
       orderBy: { fieldId: 'asc' },
     });
+  }
+
+  /**
+   * Whether this Role may access one specific Resource — the whole-entity
+   * analogue of `hasJourneyAccess`, not a per-value strip like
+   * `getFieldVisibility`. A pure membership check: absence of a row means
+   * hidden (Phase 22's decision, matching `field_visibility`'s default, not
+   * the superseded `status_visibility` one — see
+   * docs/planning/phase-22-tools-resource-library.md).
+   */
+  async hasResourceVisibility(input: {
+    roleId: string;
+    organizationId: string;
+    resourceId: string;
+  }): Promise<boolean> {
+    const row = await this.prisma.resourceVisibility.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        roleId: input.roleId,
+        resourceId: input.resourceId,
+      },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  /**
+   * Whether this Role has *any* accessible Resource at all — a cheap EXISTS
+   * used only to gate the Tools nav entry (`GET /auth/capabilities`'s
+   * `hasAccessibleTools`), joined against active Resources so a grant on a
+   * since-deactivated Resource doesn't keep a dead nav entry alive.
+   */
+  async hasAnyResourceVisibility(input: {
+    roleId: string;
+    organizationId: string;
+  }): Promise<boolean> {
+    const row = await this.prisma.resourceVisibility.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        roleId: input.roleId,
+        resource: { active: true },
+      },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   async getLeadScope(input: {

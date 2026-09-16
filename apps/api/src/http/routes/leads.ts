@@ -237,6 +237,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
             userId: requiredString(b.userId),
             actorUserId: request.auth.user.id,
             capabilities: strings(b.capabilities),
+            durationDays: b.durationDays,
           }),
         );
       } catch (e) {
