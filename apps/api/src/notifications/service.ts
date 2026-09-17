@@ -192,12 +192,25 @@ export class NotificationService {
     actorUserId: string;
     triggerType: string;
     oldValue?: unknown;
+    changedFieldIds?: readonly string[];
   }) {
     const rules = await this.prisma.notificationRule.findMany({
       where: { organizationId: input.organizationId, active: true, triggerType: input.triggerType },
       include: { recipients: { orderBy: { sortOrder: 'asc' } } },
     });
     for (const rule of rules) {
+      // `scope.fieldId` (the only shape `validateRule` accepts, and only for
+      // `field_edited`) narrows the rule to edits of that one Field. Absent
+      // scope, or a trigger type that never carries `changedFieldIds` at
+      // all, leaves the rule unrestricted — the same "absence means
+      // unrestricted" convention every other axis in this system uses.
+      const scopedFieldId = fieldIdScope(rule.scope);
+      if (
+        scopedFieldId !== null &&
+        (input.changedFieldIds === undefined || !input.changedFieldIds.includes(scopedFieldId))
+      ) {
+        continue;
+      }
       const users = new Set<string>();
       for (const resolver of rule.recipients)
         for (const id of await this.resolve(input, resolver.resolverType, resolver.parameters))
@@ -304,6 +317,13 @@ export class NotificationService {
     }
     return [];
   }
+}
+
+/** The `fieldId` a `field_edited` rule's `scope` names, or `null` for an unscoped rule. */
+function fieldIdScope(scope: unknown): string | null {
+  if (typeof scope !== 'object' || scope === null) return null;
+  const fieldId = (scope as { fieldId?: unknown }).fieldId;
+  return typeof fieldId === 'string' ? fieldId : null;
 }
 
 function validateRule(input: {
