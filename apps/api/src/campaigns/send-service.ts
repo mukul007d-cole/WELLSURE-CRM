@@ -1,7 +1,7 @@
 import type { FalconPrismaClient } from '@falcon/database';
 
 import type { CampaignEmailSender } from '../auth/password-reset.js';
-import { parseDocument, renderDocument } from './document.js';
+import { interpolate, parseDocument, renderDocument } from './document.js';
 import { variablesFor } from './variables.js';
 
 /** A claimed-but-unresolved row past this age was orphaned by a crash between claiming and recording an outcome, and is reclaimed to `pending`. */
@@ -104,7 +104,11 @@ export class CampaignSendService {
         });
         await this.email.sendEmail({
           to: address,
-          subject: row.campaign.subject,
+          // Plain text, so interpolated only — never escaped the way the
+          // body is: an email client renders the subject as text, and
+          // escaping it would show a recipient literal `&amp;`/`&lt;` if
+          // their own name ever contained those characters.
+          subject: interpolate(row.campaign.subject, variables),
           html: renderDocument(document, variables),
         });
         await this.mark(organizationId, row.id, 'sent', null);

@@ -740,7 +740,18 @@ export class ConfigurationService {
     requiredFromStatusId?: string | null;
   }) {
     return this.map(input, 'field_journey_setting', async (tx) => {
+      const requirement = requireOneOf(input.requirement, fieldRequirements, 'field requirement');
       if (input.requiredFromStatusId !== undefined && input.requiredFromStatusId !== null) {
+        // The required-from-status narrowing only has an effect when the
+        // Field is also `required`: `validateFieldValues` only checks it at
+        // all under `setting.requirement === 'required'`. Storing it on an
+        // `optional`/`hidden` setting would be accepted and silently never
+        // enforced, on any Status, ever.
+        if (requirement !== 'required')
+          throw new ConfigurationError(
+            'validation_error',
+            'requiredFromStatusId only has an effect when requirement is required',
+          );
         const status = await requireFound(
           tx.findStatus(input.organizationId, input.requiredFromStatusId),
         );
@@ -754,7 +765,7 @@ export class ConfigurationService {
         organizationId: input.organizationId,
         fieldId: input.fieldId,
         journeyId: input.journeyId,
-        requirement: requireOneOf(input.requirement, fieldRequirements, 'field requirement'),
+        requirement,
         requiredFromStatusId: input.requiredFromStatusId ?? null,
       });
     });

@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
+import { Prisma } from '@falcon/database';
 
 import { registerCookies } from './plugins/cookies.js';
 import { registerCors } from './plugins/cors.js';
@@ -27,6 +28,33 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   server.decorateRequest('auth');
   server.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
+  });
+  /*
+   * The backstop for every error a route handler didn't already catch and
+   * translate itself (LeadError, ConfigurationError, etc. — those still
+   * produce their own documented shape via `sendRouteResult`). Without this,
+   * an unhandled Prisma error (a malformed id, say) reaches Fastify's own
+   * default handler and serializes its driver-internal shape
+   * (`{statusCode, code: "P2007", message: "...invalid input syntax..."}`)
+   * straight to the client — a real internal-detail leak, and a violation of
+   * `docs/api/endpoints.md`'s "consistent JSON shape `{ error, details? }`"
+   * standard every route is supposed to honor. Logged with full detail
+   * server-side; the client gets only the documented shape.
+   */
+  server.setErrorHandler<FastifyError>((error, request, reply) => {
+    request.log.error({ err: error }, 'unhandled error');
+    // A framework-level error (oversized upload, malformed body, and the
+    // like) already carries the real, specific status Fastify decided —
+    // 413, 400, etc. — which must survive untouched; only the body is
+    // normalized, since Fastify's own default shape
+    // (`{statusCode, code, error, message}`) is the same kind of leak a raw
+    // Prisma error is. A Prisma error carries no `statusCode` of its own
+    // (it isn't a Fastify error at all), so it's classified explicitly.
+    const isPrismaDataError =
+      error instanceof Prisma.PrismaClientKnownRequestError ||
+      error instanceof Prisma.PrismaClientValidationError;
+    const status = isPrismaDataError ? 400 : error.statusCode ?? 500;
+    return reply.status(status).send({ error: status >= 500 ? 'internal_error' : 'validation_error' });
   });
   void server.register(async (app) => {
     await registerCookies(app);
