@@ -260,6 +260,10 @@ export class PrismaLeadRepository
   ): Promise<LeadProcessRecord | null> {
     const row = await this.prisma.processInstance.findUnique({
       where: { organizationId_id: { organizationId, id: processInstanceId } },
+      // Current assignments, so callers can derive the record's real
+      // assignmentTypes server-side rather than trusting a client-supplied
+      // list — the same shape `findSeller360`'s own query already includes.
+      include: { assignments: { where: { isCurrent: true } } },
     });
     return row === null ? null : process(row);
   }

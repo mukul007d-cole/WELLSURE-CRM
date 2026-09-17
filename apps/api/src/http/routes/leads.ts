@@ -192,14 +192,18 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
      * asked for one) would silently bypass a real restriction rather than
      * just get a spurious denial the way a wrong Journey claim would.
      */
-    const allowed = async (request: FastifyRequest, leadId: string, action: string, body: Json) => {
+    const allowed = async (request: FastifyRequest, leadId: string, action: string) => {
       const lead = await deps.leadRepository.findSeller360(
         request.auth.user.organizationId,
         leadId,
       );
       if (lead === null) return false;
-      const assignmentTypes = strings(body.assignmentTypes);
       for (const process of lead.processInstances.filter((row) => row.active)) {
+        // This process instance's own real, current assignment types —
+        // never a client-supplied list, which a caller could omit or get
+        // wrong with no way for the server to tell (see `routes/leads.ts`'s
+        // `editLead`/`resolveLeadAccess` for the identical reasoning).
+        const assignmentTypes = process.assignments.map((a) => a.assignmentType);
         const decision = await resolveAuthorization({
           repository: deps.permissionRepository,
           request: {
@@ -218,16 +222,15 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
       return false;
     };
     server.get('/api/v1/leads/:id/shares', { preHandler }, async (request, reply) => {
-      const id = (request.params as { id: string }).id,
-        q = request.query as Json;
-      if (!(await allowed(request, id, 'edit', q)))
+      const id = (request.params as { id: string }).id;
+      if (!(await allowed(request, id, 'edit')))
         return reply.code(403).send({ error: 'forbidden' });
       return sharing.list(request.auth.user.organizationId, id);
     });
     server.post('/api/v1/leads/:id/shares', { preHandler }, async (request, reply) => {
       const id = (request.params as { id: string }).id,
         b = request.body as Json;
-      if (!(await allowed(request, id, 'edit', b)))
+      if (!(await allowed(request, id, 'edit')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         return reply.code(201).send(
@@ -249,7 +252,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
     server.put('/api/v1/leads/:id/shares/:shareId', { preHandler }, async (request, reply) => {
       const p = request.params as { id: string; shareId: string },
         b = request.body as Json;
-      if (!(await allowed(request, p.id, 'edit', b)))
+      if (!(await allowed(request, p.id, 'edit')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         return await sharing.update({
@@ -264,9 +267,8 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
       }
     });
     server.delete('/api/v1/leads/:id/shares/:shareId', { preHandler }, async (request, reply) => {
-      const p = request.params as { id: string; shareId: string },
-        q = request.query as Json;
-      if (!(await allowed(request, p.id, 'edit', q)))
+      const p = request.params as { id: string; shareId: string };
+      if (!(await allowed(request, p.id, 'edit')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         await sharing.revoke({
@@ -283,7 +285,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
     server.post('/api/v1/leads/:id/comments', { preHandler }, async (request, reply) => {
       const id = (request.params as { id: string }).id,
         b = request.body as Json;
-      if (!(await allowed(request, id, 'comment', b)))
+      if (!(await allowed(request, id, 'comment')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         return reply.code(201).send(
@@ -304,7 +306,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
     server.patch('/api/v1/leads/:id/reassign', { preHandler }, async (request, reply) => {
       const id = (request.params as { id: string }).id,
         b = request.body as Json;
-      if (!(await allowed(request, id, 'edit', b)))
+      if (!(await allowed(request, id, 'edit')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         return await sharing.reassign({
@@ -320,9 +322,8 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
       }
     });
     server.post('/api/v1/leads/:id/deactivate', { preHandler }, async (request, reply) => {
-      const id = (request.params as { id: string }).id,
-        b = request.body as Json;
-      if (!(await allowed(request, id, 'delete', b)))
+      const id = (request.params as { id: string }).id;
+      if (!(await allowed(request, id, 'delete')))
         return reply.code(403).send({ error: 'forbidden' });
       try {
         return await sharing.deactivate({
