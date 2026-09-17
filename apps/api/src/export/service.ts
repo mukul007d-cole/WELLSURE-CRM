@@ -57,6 +57,14 @@ export async function buildSellerExport(input: {
 }): Promise<ExportResult> {
   const rows: (string | null)[][] = [];
   let truncated = false;
+  // Leads (not CSV rows) fetched so far. `listSellers` is the same query the
+  // Seller List uses, and it silently caps `pageSize` at 100 regardless of
+  // what is requested here — so the page count needed to reach `total` can
+  // be higher than `total / pageSize` would suggest. Comparing the requested
+  // `pageSize` against `total` to decide when to stop (as this loop used to)
+  // under-counts whenever the effective page size is smaller than requested:
+  // termination must be driven by how many leads were actually returned.
+  let fetched = 0;
 
   for (let page = 1; ; page += 1) {
     const result = await input.sellerRepository.listSellers({
@@ -67,6 +75,7 @@ export async function buildSellerExport(input: {
       recordPredicate: input.recordPredicate,
       conditions: input.conditions,
     });
+    fetched += result.rows.length;
     for (const record of result.rows) {
       for (const line of expand(record, input.fields, input.recordPredicate.journeyIds)) {
         if (rows.length >= maxExportRows) {
@@ -78,7 +87,7 @@ export async function buildSellerExport(input: {
       if (truncated) break;
     }
     if (truncated) break;
-    if (page * pageSize >= result.total || result.rows.length === 0) break;
+    if (fetched >= result.total || result.rows.length === 0) break;
   }
 
   return {

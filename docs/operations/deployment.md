@@ -288,3 +288,30 @@ ADR-0018.
 for staging, not for production.
 
 **No restore drill.** As above.
+
+**Scheduled campaign delivery (`apps/worker`) is built but not yet
+deployed anywhere.** Triggered campaigns record a `pending` `campaign_sends`
+row; nothing was draining it automatically (finding #4). `apps/worker` now
+polls `POST /internal/campaigns/drain` — a shared-secret-gated route, not a
+user session — on `FALCON_WORKER_POLL_INTERVAL_MS`, and `apps/worker/dist`
+now ships inside this same image (built by the `pruned` stage, copied
+alongside `apps/api/dist`), so it can run the same way migration and
+bootstrap do: `CMD ["node", "apps/worker/dist/main.js"]` on this image, with
+`FALCON_API_INTERNAL_URL` and a `FALCON_INTERNAL_WORKER_TOKEN` matching the
+API's. What is **not** decided is *how* — that is an infrastructure choice
+this document deliberately does not make silently:
+
+- **A second small always-on service** (a second App Runner service, or an
+  ECS service) — the natural fit for this worker's actual shape, a
+  long-running poll loop, and the smallest change from what already exists.
+- **A scheduled one-off task** (EventBridge Scheduler → ECS `RunTask`, the
+  same mechanism already used for the migration task) — cheaper if idle
+  most of the time, but `main.ts`'s loop would need a "run one poll and
+  exit" variant rather than looping forever, since a scheduled task is
+  expected to finish.
+
+Either way, the credential is `FALCON_INTERNAL_WORKER_TOKEN` — generate one
+the same way the database password is generated (Terraform, never typed by
+a human), store it the same way the email API key is (a Secrets Manager
+entry filled in once), and inject it into both the API service and whichever
+shape the worker takes.

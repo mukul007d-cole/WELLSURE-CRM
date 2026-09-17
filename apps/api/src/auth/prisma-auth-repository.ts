@@ -3,6 +3,7 @@ import type { UserSnapshot } from '@falcon/permission-engine';
 import type { SecurityAuditInput, SecurityAuditWriter } from './audit.js';
 import type { LoginAttemptRecord, LoginRepository, LoginUserRecord } from './login.js';
 import type {
+  CompletePasswordResetResult,
   PasswordResetRepository,
   PasswordResetTokenRecord,
   PasswordResetUserRecord,
@@ -28,7 +29,7 @@ interface PrismaAuthClient {
   passwordResetToken: {
     create(args: unknown): Promise<PasswordResetTokenRow>;
     findFirst(args: unknown): Promise<PasswordResetTokenRow | null>;
-    update(args: unknown): Promise<unknown>;
+    updateMany(args: unknown): Promise<{ count: number }>;
   };
   failedLoginAttempt: {
     findUnique(args: unknown): Promise<LoginAttemptRow | null>;
@@ -232,42 +233,63 @@ export class PrismaAuthRepository
     return this.prisma.passwordResetToken.create({ data: input });
   }
 
-  async findPasswordResetToken(tokenHash: string): Promise<PasswordResetTokenRecord | null> {
-    return this.prisma.passwordResetToken.findFirst({ where: { tokenHash } });
-  }
+  /**
+   * See the interface doc on `PasswordResetRepository` for why this must be
+   * one conditional claim inside one transaction, not separate steps.
+   */
+  async completePasswordResetTransaction(input: {
+    tokenHash: string;
+    newPasswordHash: string;
+    now: Date;
+  }): Promise<CompletePasswordResetResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.passwordResetToken.findFirst({
+        where: { tokenHash: input.tokenHash },
+      });
+      if (record === null || record.usedAt !== null) return { ok: false, reason: 'invalid_token' };
+      if (record.expiresAt <= input.now) return { ok: false, reason: 'expired_token' };
 
-  async markPasswordResetTokenUsed(
-    id: string,
-    organizationId: string,
-    usedAt: Date,
-  ): Promise<void> {
-    await this.prisma.passwordResetToken.update({
-      where: { organizationId_id: { organizationId, id } },
-      data: { usedAt },
-    });
-  }
+      // The atomic claim: only succeeds while still unused. Two concurrent
+      // transactions racing this same row serialize on the UPDATE — the
+      // loser's WHERE re-evaluates against the winner's committed
+      // `used_at` and matches zero rows, however its own `findFirst` above
+      // happened to read.
+      const claim = await tx.passwordResetToken.updateMany({
+        where: { organizationId: record.organizationId, id: record.id, usedAt: null },
+        data: { usedAt: input.now },
+      });
+      if (claim.count === 0) return { ok: false, reason: 'invalid_token' };
 
-  async setUserPasswordHash(
-    userId: string,
-    organizationId: string,
-    passwordHash: string,
-  ): Promise<void> {
-    await this.prisma.user.update({
-      where: { organizationId_id: { organizationId, id: userId } },
-      data: { passwordHash },
+      await tx.user.update({
+        where: { organizationId_id: { organizationId: record.organizationId, id: record.userId } },
+        data: { passwordHash: input.newPasswordHash },
+      });
+      const revoked = await tx.session.updateMany({
+        where: { organizationId: record.organizationId, userId: record.userId, revokedAt: null },
+        data: { revokedAt: input.now },
+      });
+      await tx.systemAuditLog.create({
+        data: {
+          organizationId: record.organizationId,
+          actorUserId: record.userId,
+          entityType: 'user',
+          entityId: record.userId,
+          action: 'auth.password_reset_completed',
+          oldValue: { passwordHashSet: false, resetTokenUsedAt: null },
+          newValue: {
+            passwordHashSet: true,
+            resetTokenUsedAt: input.now.toISOString(),
+            revokedSessions: revoked.count,
+          },
+        },
+      });
+      return {
+        ok: true,
+        userId: record.userId,
+        organizationId: record.organizationId,
+        revokedSessions: revoked.count,
+      };
     });
-  }
-
-  async revokeUserSessions(
-    userId: string,
-    organizationId: string,
-    revokedAt: Date,
-  ): Promise<number> {
-    const result = await this.prisma.session.updateMany({
-      where: { organizationId, userId, revokedAt: null },
-      data: { revokedAt },
-    });
-    return result.count;
   }
 
   async findPasswordHashForUser(userId: string, organizationId: string): Promise<string | null> {

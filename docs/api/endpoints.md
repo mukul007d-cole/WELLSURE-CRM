@@ -152,6 +152,7 @@ POST   /campaigns                      -- campaigns:create
 PUT    /campaigns/:id                  -- campaigns:edit
 POST   /campaigns/:id/activation       -- campaigns:edit; body { active }
 POST   /campaigns/:id/send             -- campaigns:send; manual campaigns only
+POST   /campaigns/:id/retry            -- campaigns:send; requeues this campaign's failed rows, bounded
 ```
 
 - **Campaigns email Leads. Notification Rules notify Users.** They share trigger
@@ -180,7 +181,19 @@ POST   /campaigns/:id/send             -- campaigns:send; manual campaigns only
 - Sends are recorded in `campaign_sends` before delivery and delivered after the
   transaction commits. A lead receives a given campaign at most once, ever.
   Leads without an email address are recorded `skipped_no_email` rather than
-  dropped, so the reported counts add up.
+  dropped, so the reported counts add up — `POST /campaigns/:id/send` and
+  `POST /campaigns/:id/retry` both report `{ queued|requeued, sent, failed,
+  skippedNoEmail }` (`retry` also reports `permanentlyFailed`, rows already at
+  `maxCampaignSendAttempts`), and both drain **only this campaign's** pending
+  rows — never another campaign's undrained backlog.
+- A `pending` row is claimed (`pending` -> `sending`) with a conditional update
+  immediately before the transport is called, so two concurrent drains can
+  never both call the transport for the same row. A row stuck `sending` past
+  `campaignSendLeaseMs` (a crash between claiming and recording the outcome)
+  is reclaimed to `pending` and re-attempted — see `send-service.ts`.
+- `retry` requeues `failed` rows below `maxCampaignSendAttempts`; a row that
+  has exhausted its attempts stays `failed` permanently and must be
+  investigated (bad address, provider rejection) rather than retried forever.
 - **Not implemented, deliberately: unsubscribe, consent, and suppression.** See
   the Phase 13c plan; this is not safe to point at a real transport.
 

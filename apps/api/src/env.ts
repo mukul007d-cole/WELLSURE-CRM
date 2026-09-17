@@ -41,6 +41,14 @@ export interface ApiEnv {
    * `/api` here, so setting it would shadow the dev server for no reason.
    */
   webRoot?: string;
+  /**
+   * Shared secret for `apps/worker`'s periodic drain call. Optional, like
+   * object storage: absent, the internal route answers
+   * `503 internal_worker_not_configured` rather than the API refusing to
+   * boot, so a deployment (or a developer) that hasn't set one up yet is
+   * simply missing scheduled campaign delivery, not missing a server.
+   */
+  internalWorkerToken?: string;
 }
 
 export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
@@ -118,10 +126,12 @@ export function parseEnv(env: NodeJS.ProcessEnv): ApiEnv {
   }
 
   const webRoot = env.FALCON_WEB_ROOT?.trim() ?? '';
+  const internalWorkerToken = env.FALCON_INTERNAL_WORKER_TOKEN?.trim() ?? '';
 
   if (errors.length) throw new Error(`Invalid Falcon API environment:\n- ${errors.join('\n- ')}`);
   return {
     ...(webRoot ? { webRoot } : {}),
+    ...(internalWorkerToken ? { internalWorkerToken } : {}),
     databaseUrl,
     httpPort,
     corsOrigins,

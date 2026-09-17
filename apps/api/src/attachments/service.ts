@@ -18,6 +18,11 @@ export interface AttachmentRecord {
 export interface AttachmentRepository {
   listForLead(organizationId: string, leadId: string): Promise<AttachmentRecord[]>;
   findById(organizationId: string, attachmentId: string): Promise<AttachmentRecord | null>;
+  /**
+   * Writes the attachment row and its `activity_logs` event together, in one
+   * transaction, so a reader never observes a document that exists but was
+   * never recorded as uploaded.
+   */
   create(input: {
     organizationId: string;
     leadId: string;
@@ -27,7 +32,12 @@ export interface AttachmentRepository {
     sizeBytes: number;
     uploadedById: string;
   }): Promise<AttachmentRecord>;
-  deactivate(organizationId: string, attachmentId: string): Promise<void>;
+  /** Same atomicity as `create`, for the `active = false` row and its `attachment_deleted` event. */
+  deactivate(input: {
+    organizationId: string;
+    attachmentId: string;
+    deletedById: string;
+  }): Promise<void>;
 }
 
 /** Refused above this, before anything is buffered or stored. */
@@ -96,8 +106,12 @@ export class AttachmentService {
    * without it would leave the audit trail claiming a document that cannot be
    * accounted for.
    */
-  async remove(organizationId: string, record: AttachmentRecord): Promise<void> {
-    await this.repository.deactivate(organizationId, record.id);
+  async remove(
+    organizationId: string,
+    record: AttachmentRecord,
+    deletedById: string,
+  ): Promise<void> {
+    await this.repository.deactivate({ organizationId, attachmentId: record.id, deletedById });
     try {
       await this.storage.remove(record.s3Key);
     } catch {

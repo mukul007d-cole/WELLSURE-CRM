@@ -76,6 +76,8 @@ COPY --from=pruned --chown=node:node /app/node_modules              ./node_modul
 COPY --from=pruned --chown=node:node /app/apps/api/dist             ./apps/api/dist
 COPY --from=pruned --chown=node:node /app/apps/api/node_modules     ./apps/api/node_modules
 COPY --from=pruned --chown=node:node /app/apps/web/dist             ./apps/web/dist
+COPY --from=pruned --chown=node:node /app/apps/worker/dist          ./apps/worker/dist
+COPY --from=pruned --chown=node:node /app/apps/worker/node_modules  ./apps/worker/node_modules
 COPY --from=pruned --chown=node:node /app/packages                  ./packages
 
 # Where registerWeb serves the bundle from. Setting it here rather than in the
@@ -87,5 +89,8 @@ ENV FALCON_WEB_ROOT=/app/apps/web/dist
 EXPOSE 3000
 
 # The migration and bootstrap one-off tasks run this same image with a different
-# command; see docs/operations/deployment.md.
+# command; see docs/operations/deployment.md. `apps/worker/dist/main.js` is
+# built and present in this same image too (finding #4's fix), so it can run
+# the same way once a decision is made about how — see that doc's "Scheduled
+# campaign delivery" section; nothing here changes the default service.
 CMD ["node", "apps/api/dist/main.js"]

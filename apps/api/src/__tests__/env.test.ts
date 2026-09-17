@@ -103,6 +103,16 @@ describe('parseEnv', () => {
     ).toBe('Falcon Campaigns <news@mail.example.test>');
   });
 
+  it('leaves the internal worker token absent when unset', () => {
+    expect(parseEnv(base).internalWorkerToken).toBeUndefined();
+  });
+
+  it('carries a configured internal worker token', () => {
+    expect(
+      parseEnv({ ...base, FALCON_INTERNAL_WORKER_TOKEN: 'a-shared-secret' }).internalWorkerToken,
+    ).toBe('a-shared-secret');
+  });
+
   it('rejects a public base URL that is not a bare origin', () => {
     // A trailing path would produce `https://crm.example.test/app/reset-password`
     // in the mail, which 404s.

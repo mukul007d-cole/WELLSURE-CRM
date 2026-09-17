@@ -14,7 +14,11 @@ import {
 } from '../auth/session.js';
 import { capabilitiesRoute } from '../routes/auth.js';
 import type { LoginAttemptRecord, LoginRepository, LoginUserRecord } from '../auth/login.js';
-import type { PasswordResetRepository, PasswordResetTokenRecord } from '../auth/password-reset.js';
+import type {
+  CompletePasswordResetResult,
+  PasswordResetRepository,
+  PasswordResetTokenRecord,
+} from '../auth/password-reset.js';
 import type { SecurityAuditInput, SecurityAuditWriter } from '../auth/audit.js';
 import type { UserSnapshot } from '@falcon/permission-engine';
 
@@ -187,7 +191,6 @@ describe('password reset', () => {
     await expect(
       completePasswordReset({
         repository: repo,
-        audit: repo,
         token: sent[0] ?? '',
         newPassword: 'New-password-123!',
         now,
@@ -196,7 +199,6 @@ describe('password reset', () => {
     await expect(
       completePasswordReset({
         repository: repo,
-        audit: repo,
         token: sent[0] ?? '',
         newPassword: 'New-password-123!',
         now,
@@ -223,7 +225,6 @@ describe('password reset', () => {
     await expect(
       completePasswordReset({
         repository: expiredRepo,
-        audit: expiredRepo,
         token: expiredTokens[0] ?? '',
         newPassword: 'New-password-123!',
         now: new Date('2026-01-01T00:31:00.000Z'),
@@ -250,7 +251,6 @@ describe('password reset', () => {
     await expect(
       completePasswordReset({
         repository: repo,
-        audit: repo,
         token: sent[0] ?? '',
         newPassword: 'short',
         now,
@@ -357,26 +357,55 @@ class MemoryAuthRepository
     this.resets.set(row.tokenHash, row);
     return row;
   }
-  async findPasswordResetToken(tokenHash: string): Promise<PasswordResetTokenRecord | null> {
-    return this.resets.get(tokenHash) ?? null;
-  }
-  async markPasswordResetTokenUsed(
-    id: string,
-    organizationId: string,
-    usedAt: Date,
-  ): Promise<void> {
-    for (const row of this.resets.values())
-      if (row.id === id && row.organizationId === organizationId) row.usedAt = usedAt;
-  }
-  async setUserPasswordHash(
-    userId: string,
-    organizationId: string,
-    passwordHash: string,
-  ): Promise<void> {
-    if (userId === this.loginUser.id && organizationId === this.loginUser.organizationId)
-      this.loginUser.passwordHash = passwordHash;
-  }
-  async revokeUserSessions(): Promise<number> {
-    return 0;
+  async completePasswordResetTransaction(input: {
+    tokenHash: string;
+    newPasswordHash: string;
+    now: Date;
+  }): Promise<CompletePasswordResetResult> {
+    const record = this.resets.get(input.tokenHash);
+    if (record === undefined || record.usedAt !== null) {
+      return { ok: false, reason: 'invalid_token' };
+    }
+    if (record.expiresAt <= input.now) return { ok: false, reason: 'expired_token' };
+    // Single-threaded fake: no concurrent racer can interleave here, so the
+    // claim always succeeds once the checks above pass. The real (Postgres)
+    // implementations are what the concurrency regression test exercises.
+    record.usedAt = input.now;
+    if (
+      record.userId === this.loginUser.id &&
+      record.organizationId === this.loginUser.organizationId
+    ) {
+      this.loginUser.passwordHash = input.newPasswordHash;
+    }
+    let revokedSessions = 0;
+    for (const session of this.sessions.values()) {
+      if (
+        session.userId === record.userId &&
+        session.organizationId === record.organizationId &&
+        session.revokedAt === null
+      ) {
+        session.revokedAt = input.now;
+        revokedSessions += 1;
+      }
+    }
+    this.audits.push({
+      organizationId: record.organizationId,
+      actorUserId: record.userId,
+      entityType: 'user',
+      entityId: record.userId,
+      action: 'auth.password_reset_completed',
+      oldValue: { passwordHashSet: false, resetTokenUsedAt: null },
+      newValue: {
+        passwordHashSet: true,
+        resetTokenUsedAt: input.now.toISOString(),
+        revokedSessions,
+      },
+    });
+    return {
+      ok: true,
+      userId: record.userId,
+      organizationId: record.organizationId,
+      revokedSessions,
+    };
   }
 }

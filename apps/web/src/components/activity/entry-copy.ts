@@ -17,6 +17,8 @@ const ENTRY_COPY: Record<string, { verb: string; tone: ActivityTone }> = {
   reassignment: { verb: 'reassigned this seller', tone: 'people' },
   share_changed: { verb: 'changed who this is shared with', tone: 'people' },
   lead_deactivated: { verb: 'deactivated this seller', tone: 'removed' },
+  attachment_uploaded: { verb: 'uploaded a document', tone: 'neutral' },
+  attachment_deleted: { verb: 'deleted a document', tone: 'removed' },
 };
 
 const UNKNOWN = { verb: 'made a change', tone: 'neutral' as const };

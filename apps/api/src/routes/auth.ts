@@ -159,7 +159,6 @@ export async function requestPasswordResetRoute(input: {
 
 export async function completePasswordResetRoute(input: {
   repository: PasswordResetRepository;
-  audit: SecurityAuditWriter;
   body: { token: string; newPassword: string };
   now?: Date | undefined;
 }): Promise<{
@@ -168,7 +167,6 @@ export async function completePasswordResetRoute(input: {
 }> {
   const result = await completePasswordReset({
     repository: input.repository,
-    audit: input.audit,
     token: input.body.token,
     newPassword: input.body.newPassword,
     now: input.now,

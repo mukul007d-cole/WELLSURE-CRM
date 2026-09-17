@@ -1039,11 +1039,18 @@ model CampaignSend {
   organizationId String    @map("organization_id") @db.Uuid
   campaignId     String    @map("campaign_id") @db.Uuid
   leadId         String    @map("lead_id") @db.Uuid
-  /// pending | sent | failed | skipped_no_email
+  /// pending | sending | sent | failed | skipped_no_email
   status         String    @default("pending")
   error          String?
   sentAt         DateTime? @map("sent_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Set when a drain claims this row (pending -> sending); a row stuck
+  /// here past the lease timeout was orphaned by a crash mid-send and is
+  /// reclaimed back to pending rather than stranded forever.
+  claimedAt      DateTime? @map("claimed_at") @db.Timestamptz(6)
+  /// Incremented on every claim, success or failure. Bounds retries — see
+  /// `CampaignSendService.maxCampaignSendAttempts`.
+  attempts       Int       @default(0)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   campaign     Campaign     @relation(fields: [organizationId, campaignId], references: [organizationId, id], onDelete: Restrict)

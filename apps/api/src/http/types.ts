@@ -73,6 +73,11 @@ export interface ServerDependencies {
   logLevel?: string;
   authRateLimit?: { max: number; timeWindow: number };
   /**
+   * Shared secret gating `/internal/*` routes — `apps/worker`'s only
+   * credential. Absent, those routes answer `503 internal_worker_not_configured`.
+   */
+  internalWorkerToken?: string;
+  /**
    * Directory holding the built web bundle. Set only in a deployed environment,
    * where the API and the SPA must share an origin; absent locally, where Vite
    * serves the app and proxies `/api` here.

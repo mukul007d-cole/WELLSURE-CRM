@@ -210,9 +210,39 @@ export async function sendCampaign(
     campaignId: input.id,
     leadIds,
   });
-  // Delivery happens after the recording transaction has committed.
-  const drained = await input.campaignSendService.drainPending(organizationId);
+  // Delivery happens after the recording transaction has committed, and is
+  // scoped to this campaign: an org-wide drain would also send whatever
+  // other campaigns' pending backlog happens to be sitting undrained (see
+  // finding #4 — nothing else currently drains it), attributing those
+  // sends to this request's response.
+  const drained = await input.campaignSendService.drainPending(organizationId, {
+    campaignId: input.id,
+  });
   return { status: 200, body: { queued, ...drained } };
+}
+
+/**
+ * Re-offers a campaign's `failed` rows for another attempt, then drains
+ * them immediately — the same trust level as sending in the first place,
+ * so gated on `campaigns:send` rather than `edit`.
+ */
+export async function retryCampaign(
+  input: CampaignRouteDeps & { id: string },
+): Promise<CampaignRouteResult> {
+  const decision = await authorize(input, 'send');
+  if (!allowed(decision)) return forbidden();
+  const organizationId = input.auth.user.organizationId;
+  const campaign = await input.campaignService.get(organizationId, input.id);
+  if (campaign === null) return notFound();
+
+  const { requeued, permanentlyFailed } = await input.campaignSendService.retryFailed(
+    organizationId,
+    input.id,
+  );
+  const drained = await input.campaignSendService.drainPending(organizationId, {
+    campaignId: input.id,
+  });
+  return { status: 200, body: { requeued, permanentlyFailed, ...drained } };
 }
 
 function allowed(decision: Awaited<ReturnType<typeof resolveAuthorization>>): boolean {

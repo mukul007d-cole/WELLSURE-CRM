@@ -6,9 +6,13 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "dev": "tsc -p tsconfig.json && node --env-file=../../.env --watch dist/main.js",
+    "start": "node --env-file=../../.env dist/main.js",
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "pino": "10.3.1"
   }
 }
