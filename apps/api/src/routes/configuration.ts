@@ -266,6 +266,36 @@ export async function createStatus(input: {
     201,
   );
 }
+export async function setDefaultStatus(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  statusId: string;
+  now?: Date;
+}): Promise<ConfigurationRouteResult> {
+  // The Status's own journeyId, looked up server-side, is what the
+  // RoleJourneyAccess check below scopes on — never a client-claimed one,
+  // which would let a role authorized to edit Journey A's statuses set a
+  // default on a Status that actually belongs to Journey B.
+  const status = await input.configurationRepository.findStatus(
+    input.auth.user.organizationId,
+    input.statusId,
+  );
+  if (status === null) return { status: 404, body: { error: 'not_found' } };
+  return mutate(
+    input,
+    configurationModules.statuses,
+    'edit',
+    status.journeyId as string,
+    (service) =>
+      service.setDefaultStatus({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        statusId: input.statusId,
+      }),
+    200,
+  );
+}
 export async function createService(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;

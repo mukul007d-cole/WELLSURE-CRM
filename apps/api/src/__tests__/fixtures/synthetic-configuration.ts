@@ -159,6 +159,11 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async findStatus(org: string, id: string) {
     return find(this.rows.statuses, org, id);
   }
+  async listStatusesForJourney(org: string, journeyId: string) {
+    return [...this.rows.statuses.values()].filter(
+      (row) => row.organizationId === org && row.journeyId === journeyId,
+    );
+  }
   async listActiveProcessInstancesForStatus(org: string, id: string) {
     return this.processInstances.filter(
       (p) => p.organizationId === org && p.currentStatusId === id,

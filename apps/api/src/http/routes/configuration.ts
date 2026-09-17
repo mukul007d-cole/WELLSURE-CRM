@@ -8,6 +8,7 @@ import {
   updateJourney,
   deactivateJourney,
   updateStatus,
+  setDefaultStatus,
   reorderFields,
   reorderStatuses,
   updateField,
@@ -122,6 +123,9 @@ export function registerConfigurationRoutes(
       journeyId: String(p.journeyId),
       statusIds: Array.isArray(b.statusIds) ? b.statusIds.map(String) : [],
     }),
+  );
+  bind('POST', '/api/v1/statuses/:statusId/set-default', (r, _b, p) =>
+    setDefaultStatus({ ...base(r), statusId: String(p.statusId) }),
   );
   bind('POST', '/api/v1/services', (r, b) =>
     createService({

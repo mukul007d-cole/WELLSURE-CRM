@@ -88,6 +88,10 @@ export function JourneyDetailPage() {
       await refresh();
     },
   });
+  const setDefault = useMutation({
+    mutationFn: (statusId: string) => adminApi.setDefaultStatus(statusId),
+    onSuccess: refresh,
+  });
   const saveSetting = useMutation({
     mutationFn: () =>
       adminApi.setJourneyField(journeyId, settingDraft?.fieldId ?? '', {
@@ -112,7 +116,8 @@ export function JourneyDetailPage() {
     deactivateStatus.error ??
     reorder.error ??
     saveSetting.error ??
-    unmap.error;
+    unmap.error ??
+    setDefault.error;
   const statuses = journey.data?.statuses ?? [];
   const orderedStatuses = (order ?? statuses.map((status) => status.id))
     .map((id) => statuses.find((status) => status.id === id))
@@ -231,6 +236,11 @@ export function JourneyDetailPage() {
                   <span className="ml-2 text-sm text-ink-soft">
                     {status.outcomeType} · {status.behaviorType}
                   </span>
+                  {status.isDefaultOnCreate ? (
+                    <span className="ml-2 rounded-pill bg-status-followup-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-followup">
+                      Default
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex gap-1">
                   {can('journeys_statuses', 'edit') ? (
@@ -260,6 +270,16 @@ export function JourneyDetailPage() {
                       >
                         Edit
                       </Button>
+                      {!status.isDefaultOnCreate ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          loading={setDefault.isPending && setDefault.variables === status.id}
+                          onClick={() => setDefault.mutate(status.id)}
+                        >
+                          Set as default
+                        </Button>
+                      ) : null}
                     </>
                   ) : null}
                   {can('journeys_statuses', 'delete') ? (

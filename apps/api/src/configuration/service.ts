@@ -92,6 +92,8 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     input: Record<string, unknown>,
   ): Promise<ConfigRow | null>;
   findStatus(organizationId: string, id: string): Promise<ConfigRow | null>;
+  /** Every Status in the Journey, active or not — used to enforce "at most one default". */
+  listStatusesForJourney(organizationId: string, journeyId: string): Promise<ConfigRow[]>;
   listActiveProcessInstancesForStatus(
     organizationId: string,
     statusId: string,
@@ -440,6 +442,47 @@ export class ConfigurationService {
         rows.push(row);
       }
       return rows;
+    });
+  }
+
+  /**
+   * Makes `isDefaultOnCreate` reachable through the API instead of only ever
+   * being seeded by hand: sets one Status as the Journey's default and
+   * unsets every other Status in that Journey (active or not — a stale flag
+   * left on a deactivated Status would otherwise mean two "defaults") so the
+   * invariant `createLead` relies on — at most one default per Journey —
+   * always holds.
+   */
+  async setDefaultStatus(input: { organizationId: string; actorUserId: string; statusId: string }) {
+    return this.repository.transaction(async (tx) => {
+      const status = await requireFound(tx.findStatus(input.organizationId, input.statusId));
+      if (status.active === false)
+        throw new ConfigurationError('validation_error', 'status must be active to become the default');
+      const journeyStatuses = await tx.listStatusesForJourney(
+        input.organizationId,
+        status.journeyId as string,
+      );
+      const siblings = journeyStatuses.filter(
+        (row) => row.id !== status.id && row.isDefaultOnCreate === true,
+      );
+      for (const sibling of siblings) {
+        const updated = await requireFound(
+          tx.updateStatus(input.organizationId, sibling.id, {
+            isDefaultOnCreate: false,
+            updatedById: input.actorUserId,
+          }),
+        );
+        await tx.writeSystemAudit(audit(input, 'status', sibling.id, 'edit', sibling, updated));
+      }
+      if (status.isDefaultOnCreate === true) return status;
+      const row = await requireFound(
+        tx.updateStatus(input.organizationId, input.statusId, {
+          isDefaultOnCreate: true,
+          updatedById: input.actorUserId,
+        }),
+      );
+      await tx.writeSystemAudit(audit(input, 'status', input.statusId, 'edit', status, row));
+      return row;
     });
   }
 
