@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { expandTeamUserIds } from '../scope.js';
+import { assignmentScopeAllowsLead, expandTeamUserIds } from '../scope.js';
 import { createFixtureState, createRepository, orgA } from './fixtures.js';
+import type { AssignmentSnapshot } from '../types.js';
 
 /**
  * `expandTeamUserIds` — the downward hierarchy walk TEAM scope (ADR-0006)
@@ -66,5 +67,69 @@ describe('expandTeamUserIds', () => {
         state.users.find((row) => row.id === 'user-cycle-a')!,
       ),
     ).resolves.toEqual(expect.arrayContaining(['user-cycle-a', 'user-cycle-b']));
+  });
+});
+
+describe('assignmentScopeAllowsLead', () => {
+  const organizationId = orgA;
+  const leadId = 'lead-a';
+  const userId = 'user-owner';
+
+  function assignment(overrides: Partial<AssignmentSnapshot> = {}): AssignmentSnapshot {
+    return {
+      leadId,
+      processInstanceId: 'process-a',
+      assignmentType: 'owner',
+      userId,
+      organizationId,
+      isCurrent: true,
+      journeyId: 'journey-a',
+      ...overrides,
+    };
+  }
+
+  /**
+   * A caller that names no assignment types must not be treated as having
+   * named the empty set of types. Before this fix, an empty `assignmentTypes`
+   * denied every single-record decision (GET /leads/:id, shares, comments,
+   * reassign) for a user who was genuinely the record's own assignee, purely
+   * because the caller omitted a parameter — the identical inconsistency
+   * `seller-list-predicate.test.ts` already documents and fixes for the list
+   * query's assignment clause, just not yet applied here.
+   */
+  it('treats an empty assignmentTypes as no type restriction, not as matching no assignment', () => {
+    const allowed = assignmentScopeAllowsLead({
+      assignments: [assignment()],
+      leadId,
+      organizationId,
+      assignmentTypes: [],
+      allowedUserIds: [userId],
+    });
+    expect(allowed).toBe(true);
+  });
+
+  it('still filters by type when the caller named some, and denies a non-matching type', () => {
+    const allowed = assignmentScopeAllowsLead({
+      assignments: [assignment({ assignmentType: 'owner' })],
+      leadId,
+      organizationId,
+      assignmentTypes: ['technical_lead'],
+      allowedUserIds: [userId],
+    });
+    expect(allowed).toBe(false);
+  });
+
+  it('dropping the type filter never widens who counts as an authorized user', () => {
+    // The fix must only stop an absent type list from matching nothing; it
+    // must never let a bogus or absent type list substitute for the real
+    // user-scope check.
+    const allowed = assignmentScopeAllowsLead({
+      assignments: [assignment({ userId: 'someone-else' })],
+      leadId,
+      organizationId,
+      assignmentTypes: [],
+      allowedUserIds: [userId],
+    });
+    expect(allowed).toBe(false);
   });
 });

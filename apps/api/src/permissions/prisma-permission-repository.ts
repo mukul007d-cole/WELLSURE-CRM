@@ -326,7 +326,15 @@ export class PrismaPermissionRepository implements PermissionRepository {
       where: {
         organizationId: input.organizationId,
         isCurrent: true,
-        assignmentType: { in: [...input.assignmentTypes] },
+        // Empty means the caller named no types, not "match none" — the same
+        // convention the Seller List's own assignment clause uses (see
+        // `apps/api/src/leads/prisma-lead-repository.ts`'s `processWhere`).
+        // An unconditional `IN ()` here fed `assignmentScopeAllowsLead` zero
+        // rows for every caller that omitted `assignmentTypes`, denying a
+        // single-record decision even for a user genuinely assigned to it.
+        ...(input.assignmentTypes.length === 0
+          ? {}
+          : { assignmentType: { in: [...input.assignmentTypes] } }),
         ...(input.journeyIds === undefined
           ? {}
           : { processInstance: { journeyId: { in: [...input.journeyIds] } } }),

@@ -131,7 +131,13 @@ export function assignmentScopeAllowsLead(input: {
     if (journeyIds !== null && !journeyIds.has(assignment.journeyId)) {
       return false;
     }
-    if (!assignmentTypes.has(assignment.assignmentType)) {
+    // Empty means the caller named no types, not "match none" — the same
+    // convention `processWhere`'s assignment clause already uses for the list
+    // query (see `seller-list-predicate.test.ts`). Before this, a caller that
+    // simply omitted `assignmentTypes` failed this single-record check even
+    // when `allowedUsers.has(assignment.userId)` below would have passed,
+    // because an empty `Set` matches nothing it's asked `.has()` on.
+    if (assignmentTypes.size > 0 && !assignmentTypes.has(assignment.assignmentType)) {
       return false;
     }
     return allowedUsers.has(assignment.userId);
