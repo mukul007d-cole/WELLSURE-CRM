@@ -596,13 +596,37 @@ describe.runIf(shouldRunAdminPostgres)('Phase 19/20 Status Visibility', () => {
 
     // userSelf is not userOtherOwner's manager (nor userOtherOwner) — the
     // hierarchy check alone would exclude them — but the grant overrides it.
+    type SellerListRow = {
+      id: string;
+      processInstances: Array<{ journeyId: string; statusId: string; ownerName: string | null }>;
+    };
+    // Row inclusion alone isn't enough: `listSellers` runs a *second*,
+    // previously non-grant-aware filter to decide which processes an
+    // included row *displays*. Without it kept in step with the grant
+    // bypass above, the grant holder sees the row but with a blank
+    // Journey/Status/Owner — this asserts the displayed data is real, not
+    // just that the row id is present.
+    const expectRealProcessData = (body: string) => {
+      const parsed = JSON.parse(body) as { rows: SellerListRow[] };
+      const row = parsed.rows.find((candidate) => candidate.id === routedLead.leadId);
+      expect(row?.processInstances).toEqual([
+        expect.objectContaining({
+          journeyId: journey1,
+          statusId: routedGate,
+          ownerName: 'Synthetic other owner',
+        }),
+      ]);
+    };
+
     const plainAllowed = await list(asSelf());
     expect(plainAllowed.body).toContain(routedLead.leadId);
+    expectRealProcessData(plainAllowed.body);
 
     const sharedAllowed = await list(asSelf(), '&accessMode=shared_with_me');
     expect(sharedAllowed.body).toContain(routedLead.leadId);
     const sharedAllowedBody = JSON.parse(sharedAllowed.body) as { total: number; rows: unknown[] };
     expect(sharedAllowedBody.total).toBe(sharedAllowedBody.rows.length);
+    expectRealProcessData(sharedAllowed.body);
 
     expect((await detail(asSelf(), routedLead.leadId)).statusCode).toBe(200);
 

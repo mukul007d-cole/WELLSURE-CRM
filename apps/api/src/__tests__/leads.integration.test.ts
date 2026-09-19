@@ -50,6 +50,29 @@ describe.runIf(shouldRunPostgresIntegration)('Lead/Seller core against real Post
     const rowCounts = await counts(database.sql, createdBody.lead.id);
     expect(rowCounts).toEqual({ leads: 1, processes: 1, assignments: 1, activities: 1 });
 
+    // Regression: findSeller360's assignments used to omit the assignee's
+    // name entirely, rendering as a blank "Owner" stat or a literal
+    // "undefined" wherever the frontend interpolated it into a string.
+    const detail = await getSeller360({
+      auth: auth(),
+      sellerRepository: repository,
+      permissionRepository: permissionRepository({
+        editableFields: [fieldA],
+        visibleFields: [fieldA],
+      }),
+      leadId: createdBody.lead.id,
+      requestedFieldIds: [fieldA],
+      assignmentTypes: [assignmentType],
+      now,
+    });
+    expect(detail.status).toBe(200);
+    const detailBody = detail.body as {
+      processInstances: Array<{ assignments: Array<{ userId: string; userName: string | null }> }>;
+    };
+    expect(detailBody.processInstances[0]?.assignments).toEqual([
+      expect.objectContaining({ userId: actorId, userName: 'Synthetic Actor' }),
+    ]);
+
     const edited = await editLead({
       auth: auth(),
       leadRepository: repository,
@@ -487,6 +510,6 @@ async function loadProcesses(
   for (const row of rows)
     row.assignments = await sql<
       any[]
-    >`SELECT id, organization_id AS "organizationId", process_instance_id AS "processInstanceId", assignment_type AS "assignmentType", user_id AS "userId", is_current AS "isCurrent" FROM assignments WHERE organization_id=${organizationId} AND process_instance_id=${row.id} AND is_current=true`;
+    >`SELECT a.id, a.organization_id AS "organizationId", a.process_instance_id AS "processInstanceId", a.assignment_type AS "assignmentType", a.user_id AS "userId", a.is_current AS "isCurrent", jsonb_build_object('id', u.id, 'name', u.name) AS user FROM assignments a LEFT JOIN users u ON u.id=a.user_id AND u.organization_id=a.organization_id WHERE a.organization_id=${organizationId} AND a.process_instance_id=${row.id} AND a.is_current=true`;
   return rows;
 }

@@ -46,7 +46,9 @@ export function App() {
                   <Route path="/sellers" element={<SellerListPage />} />
                   <Route path="/sellers/new" element={<LeadFormPage />} />
                   <Route path="/sellers/:sellerId" element={<Seller360Page />} />
-                  <Route path="/sellers/:sellerId/edit" element={<LeadFormPage />} />
+                  <Route element={<PermissionRoute module="leads" action="edit" />}>
+                    <Route path="/sellers/:sellerId/edit" element={<LeadFormPage />} />
+                  </Route>
                   <Route element={<PermissionRoute module="tools" />}>
                     <Route path="/tools" element={<ToolsPage />} />
                   </Route>

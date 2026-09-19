@@ -185,7 +185,8 @@ export const adminApi = {
   createStatus: (journeyId: string, body: object) =>
     request<Status>(`/journeys/${journeyId}/statuses`, json('POST', body)),
   editStatus: (id: string, body: object) => request<Status>(`/statuses/${id}`, json('PATCH', body)),
-  deactivateStatus: (id: string, body: { journeyId: string; replacementStatusId?: string }) =>
+  setDefaultStatus: (id: string) => request<Status>(`/statuses/${id}/set-default`, json('POST')),
+  deactivateStatus: (id: string, body: { replacementStatusId?: string } = {}) =>
     request<Status>(`/statuses/${id}`, json('DELETE', body)),
   reorderStatuses: (journeyId: string, statusIds: string[]) =>
     request<Status[]>(`/journeys/${journeyId}/status-order`, json('PUT', { statusIds })),

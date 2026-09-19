@@ -98,7 +98,8 @@ POST   /leads/:id/routing-assign          -- lead_routing:operate AND the caller
 GET    /journeys/:id/statuses          -- NOT IMPLEMENTED: registered for POST only; read statuses from GET /journeys/:id, which returns them nested, active-filtered and sortOrder-ordered
 POST   /journeys/:id/statuses
 PATCH  /statuses/:id
-DELETE /statuses/:id                   -- deactivate; journeys_statuses:delete. requires lead-migration step
+POST   /statuses/:id/set-default       -- journeys_statuses:edit; sets isDefaultOnCreate, unsetting it on every other Status in the same Journey. journeyId is resolved server-side from the Status, never taken from the request
+DELETE /statuses/:id                   -- deactivate; journeys_statuses:delete. requires lead-migration step. journeyId is resolved server-side from the Status, never taken from the request
 POST   /statuses/:id/purge             -- permanent; journeys_statuses:purge
 
 GET    /services

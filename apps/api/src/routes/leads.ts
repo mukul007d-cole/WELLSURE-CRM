@@ -231,6 +231,11 @@ export async function moveLeadJourney(input: {
   if (source === null || source.leadId !== input.leadId) {
     return { status: 404, body: { error: 'not_found' } };
   }
+  // The source process instance's own real, current assignment types — see
+  // `editLead`'s identical reasoning. Only the first authorization check
+  // below (`includeLeadId: true`) ever consults this; the second passes no
+  // `leadId`, so `assignmentScopeAllowsLead` never looks at it there.
+  const realAssignmentTypes = (source.assignments ?? []).map((a) => a.assignmentType);
   // Target: the Status this move will land the lead in, resolved the same
   // way `LeadService.moveJourney` resolves it. Unresolvable is left
   // unchecked here; the service still rejects it with its own error.
@@ -268,7 +273,7 @@ export async function moveLeadJourney(input: {
         journeyId,
         ...(includeLeadId ? { leadId: input.leadId } : {}),
         ...(statusId === undefined ? {} : { statusId }),
-        assignmentTypes: input.assignmentTypes,
+        assignmentTypes: realAssignmentTypes,
         ...(input.now === undefined ? {} : { now: input.now }),
       },
     });
@@ -318,6 +323,11 @@ export async function editLead(input: {
   if (process === null || process.leadId !== input.leadId) {
     return { status: 404, body: { error: 'not_found' } };
   }
+  // The process instance's own real, current assignment types — never the
+  // client-supplied `assignmentTypes`, which a caller could omit or get
+  // wrong with no way for the server to tell. `findProcessInstance` already
+  // loads this record's current assignments for exactly this purpose.
+  const realAssignmentTypes = (process.assignments ?? []).map((a) => a.assignmentType);
   const decision = await resolveAuthorization({
     repository: input.permissionRepository,
     request: {
@@ -329,7 +339,7 @@ export async function editLead(input: {
       leadId: input.leadId,
       statusId: process.currentStatusId,
       requestedEditFieldIds: Object.keys(input.fieldValues ?? {}),
-      assignmentTypes: input.assignmentTypes,
+      assignmentTypes: realAssignmentTypes,
       ...(input.now === undefined ? {} : { now: input.now }),
     },
   });
@@ -599,6 +609,11 @@ async function resolveLeadAccess(input: {
   const visibleProcesses: Seller360Record['processInstances'] = [];
   const visibleFieldIds = new Set<string>();
   for (const process of lead.processInstances.filter((row) => row.active)) {
+    // This process instance's own real, current assignment types — never
+    // the client-supplied `assignmentTypes` (see `editLead`'s identical
+    // reasoning). `findSeller360` already loads each process instance's
+    // current assignments.
+    const realAssignmentTypes = process.assignments.map((a) => a.assignmentType);
     const decision = await resolveAuthorization({
       repository: input.permissionRepository,
       request: {
@@ -610,7 +625,7 @@ async function resolveLeadAccess(input: {
         leadId: lead.id,
         statusId: process.currentStatus.id,
         requestedFieldIds: input.requestedFieldIds,
-        assignmentTypes: input.assignmentTypes,
+        assignmentTypes: realAssignmentTypes,
         ...(input.now === undefined ? {} : { now: input.now }),
       },
     });

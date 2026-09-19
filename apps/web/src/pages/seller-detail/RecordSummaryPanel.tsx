@@ -107,7 +107,7 @@ export function RecordSummaryPanel({
         rather than shown as a permanent "N/A".
       */}
       <dl className="grid grid-cols-2 gap-3 border-t border-line-soft pt-4">
-        <Stat label="Owner" value={owner ? owner.userName : 'Unassigned'} />
+        <Stat label="Owner" value={owner ? (owner.userName ?? 'Unknown user') : 'Unassigned'} />
         <Stat label="Repeat count" value={String(repeatCount)} />
         <Stat label="Added on" value={date(seller.createdAt)} />
         <Stat label="Updated on" value={date(seller.updatedAt)} />
@@ -143,7 +143,7 @@ export function RecordSummaryPanel({
                 <span className="text-xs text-ink-soft">
                   {process.assignments.length > 0
                     ? process.assignments
-                        .map((a) => `${a.userName} (${a.assignmentType})`)
+                        .map((a) => `${a.userName ?? 'Unknown user'} (${a.assignmentType})`)
                         .join(', ')
                     : 'No one assigned'}
                 </span>

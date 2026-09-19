@@ -15,6 +15,13 @@ export interface LeadActivityInput {
   source: string;
   oldValue: unknown;
   newValue: unknown;
+  /**
+   * The Field ids this specific write actually touched — only meaningful
+   * (and only ever supplied) for `actionType: 'field_edit'`. Lets a
+   * `field_edited` Notification Rule's `scope.fieldId` filter on the field
+   * that changed instead of firing for every edit to every field.
+   */
+  changedFieldIds?: readonly string[];
 }
 
 export interface LeadActivityWriter {

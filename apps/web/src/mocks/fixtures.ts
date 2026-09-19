@@ -252,7 +252,7 @@ export interface MockLead {
     journeyId: string;
     statusId: string;
     active: boolean;
-    assignments: Array<{ id: string; assignmentType: string; userId: string }>;
+    assignments: Array<{ id: string; assignmentType: string; userId: string; userName: string }>;
   }>;
 }
 
@@ -298,7 +298,14 @@ export const LEADS: MockLead[] = COMPANY_NAMES.flatMap((company, index) => {
         journeyId: journey.id,
         statusId: status.id,
         active: status.outcomeType === 'open',
-        assignments: [{ id: `assign-${index + 1}`, assignmentType: 'owner', userId: owner.id }],
+        assignments: [
+          {
+            id: `assign-${index + 1}`,
+            assignmentType: 'owner',
+            userId: owner.id,
+            userName: owner.name,
+          },
+        ],
       },
     ],
   };

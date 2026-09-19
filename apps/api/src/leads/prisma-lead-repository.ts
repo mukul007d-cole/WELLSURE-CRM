@@ -260,6 +260,10 @@ export class PrismaLeadRepository
   ): Promise<LeadProcessRecord | null> {
     const row = await this.prisma.processInstance.findUnique({
       where: { organizationId_id: { organizationId, id: processInstanceId } },
+      // Current assignments, so callers can derive the record's real
+      // assignmentTypes server-side rather than trusting a client-supplied
+      // list — the same shape `findSeller360`'s own query already includes.
+      include: { assignments: { where: { isCurrent: true } } },
     });
     return row === null ? null : process(row);
   }
@@ -353,7 +357,12 @@ export class PrismaLeadRepository
     assignmentType: string;
     userId: string;
   }): Promise<LeadAssignmentRecord> {
-    return assignment(await this.prisma.assignment.create({ data: input }));
+    return assignment(
+      await this.prisma.assignment.create({
+        data: input,
+        include: { user: { select: { id: true, name: true } } },
+      }),
+    );
   }
 
   async userExists(organizationId: string, userId: string): Promise<boolean> {
@@ -393,6 +402,9 @@ export class PrismaLeadRepository
           // Phase 9 never needed the new value; a campaign keyed on entering a
           // status does.
           newValue: input.newValue,
+          ...(input.changedFieldIds === undefined
+            ? {}
+            : { changedFieldIds: input.changedFieldIds }),
         };
         // Every consumer reads the same detected event through one dispatcher.
         // No consumer knows about any other, and the classification exists once.
@@ -446,7 +458,10 @@ export class PrismaLeadRepository
                 behaviorType: true,
               },
             },
-            assignments: { where: { isCurrent: true } },
+            assignments: {
+              where: { isCurrent: true },
+              include: { user: { select: { id: true, name: true } } },
+            },
           },
         },
       },
@@ -590,7 +605,34 @@ export class PrismaLeadRepository
           select: { userId: true },
         },
         processInstances: {
-          where: processWhere(input),
+          // Which processes to *display* on an already-included row —
+          // distinct from `accessClause()`/`sellerWhere`'s row-inclusion
+          // question above, and previously not kept in step with it: a row
+          // reachable only through a direct grant (Lead Sharing, or a
+          // reassignment-grace grant) matched none of `processWhere`'s
+          // assignment-scoped condition, so it listed with an empty
+          // `processInstances` array — blank Journey/Status/Owner columns —
+          // even though `GET /leads/:id` showed the same record correctly,
+          // because that route asks `resolveAuthorization` per process
+          // (grant-aware by construction) rather than filtering by scope
+          // alone. Mirrors `sellerWhere`'s own per-`accessMode` shape so a
+          // grant-reached row shows exactly the processes that justified
+          // including it.
+          where:
+            input.accessMode === 'shared_with_me'
+              ? { organizationId: input.organizationId, active: true }
+              : input.accessMode === 'mine'
+                ? processWhere(input)
+                : {
+                    OR: [
+                      processWhere(input),
+                      {
+                        organizationId: input.organizationId,
+                        active: true,
+                        journeyId: { in: [...input.recordPredicate.journeyIds] },
+                      },
+                    ],
+                  },
           include: {
             journey: { select: { id: true, key: true, name: true } },
             currentStatus: {
@@ -829,6 +871,7 @@ function assignment(row: AssignmentRow): LeadAssignmentRecord {
     assignmentType: row.assignmentType,
     userId: row.userId,
     isCurrent: row.isCurrent,
+    userName: row.user?.name ?? null,
   };
 }
 

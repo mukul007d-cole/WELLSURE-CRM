@@ -38,6 +38,7 @@ export interface LeadAssignmentRecord {
   assignmentType: string;
   userId: string;
   isCurrent: boolean;
+  userName: string | null;
 }
 
 export interface LeadRepository extends LeadActivityWriter {
@@ -208,6 +209,7 @@ export class LeadService {
           email: lead.email,
           fieldValues: mergedFieldValues,
         },
+        changedFieldIds: Object.keys(mergedFieldValues),
       });
       return { lead, process };
     });
@@ -352,6 +354,10 @@ export class LeadService {
           source: 'lead_api',
           oldValue: lead,
           newValue: updatedLead,
+          // The dynamic Field ids this specific call supplied — never the
+          // full merged set, so a rule scoped to Field A doesn't fire when
+          // only name/phone/email or an unrelated Field B changed.
+          changedFieldIds: Object.keys(fieldValues),
         });
       }
       if (statusId !== oldStatusId) {

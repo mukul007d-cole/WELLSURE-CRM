@@ -611,6 +611,118 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
     await admin.unsafe(`DROP TRIGGER reject_notifications ON "${schema}".notifications`);
   });
 
+  it("a field_edited rule's scope.fieldId only fires for edits to that field, not any field", async () => {
+    const fieldA = randomUUID(),
+      fieldB = randomUUID(),
+      scopedLead = randomUUID(),
+      scopedProcess = randomUUID();
+    await prisma.field.createMany({
+      data: [fieldA, fieldB].map((id, i) => ({
+        id,
+        organizationId: org,
+        key: `synthetic_scope_field_${i}`,
+        name: `Synthetic scope field ${i}`,
+        fieldType: 'text',
+        editMode: 'manual',
+        source: 'manual',
+      })),
+    });
+    await prisma.fieldJourneySetting.createMany({
+      data: [fieldA, fieldB].map((fieldId) => ({
+        organizationId: org,
+        fieldId,
+        journeyId: journey,
+        requirement: 'optional' as const,
+      })),
+    });
+    await prisma.fieldVisibility.createMany({
+      data: [fieldA, fieldB].map((fieldId) => ({
+        organizationId: org,
+        fieldId,
+        roleId: role,
+        accessLevel: 'EDIT' as const,
+      })),
+    });
+    await prisma.lead.create({
+      data: { id: scopedLead, organizationId: org, name: 'Scope test lead' },
+    });
+    await prisma.processInstance.create({
+      data: {
+        id: scopedProcess,
+        organizationId: org,
+        leadId: scopedLead,
+        journeyId: journey,
+        currentStatusId: status,
+        isPrimary: true,
+      },
+    });
+    await prisma.assignment.create({
+      data: {
+        organizationId: org,
+        processInstanceId: scopedProcess,
+        assignmentType: 'synthetic_owner',
+        userId: owner,
+      },
+    });
+    const notifications = new NotificationService(prisma);
+    const rule = await notifications.createRule({
+      organizationId: org,
+      actorUserId: owner,
+      name: 'Field A change alert',
+      triggerType: 'field_edited',
+      scope: { fieldId: fieldA },
+      recipients: [
+        { resolverType: 'assignment_holder', parameters: { assignmentType: 'synthetic_owner' } },
+      ],
+    });
+    const repo = new PrismaLeadRepository(prisma as never, notifications);
+    const editArgs = {
+      auth: {
+        user: {
+          id: owner,
+          organizationId: org,
+          roleId: role,
+          active: true,
+          departmentId: null,
+          managerId: null,
+        },
+        session: {} as never,
+      },
+      leadRepository: repo,
+      permissionRepository: new PrismaPermissionRepository(prisma as never),
+      processInstanceId: scopedProcess,
+      journeyId: journey,
+      leadId: scopedLead,
+      assignmentTypes: ['synthetic_owner'],
+    };
+
+    // Editing only Field B — unrelated to the rule's scope — must not fire it.
+    const editB = await editLead({ ...editArgs, fieldValues: { [fieldB]: 'unrelated edit' } });
+    expect(editB.status).toBe(200);
+    const activityB = await prisma.activityLog.findFirstOrThrow({
+      where: { organizationId: org, leadId: scopedLead, actionType: 'field_edit' },
+      orderBy: { timestamp: 'desc' },
+    });
+    expect(
+      await prisma.notification.count({
+        where: { organizationId: org, notificationRuleId: rule.id, activityLogId: activityB.id },
+      }),
+    ).toBe(0);
+
+    // Editing Field A — the rule's own scope — must fire it, exactly once, to the assignee.
+    const editA = await editLead({ ...editArgs, fieldValues: { [fieldA]: 'in-scope edit' } });
+    expect(editA.status).toBe(200);
+    const activityA = await prisma.activityLog.findFirstOrThrow({
+      where: { organizationId: org, leadId: scopedLead, actionType: 'field_edit' },
+      orderBy: { timestamp: 'desc' },
+    });
+    expect(activityA.id).not.toBe(activityB.id);
+    const deliveries = await prisma.notification.findMany({
+      where: { organizationId: org, notificationRuleId: rule.id, activityLogId: activityA.id },
+    });
+    expect(deliveries.map((x) => x.userId)).toEqual([owner]);
+  });
+
   it('records reassignment old/new holders, deactivates with audit, and supports rule/inbox isolation', async () => {
     const notifications = new NotificationService(prisma),
       sharing = new LeadSharingService(prisma, notifications);

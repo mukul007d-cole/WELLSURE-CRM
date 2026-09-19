@@ -29,6 +29,13 @@ export interface TriggerEvent {
    * the new status id from it.
    */
   newValue?: unknown;
+  /**
+   * The Field ids this `field_edited` write actually touched — absent for
+   * every other trigger type. Lets a Notification Rule's `scope.fieldId`
+   * (the only trigger kind that accepts a `scope` at all) filter on the
+   * field that changed, rather than firing for every field edit.
+   */
+  changedFieldIds?: readonly string[];
 }
 
 export function triggerTypeFor(actionType: string): TriggerType | undefined {

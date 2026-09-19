@@ -18,6 +18,7 @@ import {
   readConfiguration,
   reorderFields,
   reorderStatuses,
+  setDefaultStatus,
   updateField,
   upsertFieldVisibility,
   type ConfigurationRouteResult,
@@ -128,7 +129,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      journeyId,
       statusId,
     });
     expect(blocked).toEqual({
@@ -140,7 +140,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      journeyId,
       statusId,
       replacementStatusId,
     });
@@ -165,6 +164,46 @@ describe('configuration engine API', () => {
         newValue: { statusId: replacementStatusId },
       },
     ]);
+  });
+
+  /**
+   * Regression: `deactivateStatus` used to take `journeyId` from the client
+   * and use only that for the RoleJourneyAccess check, then deactivate
+   * whatever Status `statusId` named regardless of which Journey it actually
+   * belonged to. A role scoped to Journey A could deactivate a Status in
+   * Journey B by simply claiming `journeyId: A`. The route now resolves the
+   * Status's real Journey itself, so there is no `journeyId` left to spoof.
+   */
+  it('denies deactivating a Status that belongs to a Journey the role cannot access', async () => {
+    const repository = new MemoryConfigurationRepository();
+    const otherJourneyId = '99999999-9999-9999-9999-999999999999';
+    const statusInOtherJourney = '88888888-8888-8888-8888-888888888888';
+    repository.rows.journeys.set(otherJourneyId, {
+      id: otherJourneyId,
+      organizationId: orgA,
+      key: 'other_journey',
+      name: 'Other Journey',
+      active: true,
+    });
+    repository.rows.statuses.set(statusInOtherJourney, {
+      id: statusInOtherJourney,
+      organizationId: orgA,
+      journeyId: otherJourneyId,
+      key: 'other_status',
+      name: 'Other Status',
+      active: true,
+    });
+
+    // `permissionRepository()`'s `hasJourneyAccess` fixture only grants
+    // access to `journeyId` (Journey A) -- never `otherJourneyId`.
+    const response = await deactivateStatus({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      statusId: statusInOtherJourney,
+    });
+    expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
+    expect(repository.rows.statuses.get(statusInOtherJourney)?.active).toBe(true);
   });
 
   it('uses real DELETE semantics for field visibility mapping rows and audits the old value', async () => {
@@ -227,6 +266,52 @@ describe('configuration engine API', () => {
     expect(repository.rows.statuses.get(replacementStatusId)?.sortOrder).toBe(0);
     expect(repository.rows.statuses.get(statusId)?.sortOrder).toBe(1);
     expect(repository.systemAudits.filter((audit) => audit.action === 'reorder')).toHaveLength(2);
+  });
+
+  it('sets a Status as the Journey default and unsets the previous one', async () => {
+    const repository = new MemoryConfigurationRepository();
+    repository.rows.statuses.get(replacementStatusId)!.isDefaultOnCreate = true;
+
+    const response = await setDefaultStatus({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      statusId,
+    });
+    expect(response.status).toBe(200);
+    expect(repository.rows.statuses.get(statusId)?.isDefaultOnCreate).toBe(true);
+    expect(repository.rows.statuses.get(replacementStatusId)?.isDefaultOnCreate).toBe(false);
+    expect(repository.systemAudits.filter((audit) => audit.entityType === 'status')).toHaveLength(
+      2,
+    );
+  });
+
+  it('is a no-op, with no audit writes, when the Status is already the Journey default', async () => {
+    const repository = new MemoryConfigurationRepository();
+    repository.rows.statuses.get(statusId)!.isDefaultOnCreate = true;
+
+    const response = await setDefaultStatus({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      statusId,
+    });
+    expect(response.status).toBe(200);
+    expect(repository.systemAudits).toHaveLength(0);
+  });
+
+  it('returns not_found for a nonexistent Status before ever consulting authorization', async () => {
+    // A denying permission repository still must never surface as 403 here:
+    // the route resolves the Status first (to learn its real journeyId for
+    // the RoleJourneyAccess check) and a miss short-circuits to 404 before
+    // resolveAuthorization runs at all.
+    const response = await setDefaultStatus({
+      auth: auth(),
+      permissionRepository: permissionRepository(false),
+      configurationRepository: new MemoryConfigurationRepository(),
+      statusId: '99999999-9999-9999-9999-999999999999',
+    });
+    expect(response).toEqual({ status: 404, body: { error: 'not_found' } });
   });
 
   it('requires unique non-blank options for select Fields', async () => {
@@ -697,7 +782,6 @@ describe('configuration deactivation permission actions', () => {
           auth: auth(),
           permissionRepository: catalogPermissionRepository(granted),
           configurationRepository: target.repository,
-          journeyId,
           statusId: target.id,
         }),
     },

@@ -216,6 +216,11 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       where: { organizationId: org, id },
     }) as Promise<ConfigRow | null>;
   }
+  listStatusesForJourney(org: string, journeyId: string): Promise<ConfigRow[]> {
+    return this.prisma.status.findMany({
+      where: { organizationId: org, journeyId },
+    }) as Promise<ConfigRow[]>;
+  }
   listActiveProcessInstancesForStatus(
     org: string,
     id: string,

@@ -441,13 +441,15 @@ export function SellerListPage() {
                       ))}
                       <DataCell align="right">
                         <RowActions>
-                          <Link
-                            to={`/sellers/${row.id}/edit`}
-                            onClick={(event) => event.stopPropagation()}
-                            className="rounded-control px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper hover:text-ink"
-                          >
-                            Edit
-                          </Link>
+                          {can('leads', 'edit') ? (
+                            <Link
+                              to={`/sellers/${row.id}/edit`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="rounded-control px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper hover:text-ink"
+                            >
+                              Edit
+                            </Link>
+                          ) : null}
                         </RowActions>
                       </DataCell>
                     </DataRow>

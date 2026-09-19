@@ -319,9 +319,11 @@ export function Seller360Page() {
               onClick={() => downloadRecordPdf(seller, fields)}
               d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
             />
-            <ButtonLink to={`/sellers/${seller.id}/edit`} variant="secondary">
-              Edit seller
-            </ButtonLink>
+            {can('leads', 'edit') ? (
+              <ButtonLink to={`/sellers/${seller.id}/edit`} variant="secondary">
+                Edit seller
+              </ButtonLink>
+            ) : null}
           </div>
         }
       />
