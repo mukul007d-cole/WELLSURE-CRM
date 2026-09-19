@@ -357,7 +357,12 @@ export class PrismaLeadRepository
     assignmentType: string;
     userId: string;
   }): Promise<LeadAssignmentRecord> {
-    return assignment(await this.prisma.assignment.create({ data: input }));
+    return assignment(
+      await this.prisma.assignment.create({
+        data: input,
+        include: { user: { select: { id: true, name: true } } },
+      }),
+    );
   }
 
   async userExists(organizationId: string, userId: string): Promise<boolean> {
@@ -451,7 +456,10 @@ export class PrismaLeadRepository
                 behaviorType: true,
               },
             },
-            assignments: { where: { isCurrent: true } },
+            assignments: {
+              where: { isCurrent: true },
+              include: { user: { select: { id: true, name: true } } },
+            },
           },
         },
       },
@@ -834,6 +842,7 @@ function assignment(row: AssignmentRow): LeadAssignmentRecord {
     assignmentType: row.assignmentType,
     userId: row.userId,
     isCurrent: row.isCurrent,
+    userName: row.user?.name ?? null,
   };
 }
 

@@ -38,6 +38,7 @@ export interface LeadAssignmentRecord {
   assignmentType: string;
   userId: string;
   isCurrent: boolean;
+  userName: string | null;
 }
 
 export interface LeadRepository extends LeadActivityWriter {

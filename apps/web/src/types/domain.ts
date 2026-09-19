@@ -105,7 +105,7 @@ export interface LeadAssignmentRecord {
   id: string;
   assignmentType: string;
   userId: string;
-  userName: string;
+  userName: string | null;
 }
 
 /** Response shape of serializeLead() — identical for list rows and detail. */

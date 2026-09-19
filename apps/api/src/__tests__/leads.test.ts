@@ -482,6 +482,7 @@ describe('Moving a lead between journeys', () => {
       assignmentType,
       userId: actorId,
       isCurrent: true,
+      userName: null,
     });
 
     const response = await move(repo, permissionRepository({ journeys: [journeyA, journeyB] }), {
@@ -986,6 +987,7 @@ class MemoryLeadRepository implements LeadRepository {
       assignmentType,
       userId: actorId,
       isCurrent: true,
+      userName: null,
     });
     return process;
   }

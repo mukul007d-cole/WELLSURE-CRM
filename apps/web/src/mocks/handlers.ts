@@ -1380,6 +1380,7 @@ export const handlers = [
             id: `assign-${id}-${index}`,
             assignmentType: assignment.assignmentType,
             userId: assignment.userId,
+            userName: USERS.find((u) => u.id === assignment.userId)?.name ?? 'Unknown',
           })),
         },
       ],

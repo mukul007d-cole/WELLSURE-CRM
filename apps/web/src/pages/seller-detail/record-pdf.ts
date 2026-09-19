@@ -56,7 +56,7 @@ export function buildRecordPdf(seller: Seller360Record, fields: readonly FieldDe
     for (const process of seller.processInstances) {
       write(`${process.journey.name} — ${process.currentStatus.name}`, { bold: true });
       const owners = process.assignments
-        .map((assignment) => `${assignment.userName} (${assignment.assignmentType})`)
+        .map((assignment) => `${assignment.userName ?? 'Unknown user'} (${assignment.assignmentType})`)
         .join(', ');
       write(owners || 'No one assigned', { size: 9, gap: 6 });
     }
