@@ -1,6 +1,6 @@
 variable "oneoff_image_tag" {
   type    = string
-  default = "oneoff-3"
+  default = "oneoff-4"
 }
 
 resource "aws_ecs_cluster" "oneoff" {
