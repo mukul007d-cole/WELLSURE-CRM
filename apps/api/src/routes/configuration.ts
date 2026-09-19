@@ -215,16 +215,26 @@ export async function deactivateStatus(input: {
   auth: AuthenticatedContext;
   permissionRepository: PermissionRepository;
   configurationRepository: ConfigurationRepository;
-  journeyId: string;
   statusId: string;
   replacementStatusId?: string;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
+  // The Status's own journeyId, looked up server-side, is what the
+  // RoleJourneyAccess check below scopes on — never a client-claimed one
+  // (see `setDefaultStatus`, which uses the same pattern for the same
+  // reason): a role authorized to delete-configure Journey A's statuses
+  // must not be able to deactivate a Status that actually belongs to
+  // Journey B just by naming A in the request body.
+  const status = await input.configurationRepository.findStatus(
+    input.auth.user.organizationId,
+    input.statusId,
+  );
+  if (status === null) return { status: 404, body: { error: 'not_found' } };
   return mutate(
     input,
     configurationModules.statuses,
     'delete',
-    input.journeyId,
+    status.journeyId as string,
     (service) =>
       service.deactivateStatus({
         organizationId: input.auth.user.organizationId,

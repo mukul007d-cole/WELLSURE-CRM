@@ -129,7 +129,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      journeyId,
       statusId,
     });
     expect(blocked).toEqual({
@@ -141,7 +140,6 @@ describe('configuration engine API', () => {
       auth: auth(),
       permissionRepository: permissionRepository(),
       configurationRepository: repository,
-      journeyId,
       statusId,
       replacementStatusId,
     });
@@ -166,6 +164,46 @@ describe('configuration engine API', () => {
         newValue: { statusId: replacementStatusId },
       },
     ]);
+  });
+
+  /**
+   * Regression: `deactivateStatus` used to take `journeyId` from the client
+   * and use only that for the RoleJourneyAccess check, then deactivate
+   * whatever Status `statusId` named regardless of which Journey it actually
+   * belonged to. A role scoped to Journey A could deactivate a Status in
+   * Journey B by simply claiming `journeyId: A`. The route now resolves the
+   * Status's real Journey itself, so there is no `journeyId` left to spoof.
+   */
+  it('denies deactivating a Status that belongs to a Journey the role cannot access', async () => {
+    const repository = new MemoryConfigurationRepository();
+    const otherJourneyId = '99999999-9999-9999-9999-999999999999';
+    const statusInOtherJourney = '88888888-8888-8888-8888-888888888888';
+    repository.rows.journeys.set(otherJourneyId, {
+      id: otherJourneyId,
+      organizationId: orgA,
+      key: 'other_journey',
+      name: 'Other Journey',
+      active: true,
+    });
+    repository.rows.statuses.set(statusInOtherJourney, {
+      id: statusInOtherJourney,
+      organizationId: orgA,
+      journeyId: otherJourneyId,
+      key: 'other_status',
+      name: 'Other Status',
+      active: true,
+    });
+
+    // `permissionRepository()`'s `hasJourneyAccess` fixture only grants
+    // access to `journeyId` (Journey A) -- never `otherJourneyId`.
+    const response = await deactivateStatus({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+      configurationRepository: repository,
+      statusId: statusInOtherJourney,
+    });
+    expect(response).toEqual({ status: 403, body: { error: 'forbidden' } });
+    expect(repository.rows.statuses.get(statusInOtherJourney)?.active).toBe(true);
   });
 
   it('uses real DELETE semantics for field visibility mapping rows and audits the old value', async () => {
@@ -742,7 +780,6 @@ describe('configuration deactivation permission actions', () => {
           auth: auth(),
           permissionRepository: catalogPermissionRepository(granted),
           configurationRepository: target.repository,
-          journeyId,
           statusId: target.id,
         }),
     },

@@ -99,7 +99,6 @@ export function registerConfigurationRoutes(
   bind('DELETE', '/api/v1/statuses/:statusId', (r, b, p) =>
     deactivateStatus({
       ...base(r),
-      journeyId: String(b.journeyId),
       statusId: String(p.statusId),
       ...(typeof b.replacementStatusId === 'string'
         ? { replacementStatusId: b.replacementStatusId }
