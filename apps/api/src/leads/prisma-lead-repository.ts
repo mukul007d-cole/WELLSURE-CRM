@@ -603,7 +603,34 @@ export class PrismaLeadRepository
           select: { userId: true },
         },
         processInstances: {
-          where: processWhere(input),
+          // Which processes to *display* on an already-included row —
+          // distinct from `accessClause()`/`sellerWhere`'s row-inclusion
+          // question above, and previously not kept in step with it: a row
+          // reachable only through a direct grant (Lead Sharing, or a
+          // reassignment-grace grant) matched none of `processWhere`'s
+          // assignment-scoped condition, so it listed with an empty
+          // `processInstances` array — blank Journey/Status/Owner columns —
+          // even though `GET /leads/:id` showed the same record correctly,
+          // because that route asks `resolveAuthorization` per process
+          // (grant-aware by construction) rather than filtering by scope
+          // alone. Mirrors `sellerWhere`'s own per-`accessMode` shape so a
+          // grant-reached row shows exactly the processes that justified
+          // including it.
+          where:
+            input.accessMode === 'shared_with_me'
+              ? { organizationId: input.organizationId, active: true }
+              : input.accessMode === 'mine'
+                ? processWhere(input)
+                : {
+                    OR: [
+                      processWhere(input),
+                      {
+                        organizationId: input.organizationId,
+                        active: true,
+                        journeyId: { in: [...input.recordPredicate.journeyIds] },
+                      },
+                    ],
+                  },
           include: {
             journey: { select: { id: true, key: true, name: true } },
             currentStatus: {
