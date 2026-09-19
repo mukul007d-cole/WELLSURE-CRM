@@ -53,8 +53,10 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     const isPrismaDataError =
       error instanceof Prisma.PrismaClientKnownRequestError ||
       error instanceof Prisma.PrismaClientValidationError;
-    const status = isPrismaDataError ? 400 : error.statusCode ?? 500;
-    return reply.status(status).send({ error: status >= 500 ? 'internal_error' : 'validation_error' });
+    const status = isPrismaDataError ? 400 : (error.statusCode ?? 500);
+    return reply
+      .status(status)
+      .send({ error: status >= 500 ? 'internal_error' : 'validation_error' });
   });
   void server.register(async (app) => {
     await registerCookies(app);

@@ -198,7 +198,13 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
     });
     await prisma.user.createMany({
       data: [
-        { id: owner, organizationId: org, name: 'Owner', email: 'owner@example.test', roleId: roleSelf },
+        {
+          id: owner,
+          organizationId: org,
+          name: 'Owner',
+          email: 'owner@example.test',
+          roleId: roleSelf,
+        },
         {
           id: otherSelfUser,
           organizationId: org,
@@ -231,7 +237,13 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
           action,
           scope: 'SELF' as const,
         })),
-        { organizationId: org, roleId: roleViewOnly, module: 'leads', action: 'view', scope: 'ORGANIZATION' as const },
+        {
+          organizationId: org,
+          roleId: roleViewOnly,
+          module: 'leads',
+          action: 'view',
+          scope: 'ORGANIZATION' as const,
+        },
         ...['upload', 'download'].map((action) => ({
           organizationId: org,
           roleId: roleUploadDownloadOnly,
@@ -265,7 +277,14 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
       },
     });
     await prisma.lead.create({
-      data: { id: lead, organizationId: org, name: 'Scope lead', phone: null, email: null, fieldValues: {} },
+      data: {
+        id: lead,
+        organizationId: org,
+        name: 'Scope lead',
+        phone: null,
+        email: null,
+        fieldValues: {},
+      },
     });
     const processInstanceId = randomUUID();
     await prisma.processInstance.create({
@@ -290,7 +309,7 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
     await db?.cleanup();
   });
 
-  it('SELF scope: the assigned user may upload, download and delete their own lead\'s attachment', async () => {
+  it("SELF scope: the assigned user may upload, download and delete their own lead's attachment", async () => {
     const uploaded = await upload(owner, roleSelf);
     expect(uploaded.statusCode).toBe(201);
     const attachmentId = (JSON.parse(uploaded.body) as { id: string }).id;
@@ -310,7 +329,7 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
     expect((await remove(otherSelfUser, roleSelf, attachmentId)).statusCode).toBe(403);
   });
 
-  it("leads:view never implies any attachments:* action, even for a lead the viewer can otherwise see", async () => {
+  it('leads:view never implies any attachments:* action, even for a lead the viewer can otherwise see', async () => {
     const uploaded = await upload(owner, roleSelf);
     expect(uploaded.statusCode).toBe(201);
     const attachmentId = (JSON.parse(uploaded.body) as { id: string }).id;
@@ -325,7 +344,9 @@ describe.runIf(shouldRunAdminPostgres)('attachments: permission scope', () => {
     expect(uploaded.statusCode).toBe(201);
     const attachmentId = (JSON.parse(uploaded.body) as { id: string }).id;
 
-    expect((await download(uploaderOnly, roleUploadDownloadOnly, attachmentId)).statusCode).toBe(200);
+    expect((await download(uploaderOnly, roleUploadDownloadOnly, attachmentId)).statusCode).toBe(
+      200,
+    );
     expect((await remove(uploaderOnly, roleUploadDownloadOnly, attachmentId)).statusCode).toBe(403);
   });
 });

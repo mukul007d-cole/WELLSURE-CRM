@@ -402,7 +402,9 @@ export class PrismaLeadRepository
           // Phase 9 never needed the new value; a campaign keyed on entering a
           // status does.
           newValue: input.newValue,
-          ...(input.changedFieldIds === undefined ? {} : { changedFieldIds: input.changedFieldIds }),
+          ...(input.changedFieldIds === undefined
+            ? {}
+            : { changedFieldIds: input.changedFieldIds }),
         };
         // Every consumer reads the same detected event through one dispatcher.
         // No consumer knows about any other, and the classification exists once.

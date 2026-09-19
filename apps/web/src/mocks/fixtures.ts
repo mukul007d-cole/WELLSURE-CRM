@@ -299,7 +299,12 @@ export const LEADS: MockLead[] = COMPANY_NAMES.flatMap((company, index) => {
         statusId: status.id,
         active: status.outcomeType === 'open',
         assignments: [
-          { id: `assign-${index + 1}`, assignmentType: 'owner', userId: owner.id, userName: owner.name },
+          {
+            id: `assign-${index + 1}`,
+            assignmentType: 'owner',
+            userId: owner.id,
+            userName: owner.name,
+          },
         ],
       },
     ],

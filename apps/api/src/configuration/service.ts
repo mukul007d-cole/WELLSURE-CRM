@@ -457,7 +457,10 @@ export class ConfigurationService {
     return this.repository.transaction(async (tx) => {
       const status = await requireFound(tx.findStatus(input.organizationId, input.statusId));
       if (status.active === false)
-        throw new ConfigurationError('validation_error', 'status must be active to become the default');
+        throw new ConfigurationError(
+          'validation_error',
+          'status must be active to become the default',
+        );
       const journeyStatuses = await tx.listStatusesForJourney(
         input.organizationId,
         status.journeyId as string,

@@ -671,12 +671,21 @@ describe.runIf(Boolean(url))('Phase 9 against real Postgres', () => {
       name: 'Field A change alert',
       triggerType: 'field_edited',
       scope: { fieldId: fieldA },
-      recipients: [{ resolverType: 'assignment_holder', parameters: { assignmentType: 'synthetic_owner' } }],
+      recipients: [
+        { resolverType: 'assignment_holder', parameters: { assignmentType: 'synthetic_owner' } },
+      ],
     });
     const repo = new PrismaLeadRepository(prisma as never, notifications);
     const editArgs = {
       auth: {
-        user: { id: owner, organizationId: org, roleId: role, active: true, departmentId: null, managerId: null },
+        user: {
+          id: owner,
+          organizationId: org,
+          roleId: role,
+          active: true,
+          departmentId: null,
+          managerId: null,
+        },
         session: {} as never,
       },
       leadRepository: repo,

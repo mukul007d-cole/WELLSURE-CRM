@@ -281,7 +281,9 @@ describe('configuration engine API', () => {
     expect(response.status).toBe(200);
     expect(repository.rows.statuses.get(statusId)?.isDefaultOnCreate).toBe(true);
     expect(repository.rows.statuses.get(replacementStatusId)?.isDefaultOnCreate).toBe(false);
-    expect(repository.systemAudits.filter((audit) => audit.entityType === 'status')).toHaveLength(2);
+    expect(repository.systemAudits.filter((audit) => audit.entityType === 'status')).toHaveLength(
+      2,
+    );
   });
 
   it('is a no-op, with no audit writes, when the Status is already the Journey default', async () => {
