@@ -79,6 +79,11 @@ COPY --from=pruned --chown=node:node /app/apps/web/dist             ./apps/web/d
 COPY --from=pruned --chown=node:node /app/apps/worker/dist          ./apps/worker/dist
 COPY --from=pruned --chown=node:node /app/apps/worker/node_modules  ./apps/worker/node_modules
 COPY --from=pruned --chown=node:node /app/packages                  ./packages
+# Settings' Admin/User Guide viewer (`apps/api/src/guides/service.ts`) reads
+# these two files straight off disk at the same relative path this image
+# uses (`/app/docs/guides/*.md` next to `/app/apps/api/dist`) — only the two
+# guides, not the rest of `docs/`, which is engineering-internal.
+COPY --from=pruned --chown=node:node /app/docs/guides                ./docs/guides
 
 # Where registerWeb serves the bundle from. Setting it here rather than in the
 # service definition keeps the path an implementation detail of the image.

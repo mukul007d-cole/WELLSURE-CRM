@@ -16,13 +16,11 @@ import { CampaignTriggerService } from '../campaigns/trigger-service.js';
 import { StatusRoutingService } from '../routing/service.js';
 import { TriggerDispatcher, triggerTypeFor } from './trigger-dispatch.js';
 import type {
-  LeadDetailRecord,
   Seller360Record,
   SellerListInput,
   SellerListProcessSummary,
   SellerListRecord,
   SellerReadRepository,
-  LeadReadRepository,
 } from '../routes/leads.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -149,9 +147,7 @@ interface AssignmentRow {
   user?: { id: string; name: string };
 }
 
-export class PrismaLeadRepository
-  implements LeadRepository, LeadReadRepository, SellerReadRepository
-{
+export class PrismaLeadRepository implements LeadRepository, SellerReadRepository {
   constructor(
     private readonly prisma: PrismaLeadClient,
     private readonly notifications?: NotificationService,
@@ -230,28 +226,6 @@ export class PrismaLeadRepository
       where: { organizationId_id: { organizationId, id: leadId } },
     });
     return row === null ? null : lead(row);
-  }
-
-  async findLeadById(organizationId: string, leadId: string): Promise<LeadDetailRecord | null> {
-    const row = await this.prisma.lead.findUnique({
-      where: { organizationId_id: { organizationId, id: leadId } },
-      include: {
-        processInstances: {
-          where: { active: true },
-          select: { journeyId: true, active: true, currentStatusId: true },
-        },
-      },
-    });
-    return row === null
-      ? null
-      : {
-          ...lead(row),
-          processInstances: (row.processInstances ?? []).map((process) => ({
-            journeyId: process.journeyId,
-            active: process.active,
-            statusId: process.currentStatusId,
-          })),
-        };
   }
 
   async findProcessInstance(

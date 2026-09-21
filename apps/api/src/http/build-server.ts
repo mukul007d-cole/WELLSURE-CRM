@@ -12,6 +12,7 @@ import { registerCampaignRoutes } from './routes/campaigns.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
+import { registerGuideRoutes } from './routes/guides.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImportExportRoutes } from './routes/import.js';
 import { registerInternalRoutes } from './routes/internal.js';
@@ -86,6 +87,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     registerCampaignRoutes(app, deps);
     registerRoutingRoutes(app, deps);
     registerToolRoutes(app, deps);
+    registerGuideRoutes(app, deps);
     registerInternalRoutes(app, deps);
     // Last: it installs the SPA fallback, which must not shadow any API route.
     // Absent locally, so `pnpm dev` keeps serving the app from Vite.

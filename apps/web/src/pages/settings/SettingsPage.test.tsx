@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
 import { PreferencesProvider } from '../../app/preferences';
@@ -152,5 +152,53 @@ describe('settings', () => {
     expect(await screen.findByText(/organisation and notification preferences/i)).toHaveTextContent(
       /aren.t available in this release/i,
     );
+  });
+
+  it('shows both guides to a user holding roles_permissions:view', async () => {
+    renderSettings();
+
+    expect(await screen.findByText('User Guide')).toBeInTheDocument();
+    expect(await screen.findByText('Admin Guide')).toBeInTheDocument();
+  });
+
+  it('hides the Admin Guide from a role without roles_permissions:view', async () => {
+    renderSettings('user-rep');
+
+    expect(await screen.findByText('User Guide')).toBeInTheDocument();
+    expect(screen.queryByText('Admin Guide')).not.toBeInTheDocument();
+  });
+
+  it('renders the User Guide as formatted Markdown when viewed', async () => {
+    renderSettings();
+
+    const guideRow = (await screen.findByText('User Guide')).closest('div')!.parentElement!;
+    fireEvent.click(within(guideRow).getByRole('button', { name: 'View' }));
+
+    // The mock content's `# User Guide` heading renders as an <h1>, not literal text.
+    expect(
+      await screen.findByRole('heading', { name: 'User Guide', level: 1 }),
+    ).toBeInTheDocument();
+  });
+
+  it('downloads the guide as a .md file', async () => {
+    // jsdom has neither; the download path uses both to hand the file over.
+    URL.createObjectURL = () => 'blob:mock';
+    URL.revokeObjectURL = () => undefined;
+    const anchors: HTMLAnchorElement[] = [];
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') anchors.push(element as HTMLAnchorElement);
+      return element;
+    });
+    renderSettings();
+
+    const guideRow = (await screen.findByText('User Guide')).closest('div')!.parentElement!;
+    try {
+      fireEvent.click(within(guideRow).getByRole('button', { name: 'Download' }));
+      await waitFor(() => expect(anchors.map((a) => a.download)).toEqual(['user-guide.md']));
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

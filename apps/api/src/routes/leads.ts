@@ -22,16 +22,6 @@ export const viewAction = 'view' as const;
 export const createAction = 'create' as const;
 export const editAction = 'edit' as const;
 
-export interface LeadDetailRecord {
-  id: string;
-  organizationId: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  fieldValues: Record<string, unknown>;
-  processInstances: Array<{ journeyId: string; active: boolean; statusId: string }>;
-}
-
 export interface Seller360Record extends LeadCoreRecord {
   processInstances: Array<
     LeadProcessRecord & {
@@ -62,10 +52,6 @@ export interface SellerListProcessSummary {
 export interface SellerListRecord extends LeadCoreRecord {
   processInstances: SellerListProcessSummary[];
   shared?: boolean;
-}
-
-export interface LeadReadRepository {
-  findLeadById(organizationId: string, leadId: string): Promise<LeadDetailRecord | null>;
 }
 
 export interface LeadActivityReadRepository {
@@ -362,51 +348,6 @@ export async function editLead(input: {
     if (!isLeadError(error)) throw error;
     return toResponse(error);
   }
-}
-
-export async function getLeadById(input: {
-  auth: AuthenticatedContext;
-  leadId: string;
-  leadRepository: LeadReadRepository;
-  permissionRepository: PermissionRepository;
-  requestedFieldIds: readonly string[];
-  assignmentTypes: readonly string[];
-  now?: Date | undefined;
-}): Promise<{ status: 200; body: unknown } | { status: 403 | 404; body: { error: string } }> {
-  const lead = await input.leadRepository.findLeadById(
-    input.auth.user.organizationId,
-    input.leadId,
-  );
-  const process = lead?.processInstances.find((row) => row.active);
-  if (lead === null || lead === undefined || process === undefined) {
-    return { status: 404, body: { error: 'not_found' } };
-  }
-
-  const decision = await resolveAuthorization({
-    repository: input.permissionRepository,
-    request: {
-      organizationId: input.auth.user.organizationId,
-      userId: input.auth.user.id,
-      module: leadsModule,
-      action: viewAction,
-      journeyId: process.journeyId,
-      leadId: lead.id,
-      statusId: process.statusId,
-      requestedFieldIds: input.requestedFieldIds,
-      assignmentTypes: input.assignmentTypes,
-      ...(input.now === undefined ? {} : { now: input.now }),
-    },
-  });
-
-  const blockingReasons = decision.deniedReasons.filter((reason) => reason !== 'FIELD_VIEW_DENIED');
-  if (blockingReasons.length > 0) {
-    return { status: 403, body: { error: 'forbidden' } };
-  }
-
-  return {
-    status: 200,
-    body: serializeLead(lead, decision.fields.visibleFieldIds),
-  };
 }
 
 export async function listSellers(input: {

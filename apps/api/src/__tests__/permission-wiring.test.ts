@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { authenticateCookie } from '../auth/middleware.js';
 import { defaultAuthConfig } from '../auth/config.js';
 import { issueSession, type SessionRepository, type SessionRecord } from '../auth/session.js';
-import { getLeadById, type LeadReadRepository } from '../routes/leads.js';
+import { getSeller360, type SellerReadRepository, type Seller360Record } from '../routes/leads.js';
 import type { PermissionRepository, UserSnapshot } from '@falcon/permission-engine';
 
 const now = new Date('2026-01-01T00:00:00.000Z');
@@ -30,14 +30,14 @@ describe('session to permission engine route wiring', () => {
     });
     expect(auth).not.toBeNull();
 
-    const leadRepository = new MemoryLeadRepository();
-    const response = await getLeadById({
+    const sellerRepository = new MemorySellerRepository();
+    const response = await getSeller360({
       auth: auth!,
       leadId: leadA,
-      leadRepository,
+      sellerRepository,
       permissionRepository: createPermissionRepository(),
       requestedFieldIds: ['field-visible', 'field-hidden'],
-      assignmentTypes: ['synthetic_assignment_type'],
+      assignmentTypes: [],
       now,
     });
 
@@ -49,6 +49,36 @@ describe('session to permission engine route wiring', () => {
         phone: null,
         email: 'seller@example.test',
         fieldValues: { 'field-visible': 'visible' },
+        processInstances: [
+          {
+            processInstanceId: 'process-a',
+            organizationId: orgA,
+            leadId: leadA,
+            journeyId: journeyA,
+            currentStatusId: 'status-a',
+            isPrimary: true,
+            active: true,
+            journey: { id: journeyA, key: 'journey-a', name: 'Journey A' },
+            currentStatus: {
+              id: 'status-a',
+              key: 'status-a',
+              name: 'Status A',
+              outcomeType: 'open',
+              behaviorType: 'default',
+            },
+            assignments: [
+              {
+                id: 'assignment-a',
+                organizationId: orgA,
+                processInstanceId: 'process-a',
+                assignmentType: 'synthetic_assignment_type',
+                userId: 'user-child',
+                isCurrent: true,
+                userName: 'Synthetic Child',
+              },
+            ],
+          },
+        ],
       },
     });
 
@@ -62,13 +92,13 @@ describe('session to permission engine route wiring', () => {
       }),
     ).resolves.toBeNull();
 
-    const crossOrg = await getLeadById({
+    const crossOrg = await getSeller360({
       auth: { ...auth!, user: { ...auth!.user, organizationId: 'org-b' } },
       leadId: leadA,
-      leadRepository,
+      sellerRepository,
       permissionRepository: createPermissionRepository(),
       requestedFieldIds: ['field-visible'],
-      assignmentTypes: ['synthetic_assignment_type'],
+      assignmentTypes: [],
       now,
     });
     expect(crossOrg.status).toBe(404);
@@ -112,8 +142,8 @@ class MemorySessionRepository implements SessionRepository {
   }
 }
 
-class MemoryLeadRepository implements LeadReadRepository {
-  async findLeadById(organizationId: string, leadId: string) {
+class MemorySellerRepository implements SellerReadRepository {
+  async findSeller360(organizationId: string, leadId: string): Promise<Seller360Record | null> {
     if (organizationId !== orgA || leadId !== leadA) return null;
     return {
       id: leadA,
@@ -122,8 +152,48 @@ class MemoryLeadRepository implements LeadReadRepository {
       phone: null,
       email: 'seller@example.test',
       fieldValues: { 'field-visible': 'visible', 'field-hidden': 'hidden' },
-      processInstances: [{ journeyId: journeyA, active: true, statusId: 'status-a' }],
+      processInstances: [
+        {
+          id: 'process-a',
+          organizationId,
+          leadId,
+          journeyId: journeyA,
+          currentStatusId: 'status-a',
+          isPrimary: true,
+          active: true,
+          journey: { id: journeyA, key: 'journey-a', name: 'Journey A' },
+          currentStatus: {
+            id: 'status-a',
+            key: 'status-a',
+            name: 'Status A',
+            outcomeType: 'open',
+            behaviorType: 'default',
+          },
+          assignments: [
+            {
+              id: 'assignment-a',
+              organizationId,
+              processInstanceId: 'process-a',
+              assignmentType: 'synthetic_assignment_type',
+              userId: 'user-child',
+              isCurrent: true,
+              userName: 'Synthetic Child',
+            },
+          ],
+        },
+      ],
     };
+  }
+  // Not exercised by `getSeller360`/`resolveLeadAccess` — this test only
+  // needs `findSeller360`, but `SellerReadRepository` is one interface.
+  async listFilterableFieldTypes(): Promise<ReadonlyMap<string, string>> {
+    return new Map();
+  }
+  async listMatchingLeadIds(): Promise<string[]> {
+    return [];
+  }
+  async listSellers(): Promise<{ rows: []; total: number }> {
+    return { rows: [], total: 0 };
   }
 }
 

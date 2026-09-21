@@ -636,6 +636,29 @@ export const handlers = [
     });
   }),
 
+  http.get(`${API_BASE}/guides/:guide`, ({ params }) => {
+    const user = requireUser();
+    if (!user) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });
+    if (params.guide === 'user') {
+      return HttpResponse.json({
+        content: '# User Guide\n\nMock user guide content for tests.',
+        fileName: 'user-guide.md',
+        title: 'User Guide',
+      });
+    }
+    if (params.guide === 'admin') {
+      if (!user.permissions.some((p) => p.module === 'roles_permissions' && p.action === 'view')) {
+        return HttpResponse.json(errorBody('forbidden'), { status: 403 });
+      }
+      return HttpResponse.json({
+        content: '# Admin Guide\n\nMock admin guide content for tests.',
+        fileName: 'admin-guide.md',
+        title: 'Admin Guide',
+      });
+    }
+    return HttpResponse.json(errorBody('not_found'), { status: 404 });
+  }),
+
   http.get(`${API_BASE}/journeys`, async ({ request }) => {
     await delay(250);
     if (!requireUser()) return HttpResponse.json(errorBody('unauthenticated'), { status: 401 });

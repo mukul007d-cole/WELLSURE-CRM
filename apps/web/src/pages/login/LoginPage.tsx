@@ -98,23 +98,6 @@ export function LoginPage() {
             </Button>
           </div>
         </form>
-
-        <details className="mt-5 rounded-control border border-on-ink-line bg-ink-raised/50 px-4 py-3 text-xs text-on-ink-soft">
-          <summary className="cursor-pointer select-none font-medium text-on-ink">
-            Demo accounts
-          </summary>
-          <div className="mt-2 flex flex-col gap-1.5">
-            <p>
-              <span className="text-on-ink">admin@wellsure.com</span> — Administrator, sees every
-              seller and field
-            </p>
-            <p>
-              <span className="text-on-ink">rep@wellsure.com</span> — Sales Rep, scoped to their own
-              sellers with Deal Value hidden
-            </p>
-            <p>Password for both: Wellsure@123</p>
-          </div>
-        </details>
       </div>
     </div>
   );

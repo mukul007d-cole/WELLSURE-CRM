@@ -8,6 +8,7 @@ import { PreferencesProvider } from '../../app/preferences';
 import { usePageChrome } from '../../app/page-chrome';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
+import { NotFoundPage } from '../../pages/not-found/NotFoundPage';
 import { AppShell } from './AppShell';
 
 /** A stand-in route that declares whatever refresh keys a test needs. */
@@ -16,17 +17,28 @@ function StubPage({ keys, label }: { keys: string[][]; label: string }) {
   return <p>{label} content</p>;
 }
 
-function renderShell(page: React.ReactNode = <StubPage keys={[['board']]} label="Board" />) {
+/** Throws while `shouldThrow()` is true — lets a test flip it and retry. */
+function FlakyPage({ shouldThrow }: { shouldThrow: () => boolean }) {
+  if (shouldThrow()) throw new Error('synthetic render failure');
+  return <p>Recovered content</p>;
+}
+
+function renderShell(
+  page: React.ReactNode = <StubPage keys={[['board']]} label="Board" />,
+  initialPath = '/stub',
+) {
   document.cookie = setCookieHeader(createSession('user-admin'));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/stub']}>
+      <MemoryRouter initialEntries={[initialPath]}>
         <AuthProvider>
           <PreferencesProvider>
             <Routes>
               <Route element={<AppShell title="Wellsure CRM" />}>
                 <Route path="/stub" element={page} />
+                {/* Mirrors App.tsx's own nested catch-all exactly. */}
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
           </PreferencesProvider>
@@ -155,5 +167,36 @@ describe('app shell', () => {
     renderShell();
 
     expect(await screen.findByRole('heading', { name: 'Board' })).toBeInTheDocument();
+  });
+
+  it('catches a routed page crash instead of leaving a blank screen', async () => {
+    renderShell(<FlakyPage shouldThrow={() => true} />);
+
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    // The nav survives the crash — recovery doesn't require a manual refresh.
+    expect(screen.getByRole('link', { name: 'Sellers' })).toBeInTheDocument();
+  });
+
+  it('recovers on "Try again" once the underlying error condition clears', async () => {
+    let broken = true;
+    renderShell(<FlakyPage shouldThrow={() => broken} />);
+    await screen.findByText('Something went wrong');
+
+    broken = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Recovered content')).toBeInTheDocument();
+  });
+
+  it('shows a 404 page, nav intact, for a path nothing else matches', async () => {
+    renderShell(undefined, '/this/path/does/not/exist');
+
+    expect(await screen.findByText('Page not found')).toBeInTheDocument();
+    // The nav survives too — a bad link doesn't strand the user off it.
+    expect(screen.getByRole('link', { name: 'Sellers' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to Sellers' })).toHaveAttribute(
+      'href',
+      '/sellers',
+    );
   });
 });

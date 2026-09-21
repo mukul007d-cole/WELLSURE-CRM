@@ -99,11 +99,13 @@ export function Seller360Page() {
     queryKey: ['journey-fields', selectedProcess?.journeyId],
     queryFn: () => configApi.journeyFields(selectedProcess!.journeyId),
     enabled: Boolean(selectedProcess),
+    retry: false,
   });
   const sharesQuery = useQuery({
     queryKey: ['lead-shares', sellerId],
     queryFn: () => sellersApi.shares(sellerId!, journeyContext!),
     enabled: Boolean(sellerId && journeyContext),
+    retry: false,
   });
   // Names for the from/to sides of a reassignment entry. The activity payload
   // carries user ids only, and there is no batch by-ids endpoint, so this is

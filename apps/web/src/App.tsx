@@ -27,6 +27,7 @@ import { UserManagementPage } from './pages/admin/UserManagementPage';
 import { BoardPage } from './pages/board/BoardPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
+import { NotFoundPage } from './pages/not-found/NotFoundPage';
 import { PreferencesProvider } from './app/preferences';
 
 export function App() {
@@ -83,10 +84,18 @@ export function App() {
                     <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
                     <Route path="/admin/notification-rules" element={<NotificationRulesPage />} />
                   </Route>
+                  {/*
+                    Last: only reached once every route above it has already
+                    failed to match. Nested here rather than as a top-level
+                    catch-all so a signed-in user hitting a bad path still
+                    sees the sidebar/topbar (and a signed-out one is instead
+                    sent to /login by ProtectedRoute, above, before this is
+                    ever reached).
+                  */}
+                  <Route path="*" element={<NotFoundPage />} />
                 </Route>
               </Route>
               <Route path="/" element={<Navigate to="/sellers" replace />} />
-              <Route path="*" element={<Navigate to="/sellers" replace />} />
             </Routes>
           </PreferencesProvider>
         </AuthProvider>

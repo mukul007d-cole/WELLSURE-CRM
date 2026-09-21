@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { PageChromeProvider } from '../../app/page-chrome';
 import { usePreferences } from '../../app/preferences';
+import { RouteErrorBoundary } from '../../app/ErrorBoundary';
 
 interface AppShellProps {
   title: string;
@@ -51,7 +52,9 @@ export function AppShell({ title }: AppShellProps) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar title={title} onOpenMenu={() => setMobileNavOpen(true)} />
           <main id="main-content" className="flex-1 overflow-y-auto">
-            <Outlet />
+            <RouteErrorBoundary>
+              <Outlet />
+            </RouteErrorBoundary>
           </main>
         </div>
       </div>
