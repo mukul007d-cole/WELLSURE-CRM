@@ -48,4 +48,6 @@ export const qk = {
   directoryDepartments: () => ['directory', 'departments'] as const,
 
   importJobs: () => ['import', 'jobs'] as const,
+
+  guide: (id: 'admin' | 'user') => ['guide', id] as const,
 };

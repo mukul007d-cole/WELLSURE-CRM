@@ -707,3 +707,14 @@ export const exportApi = {
       })}`,
     ),
 };
+
+export const guidesApi = {
+  /**
+   * One fetch serves both Settings actions: "View" renders `content` as
+   * Markdown, "Download" saves it client-side as `fileName` — no separate
+   * download endpoint, and React Query dedupes a click of both into one
+   * request.
+   */
+  get: (guide: 'admin' | 'user') =>
+    request<{ content: string; fileName: string; title: string }>(`/guides/${guide}`),
+};

@@ -10,9 +10,61 @@ import { Select } from '../../components/ui/Select';
 import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Banner } from '../../components/ui/Banner';
-import { authApi } from '../../lib/api-client';
+import { authApi, guidesApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage, passwordPolicyErrorMessage } from '../../lib/api-error';
 import { PageBody, PageHeader, SectionCard } from '../../components/layout/PageFrame';
+import { GuideDialog } from './GuideDialog';
+
+function GuideRow({
+  guide,
+  title,
+  description,
+  onView,
+}: {
+  guide: 'admin' | 'user';
+  title: string;
+  description: string;
+  onView: () => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const { content, fileName } = await guidesApi.get(guide);
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-3 last:border-b-0">
+      <div>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="text-xs text-ink-soft">{description}</p>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" onClick={onView}>
+          View
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={downloading}
+          onClick={() => void handleDownload()}
+        >
+          Download
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   return (
@@ -43,6 +95,7 @@ export function SettingsPage() {
   const [pendingRetainView, setPendingRetainView] = useState<boolean | null>(null);
   const [savingPreference, setSavingPreference] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [openGuide, setOpenGuide] = useState<'admin' | 'user' | null>(null);
   const retainViewAfterReassignment =
     pendingRetainView ?? user?.retainViewAfterReassignment ?? false;
 
@@ -181,6 +234,23 @@ export function SettingsPage() {
           </SectionCard>
         ) : null}
 
+        <SectionCard title="Guides" description="Reference documentation for this workspace.">
+          <GuideRow
+            guide="user"
+            title="User Guide"
+            description="Working leads day to day: the Seller List, the Board, and a seller's own record."
+            onView={() => setOpenGuide('user')}
+          />
+          {can('roles_permissions', 'view') ? (
+            <GuideRow
+              guide="admin"
+              title="Admin Guide"
+              description="Configuring the workspace: Journeys, Fields, Roles, Users, routing, and more."
+              onView={() => setOpenGuide('admin')}
+            />
+          ) : null}
+        </SectionCard>
+
         <SectionCard
           title="Appearance"
           description="Saved in this browser only — these aren't synced to your account."
@@ -272,6 +342,14 @@ export function SettingsPage() {
       <p className="text-xs text-ink-soft">
         Organisation and notification preferences aren&rsquo;t available in this release.
       </p>
+
+      {openGuide ? (
+        <GuideDialog
+          guide={openGuide}
+          title={openGuide === 'admin' ? 'Admin Guide' : 'User Guide'}
+          onClose={() => setOpenGuide(null)}
+        />
+      ) : null}
     </PageBody>
   );
 }
