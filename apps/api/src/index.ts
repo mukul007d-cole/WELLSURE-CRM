@@ -15,7 +15,7 @@ export {
 } from './routes/auth.js';
 export { PrismaAuthRepository } from './auth/prisma-auth-repository.js';
 export { PrismaPermissionRepository } from './permissions/prisma-permission-repository.js';
-export { createLead, editLead, getLeadById, getSeller360, listSellers } from './routes/leads.js';
+export { createLead, editLead, getSeller360, listSellers } from './routes/leads.js';
 export type * from './auth/audit.js';
 export type * from './auth/config.js';
 export type * from './auth/login.js';
