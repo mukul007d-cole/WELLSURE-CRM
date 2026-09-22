@@ -1,13 +1,19 @@
-import { Button, ButtonLink } from '../../components/ui/Button';
-import { Dialog } from '../../components/ui/Dialog';
-import type { MoveVariables } from './useMoveLeadStatus';
+import { Button, ButtonLink } from '../ui/Button';
+import { Dialog } from '../ui/Dialog';
+import type { StatusChangeVariables } from '../../lib/status-change';
 
-export function MoveRejectedDialog({
+/**
+ * Shown whenever a status change is refused because the destination status
+ * requires a field the lead doesn't have filled in yet — reused verbatim by
+ * both the Board's Move menu/drag and the Seller List's inline status
+ * control, since both trigger the identical underlying `editLead` rejection.
+ */
+export function StatusChangeRejectedDialog({
   variables,
   fieldLabel,
   onClose,
 }: {
-  variables: MoveVariables;
+  variables: StatusChangeVariables;
   /** Null when the viewer's role can't read the field catalogue. */
   fieldLabel: string | null;
   onClose: () => void;

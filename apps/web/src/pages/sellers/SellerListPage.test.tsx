@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
 import { PreferencesProvider } from '../../app/preferences';
-import { FIELDS, JOURNEYS, LEADS } from '../../mocks/fixtures';
+import { FIELDS, JOURNEYS, LEADS, STATUSES } from '../../mocks/fixtures';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { SellerListPage } from './SellerListPage';
@@ -22,8 +22,8 @@ function captureListRequests() {
   );
 }
 
-function renderPage(path = '/sellers') {
-  document.cookie = setCookieHeader(createSession('user-admin'));
+function renderPage(path = '/sellers', userId = 'user-admin') {
+  document.cookie = setCookieHeader(createSession(userId));
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -411,5 +411,296 @@ describe('seller list data-heavy columns', () => {
     expect(
       screen.queryByRole('columnheader', { name: revenueField.label }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('seller list inline status change', () => {
+  const JOURNEY_ID = JOURNEYS[0]!.id;
+  const NEW_STATUS = `status-${JOURNEYS[0]!.key}-new`;
+  const CONTACTED_STATUS = `status-${JOURNEYS[0]!.key}-contacted`;
+  const WON_STATUS = `status-${JOURNEYS[0]!.key}-won`;
+  const DEAL_VALUE_FIELD = 'field-deal-value';
+
+  function statusFixture(id: string) {
+    return STATUSES.find((status) => status.id === id)!;
+  }
+
+  /**
+   * One row, one process instance, served from mutable in-test state rather
+   * than the shared LEADS fixture — the reassignment-visibility case needs
+   * to flip whether the row is returned at all between the pre-save and
+   * post-save `GET /leads`, which a fixed fixture row can't express.
+   */
+  function stubSellerRow() {
+    let statusId = NEW_STATUS;
+    let visible = true;
+
+    function row() {
+      const status = statusFixture(statusId);
+      return {
+        id: 'lead-1',
+        name: 'Synthetic Alpha',
+        phone: '0000000001',
+        email: null,
+        fieldValues: {},
+        processInstances: [
+          {
+            processInstanceId: 'pi-1',
+            journeyId: JOURNEY_ID,
+            journeyName: JOURNEYS[0]!.name,
+            statusId: status.id,
+            statusName: status.name,
+            statusOutcomeType: status.outcomeType,
+            statusBehaviorType: status.behaviorType,
+            ownerName: 'Synthetic Owner',
+          },
+        ],
+      };
+    }
+
+    server.use(
+      http.get('/api/v1/leads', () =>
+        HttpResponse.json(visible ? { total: 1, rows: [row()] } : { total: 0, rows: [] }),
+      ),
+      http.get('/api/v1/leads/:id', () => {
+        const status = statusFixture(statusId);
+        return HttpResponse.json({
+          id: 'lead-1',
+          name: 'Synthetic Alpha',
+          phone: '0000000001',
+          email: null,
+          fieldValues: {},
+          processInstances: [
+            {
+              processInstanceId: 'pi-1',
+              journeyId: JOURNEY_ID,
+              active: true,
+              journey: { id: JOURNEY_ID, key: JOURNEYS[0]!.key, name: JOURNEYS[0]!.name },
+              currentStatus: {
+                id: status.id,
+                key: status.key,
+                name: status.name,
+                outcomeType: status.outcomeType,
+                behaviorType: status.behaviorType,
+              },
+              assignments: [
+                {
+                  id: 'a1',
+                  assignmentType: 'owner',
+                  userId: 'user-admin',
+                  userName: 'Priya Shah',
+                  isCurrent: true,
+                },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+
+    return {
+      setStatus: (id: string) => {
+        statusId = id;
+      },
+      hide: () => {
+        visible = false;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  /**
+   * The select's own journey-statuses query starts only once the row itself
+   * has rendered, so the very first render after `findByLabelText` resolves
+   * can still show just the one fallback option. Waiting for a second option
+   * to exist avoids a real race: `fireEvent.change` to a value with no
+   * matching `<option>` yet leaves the native element unselected, which a
+   * real browser can't do (there's nothing to click), but a test driving the
+   * DOM directly can.
+   */
+  async function findLoadedStatusSelect(name: string) {
+    const select = await screen.findByLabelText(name);
+    await waitFor(() => expect(within(select).getAllByRole('option').length).toBeGreaterThan(1));
+    return select;
+  }
+
+  it('changes status through the inline control and reflects it after the list refetches', async () => {
+    const control = stubSellerRow();
+    server.use(
+      http.patch('/api/v1/leads/:id', async ({ request }) => {
+        const body = (await request.json()) as { statusId?: string };
+        control.setStatus(body.statusId!);
+        return HttpResponse.json({
+          lead: { id: 'lead-1', name: 'Synthetic Alpha' },
+          process: { id: 'pi-1', journeyId: JOURNEY_ID, currentStatusId: body.statusId },
+        });
+      }),
+    );
+
+    renderPage();
+    const select = await findLoadedStatusSelect('Status for Synthetic Alpha');
+    expect(select).toHaveValue(NEW_STATUS);
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: WON_STATUS } });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+
+    // Reselecting the original value hides Save again — nothing to save.
+    fireEvent.change(select, { target: { value: NEW_STATUS } });
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: WON_STATUS } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(select).toHaveValue(WON_STATUS));
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('rejects a change with a missing required field via the shared dialog', async () => {
+    stubSellerRow();
+    server.use(
+      http.patch('/api/v1/leads/:id', () =>
+        HttpResponse.json(
+          { error: 'validation_error', details: { fieldId: DEAL_VALUE_FIELD } },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderPage();
+    const select = await findLoadedStatusSelect('Status for Synthetic Alpha');
+    fireEvent.change(select, { target: { value: WON_STATUS } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Deal Value (₹)')).toBeInTheDocument();
+    expect(within(dialog).getByText('New Lead')).toBeInTheDocument();
+    expect(within(dialog).getByText('Won')).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: 'Open seller form' })).toHaveAttribute(
+      'href',
+      '/sellers/lead-1/edit',
+    );
+
+    // The select snaps back to the real status; nothing was saved.
+    await waitFor(() => expect(select).toHaveValue(NEW_STATUS));
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('shows a banner and no dialog when the change is forbidden', async () => {
+    stubSellerRow();
+    server.use(
+      http.patch('/api/v1/leads/:id', () =>
+        HttpResponse.json({ error: 'forbidden' }, { status: 403 }),
+      ),
+    );
+
+    renderPage();
+    const select = await findLoadedStatusSelect('Status for Synthetic Alpha');
+    fireEvent.change(select, { target: { value: WON_STATUS } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/permission/i);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows a generic banner for a 400 that carries no fieldId', async () => {
+    stubSellerRow();
+    server.use(
+      http.patch('/api/v1/leads/:id', () =>
+        HttpResponse.json({ error: 'validation_error' }, { status: 400 }),
+      ),
+    );
+
+    renderPage();
+    const select = await findLoadedStatusSelect('Status for Synthetic Alpha');
+    fireEvent.change(select, { target: { value: WON_STATUS } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/any more/i);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('removes the row from the list once a status change narrows the viewer out of it', async () => {
+    const control = stubSellerRow();
+    server.use(
+      http.patch('/api/v1/leads/:id', async ({ request }) => {
+        const body = (await request.json()) as { statusId?: string };
+        control.setStatus(body.statusId!);
+        // Simulates a routing rule reassigning the lead away from the
+        // current viewer the moment it enters this status (ADR-0020/0021):
+        // the very next GET no longer returns it.
+        control.hide();
+        return HttpResponse.json({
+          lead: { id: 'lead-1', name: 'Synthetic Alpha' },
+          process: { id: 'pi-1', journeyId: JOURNEY_ID, currentStatusId: body.statusId },
+        });
+      }),
+    );
+
+    renderPage();
+    const select = await findLoadedStatusSelect('Status for Synthetic Alpha');
+    fireEvent.change(select, { target: { value: CONTACTED_STATUS } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.queryByText('Synthetic Alpha')).not.toBeInTheDocument());
+    expect(await screen.findByText('No sellers yet')).toBeInTheDocument();
+  });
+
+  it('falls back to the read-only status pill for a viewer without leads:edit', async () => {
+    stubSellerRow();
+
+    renderPage('/sellers', 'user-rep');
+
+    // Scoped to the desktop table: jsdom renders the `sm:hidden` mobile card
+    // list too, and it repeats both the seller name and the status name.
+    const table = await screen.findByRole('table');
+    const dataRow = within(table).getByRole('row', { name: /Synthetic Alpha/ });
+    expect(within(dataRow).queryByLabelText('Status for Synthetic Alpha')).not.toBeInTheDocument();
+    expect(within(dataRow).getByText('New Lead')).toBeInTheDocument();
+  });
+
+  it('keeps a since-deactivated current status selectable rather than showing the wrong value', async () => {
+    stubSellerRow();
+    server.use(
+      http.get('/api/v1/journeys/:id', ({ params }) => {
+        const journey = JOURNEYS.find((candidate) => candidate.id === params.id)!;
+        return HttpResponse.json({
+          ...journey,
+          active: journey.isActive,
+          statuses: STATUSES.filter((status) => status.journeyId === journey.id)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(({ isActive, ...status }) => ({
+              ...status,
+              active: status.id === NEW_STATUS ? false : isActive,
+            })),
+          assignmentTypes: ['owner'],
+        });
+      }),
+    );
+
+    renderPage();
+    const select = await screen.findByLabelText('Status for Synthetic Alpha');
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: 'New Lead' })).toBeInTheDocument(),
+    );
+    expect(select).toHaveValue(NEW_STATUS);
+  });
+
+  it('does not navigate to the seller when the inline control is used', async () => {
+    stubSellerRow();
+    renderPage();
+
+    const select = await screen.findByLabelText('Status for Synthetic Alpha');
+    fireEvent.click(select);
+    // A row click navigates via useNavigate, which jsdom can't intercept
+    // directly — the table staying on screen (rather than unmounting into
+    // the seller-detail route, which isn't mounted here) is the observable
+    // proxy for "the click didn't bubble to the row".
+    expect(await screen.findByLabelText('Status for Synthetic Alpha')).toBeInTheDocument();
   });
 });
