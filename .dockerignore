@@ -6,7 +6,8 @@ node_modules
 **/dist
 coverage
 infra
-docs
+docs/*
+!docs/guides
 .env
 .env.*
 !.env.example
