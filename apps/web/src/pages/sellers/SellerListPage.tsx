@@ -24,7 +24,9 @@ import { DataCell, DataRow, DataTable, RowActions } from '../../components/ui/Da
 import { usePageChrome } from '../../app/page-chrome';
 import { usePreferences } from '../../app/preferences';
 import { qk } from '../../lib/query-keys';
+import type { StatusChangeRejection } from '../../lib/status-change';
 import { ColumnManager } from './ColumnManager';
+import { SellerStatusCell } from './SellerStatusCell';
 
 export function SellerListPage() {
   const location = useLocation();
@@ -64,6 +66,15 @@ export function SellerListPage() {
     setSyncedSearch(search);
     setSearchDraft(search);
   }
+
+  // Inline status-change feedback (see SellerStatusCell): a missing-field
+  // rejection gets its own dialog, rendered by the cell itself; every other
+  // outcome is reported here, matching how BoardPage surfaces the same
+  // rejection kinds as a page-level banner plus an aria-live announcement.
+  const [statusChangeRejection, setStatusChangeRejection] = useState<StatusChangeRejection | null>(
+    null,
+  );
+  const [statusChangeAnnouncement, setStatusChangeAnnouncement] = useState('');
 
   useEffect(() => {
     if (searchDraft === search) return;
@@ -204,6 +215,15 @@ export function SellerListPage() {
         />
         {exportMutation.error ? (
           <Banner tone="error">{friendlyErrorMessage(exportMutation.error)}</Banner>
+        ) : null}
+        {statusChangeRejection && statusChangeRejection.kind !== 'missing_field' ? (
+          <Banner tone="error">
+            {statusChangeRejection.kind === 'forbidden'
+              ? "You don't have permission to change that seller's status."
+              : statusChangeRejection.kind === 'stale_status'
+                ? "That status isn't available on this journey any more — the list has been refreshed."
+                : friendlyErrorMessage(statusChangeRejection.error)}
+          </Banner>
         ) : null}
 
         <Toolbar
@@ -421,11 +441,31 @@ export function SellerListPage() {
                       {sellerColumns.includes('status') ? (
                         <DataCell>
                           {process ? (
-                            <StatusPill
-                              name={process.statusName}
-                              outcomeType={process.statusOutcomeType}
-                              behaviorType={process.statusBehaviorType}
-                            />
+                            can('leads', 'edit') ? (
+                              <SellerStatusCell
+                                row={row}
+                                process={process}
+                                onRejected={(result) => {
+                                  setStatusChangeRejection(result);
+                                  setStatusChangeAnnouncement(
+                                    result.kind === 'missing_field'
+                                      ? `Status change refused. ${row.name} stayed in ${result.variables.fromStatus.name} because a required field is missing.`
+                                      : `Status change refused for ${row.name}. It stayed in its current status.`,
+                                  );
+                                }}
+                                onMoved={(variables) =>
+                                  setStatusChangeAnnouncement(
+                                    `Changed ${row.name}'s status to ${variables.toStatus.name}.`,
+                                  )
+                                }
+                              />
+                            ) : (
+                              <StatusPill
+                                name={process.statusName}
+                                outcomeType={process.statusOutcomeType}
+                                behaviorType={process.statusBehaviorType}
+                              />
+                            )
                           ) : (
                             '—'
                           )}
@@ -501,6 +541,10 @@ export function SellerListPage() {
           </>
         )}
       </div>
+
+      <p aria-live="polite" className="sr-only">
+        {statusChangeAnnouncement}
+      </p>
     </div>
   );
 }

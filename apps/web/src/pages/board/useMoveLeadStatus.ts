@@ -1,17 +1,15 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { sellersApi } from '../../lib/api-client';
-import { ApiError } from '../../lib/api-error';
 import { qk } from '../../lib/query-keys';
-import type { SellerListResponse, SellerListRow, Status } from '../../types/domain';
+import {
+  classifyStatusChangeRejection,
+  type StatusChangeRejection,
+  type StatusChangeVariables,
+} from '../../lib/status-change';
+import type { SellerListResponse } from '../../types/domain';
 import { insertRowAtHead, patchRowStatus, removeRow, type ColumnData } from './board-cache';
 
-export interface MoveVariables {
-  row: SellerListRow;
-  processInstanceId: string;
-  journeyId: string;
-  fromStatus: Status;
-  toStatus: Status;
-}
+export type MoveVariables = StatusChangeVariables;
 
 interface MoveContext {
   fromKey: readonly unknown[];
@@ -21,29 +19,7 @@ interface MoveContext {
 }
 
 /** Why a move was refused, in terms the board can act on. */
-export type MoveRejection =
-  | { kind: 'missing_field'; fieldId: string; variables: MoveVariables }
-  | { kind: 'forbidden' }
-  | { kind: 'stale_status' }
-  | { kind: 'other'; error: unknown };
-
-function classify(error: unknown, variables: MoveVariables): MoveRejection {
-  if (!(error instanceof ApiError)) return { kind: 'other', error };
-
-  if (error.status === 403) return { kind: 'forbidden' };
-
-  if (error.status === 400 && error.code === 'validation_error') {
-    // The API reports the *first* field that's required at the destination and
-    // still empty. We key off details.fieldId rather than the status code,
-    // because "status isn't valid on this journey" is also a 400 — but carries
-    // no details.
-    const fieldId = error.details?.['fieldId'];
-    if (typeof fieldId === 'string') return { kind: 'missing_field', fieldId, variables };
-    return { kind: 'stale_status' };
-  }
-
-  return { kind: 'other', error };
-}
+export type MoveRejection = StatusChangeRejection;
 
 export function useMoveLeadStatus(options: {
   onRejected: (rejection: MoveRejection) => void;
@@ -126,7 +102,7 @@ export function useMoveLeadStatus(options: {
         }
       }
 
-      const rejection = classify(error, variables);
+      const rejection = classifyStatusChangeRejection(error, variables);
       if (rejection.kind === 'stale_status') {
         void queryClient.invalidateQueries({ queryKey: qk.journeyStatuses(variables.journeyId) });
       }

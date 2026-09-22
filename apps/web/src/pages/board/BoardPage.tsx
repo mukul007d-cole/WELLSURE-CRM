@@ -27,9 +27,9 @@ import { qk } from '../../lib/query-keys';
 import type { SellerListRow, Status } from '../../types/domain';
 import { PageHeader } from '../../components/layout/PageFrame';
 import { ViewSwitcher } from '../../components/layout/ViewSwitcher';
+import { StatusChangeRejectedDialog } from '../../components/leads/StatusChangeRejectedDialog';
 import { BoardCardBody } from './BoardCard';
 import { BoardColumn } from './BoardColumn';
-import { MoveRejectedDialog } from './MoveRejectedDialog';
 import { adjacentColumnCoordinates } from './keyboard-coordinates';
 import { useMoveLeadStatus, type MoveRejection, type MoveVariables } from './useMoveLeadStatus';
 
@@ -308,7 +308,7 @@ export function BoardPage() {
       </p>
 
       {rejection?.kind === 'missing_field' ? (
-        <MoveRejectedDialog
+        <StatusChangeRejectedDialog
           variables={rejection.variables}
           fieldLabel={fieldLabel}
           onClose={() => setRejection(null)}
