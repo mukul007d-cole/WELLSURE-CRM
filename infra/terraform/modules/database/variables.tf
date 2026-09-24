@@ -60,6 +60,17 @@ variable "backup_retention_days" {
   }
 }
 
+variable "snapshot_identifier" {
+  description = <<-EOT
+    Restore the instance from this snapshot instead of creating an empty one.
+    Null (the default) creates a fresh database. Set it to bring an environment
+    back after a cost-saving teardown — see the final snapshot that destroy
+    leaves behind, named "<name_prefix>-final".
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "deletion_protection" {
   description = "Refuse to delete the instance until this is turned off."
   type        = bool

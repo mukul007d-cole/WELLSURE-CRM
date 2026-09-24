@@ -51,6 +51,8 @@ module "database" {
   common_tags                = local.common_tags
   private_subnet_ids         = module.network.private_subnet_ids
   database_security_group_id = module.network.database_security_group_id
+  deletion_protection = false
+  snapshot_identifier = var.db_snapshot_identifier
 }
 
 module "secrets" {

@@ -47,3 +47,14 @@ variable "campaign_email_from" {
   default     = null
   nullable    = true
 }
+
+variable "db_snapshot_identifier" {
+  description = <<-EOT
+    Restore the database from this snapshot instead of creating an empty one.
+    Null (the default) creates a fresh database — which is what you want
+    normally. Set it when bringing staging back after a cost-saving teardown;
+    `terraform destroy` leaves a final snapshot named "falcon-crm-staging-final".
+  EOT
+  type        = string
+  default     = null
+}

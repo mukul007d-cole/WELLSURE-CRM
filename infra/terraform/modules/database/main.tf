@@ -73,7 +73,8 @@ resource "aws_db_instance" "this" {
   # Single-AZ: staging accepts a maintenance-window restart. Production would
   # set this true.
   multi_az = false
-
+ 
+  snapshot_identifier = var.snapshot_identifier
   auto_minor_version_upgrade = true
   deletion_protection        = var.deletion_protection
   # A final snapshot is what makes `terraform destroy` recoverable rather than
