@@ -1,6 +1,24 @@
+/*
+ * The one-off runner: migrations and the bootstrap CLI, as Fargate tasks inside
+ * the VPC, because the database is not reachable from anywhere else. The
+ * procedure is in docs/operations/deployment.md.
+ *
+ * The image is built with `docker build --target build`, not the runtime stage:
+ * the command below runs through pnpm, which only the build stage enables, and
+ * `prisma` and `dotenv` (which prisma.config.ts imports) are devDependencies.
+ */
+
 variable "oneoff_image_tag" {
-  type    = string
-  default = "oneoff-4"
+  description = <<-EOT
+    Tag of the one-off image in ECR. The task definition pins it, so every new
+    migration needs a new image under a new tag, this default bumped to match,
+    and `terraform apply -target=aws_ecs_task_definition.oneoff`. Skip the bump
+    and apply reports "No changes"; the task then runs the old image, which has
+    no folder for the new migration, and `migrate deploy` exits 0 having
+    applied nothing.
+  EOT
+  type        = string
+  default     = "oneoff-4"
 }
 
 resource "aws_ecs_cluster" "oneoff" {
@@ -68,7 +86,9 @@ resource "aws_ecs_task_definition" "oneoff" {
     image            = "${module.compute.ecr_repository_url}:${var.oneoff_image_tag}"
     essential        = true
     workingDirectory = "/app"
-    command          = ["pnpm", "--filter", "@falcon/database", "exec", "prisma", "migrate", "status", "--config", "prisma.config.ts"]
+    # Read-only by default, so running the task without overrides changes
+    # nothing. migrate-overrides.json swaps in `migrate deploy`.
+    command = ["pnpm", "--filter", "@falcon/database", "exec", "prisma", "migrate", "status", "--config", "prisma.config.ts"]
 
     environment = [
       { name = "FALCON_HTTP_PORT", value = "3000" },

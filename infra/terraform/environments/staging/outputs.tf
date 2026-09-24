@@ -18,7 +18,7 @@ output "service_url" {
 }
 
 output "service_arn" {
-  description = "For `aws apprunner start-deployment` when deploying a new image."
+  description = "For `aws apprunner update-service` when deploying a new image, and `start-deployment` when re-running the current one."
   value       = module.compute.service_arn
 }
 

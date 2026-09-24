@@ -19,6 +19,6 @@ output "email_api_key_name" {
 }
 
 output "access_role_arn" {
-  description = "Role App Runner assumes to pull the image and read the secrets."
+  description = "Role App Runner assumes to pull the image. Secrets are resolved with the instance role, not this one."
   value       = aws_iam_role.access.arn
 }

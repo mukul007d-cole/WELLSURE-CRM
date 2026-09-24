@@ -1,7 +1,8 @@
 /*
  * Staging — a long-lived environment Wellsure evaluates the product on, not a
  * disposable smoke test (phase 17 Decision 1A). That is why the database keeps
- * real backups and deletion protection.
+ * real backups and takes a final snapshot on destroy. It no longer keeps
+ * deletion protection — see the database module below for why.
  *
  * Four modules, not seven. `cache`, `observability` and `backup` are still
  * interface-only stubs, deliberately:
@@ -51,6 +52,14 @@ module "database" {
   common_tags                = local.common_tags
   private_subnet_ids         = module.network.private_subnet_ids
   database_security_group_id = module.network.database_security_group_id
+
+  # Deliberately off, and a considered reversal of the original design, which
+  # made destroying staging awkward on purpose. Idle staging costs about $60 a
+  # month, most of it the database and the NAT gateway, and the cost teardown in
+  # docs/operations/deployment.md destroys this module to stop paying for it.
+  # The final snapshot still makes that recoverable (skip_final_snapshot =
+  # false in the module); restoring from it is what snapshot_identifier is for.
+  # Production keeps the module default of true.
   deletion_protection = false
   snapshot_identifier = var.db_snapshot_identifier
 }

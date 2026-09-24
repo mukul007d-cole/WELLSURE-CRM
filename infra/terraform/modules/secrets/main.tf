@@ -52,9 +52,10 @@ resource "aws_secretsmanager_secret" "email_api_key" {
 resource "aws_secretsmanager_secret_version" "email_api_key" {
   secret_id = aws_secretsmanager_secret.email_api_key.id
   # A placeholder, so the secret exists and the service can reference it before
-  # anyone has an API key. The API refuses to boot on a real transport with an
-  # unusable key, which is the intended loud failure rather than silent
-  # non-delivery — see parseEnv and docs/operations/deployment.md.
+  # anyone has an API key. parseEnv refuses only an *empty* key, so the API
+  # boots with this one and every send fails at delivery time ("Resend rejected
+  # the message: …") until the real key replaces it — see
+  # docs/operations/deployment.md.
   secret_string = "REPLACE_VIA_CONSOLE_OR_CLI"
 
   lifecycle {
@@ -62,8 +63,12 @@ resource "aws_secretsmanager_secret_version" "email_api_key" {
   }
 }
 
-# The role App Runner assumes to *fetch* the secrets. Distinct from the instance
-# role the application runs as: this one is used before the container starts.
+# The access role: App Runner assumes it to pull the image from ECR, before the
+# container starts. It does NOT resolve runtime_environment_secrets — App
+# Runner does that with the instance role in the compute module, and this
+# role's secrets policy alone left the first real service in CREATE_FAILED.
+# The read_secrets policy below is therefore redundant; it is left in place
+# rather than removed from a live environment as a side effect of a docs fix.
 data "aws_iam_policy_document" "build_assume" {
   statement {
     actions = ["sts:AssumeRole"]
