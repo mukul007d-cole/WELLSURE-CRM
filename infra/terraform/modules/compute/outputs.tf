@@ -9,7 +9,7 @@ output "service_url" {
 }
 
 output "service_arn" {
-  description = "For `aws apprunner start-deployment` in the deploy runbook."
+  description = "For `aws apprunner update-service` (a new image) and `start-deployment` (the same image again) in the deploy runbook."
   value       = aws_apprunner_service.this.arn
 }
 
@@ -19,6 +19,6 @@ output "ecr_repository_url" {
 }
 
 output "vpc_connector_arn" {
-  description = "Reused by the one-off migration and bootstrap tasks so they reach the private database."
+  description = "The App Runner VPC connector. The one-off tasks do not use it; they run in the private subnets directly."
   value       = aws_apprunner_vpc_connector.this.arn
 }

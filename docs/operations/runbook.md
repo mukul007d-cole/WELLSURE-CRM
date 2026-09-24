@@ -47,13 +47,13 @@ volumes; `pnpm infra:down` preserves data and `pnpm infra:reset` is explicitly
 destructive. The MinIO initialization job creates a private bucket idempotently.
 Local example credentials are never suitable for shared or deployed environments.
 
-The Terraform now describes a real staging environment — `network`, `database`,
-`secrets` and `compute` are filled in — but **it has never been applied**, and
-no AWS resources exist. `terraform validate` passing means the HCL is internally
-consistent and nothing more; the seven empty module stubs it replaced validated
-cleanly for sixteen phases. `cache`, `object-storage`, `observability` and
-`backup` remain interface-only, each for a reason recorded in the environment
-root. See `docs/operations/deployment.md` and ADR-0018.
+The Terraform describes a real staging environment — `network`, `database`,
+`secrets` and `compute` are filled in — and **staging has been applied and is
+live**. That first apply found five bugs that `terraform validate` had passed
+cleanly, which is the point: `validate` means the HCL is internally consistent
+and nothing more. `cache`, `object-storage`, `observability` and `backup` remain
+interface-only, each for a reason recorded in the environment root. Production
+has never been applied. See `docs/operations/deployment.md` and ADR-0018.
 
 Production backend bootstrap, RPO/RTO, and a real restore drill remain
 prerequisites before any production cutover, and the restore drill in particular

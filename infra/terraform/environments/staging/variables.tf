@@ -10,9 +10,21 @@ variable "environment" {
 }
 
 variable "image_tag" {
-  description = "Image tag App Runner is created with. GIT SHA of the first real build."
+  description = <<-EOT
+    Image tag App Runner is created with: the git SHA of a build already pushed
+    to ECR.
+
+    No default, on purpose. The compute module's own default is "bootstrap", a
+    tag nothing ever pushes, and App Runner cannot create a service from an
+    image it cannot pull. With no default, Terraform stops and asks for a value
+    instead of quietly using that one. After creation the service ignores this
+    value (see the compute module's lifecycle block) — deploys move the tag
+    with `aws apprunner update-service` — but keep it naming an image still in
+    ECR, because it is what the service comes back as if it is ever recreated.
+  EOT
   type        = string
 }
+
 variable "common_tags" {
   description = "Tags applied to every resource."
   type        = map(string)
@@ -54,6 +66,10 @@ variable "db_snapshot_identifier" {
     Null (the default) creates a fresh database — which is what you want
     normally. Set it when bringing staging back after a cost-saving teardown;
     `terraform destroy` leaves a final snapshot named "falcon-crm-staging-final".
+
+    Only change it while the database does not exist. It forces replacement,
+    so a new value against a live instance plans a destroy-and-restore. Leaving
+    it set after a restore, or setting it back to null, plans no change.
   EOT
   type        = string
   default     = null
