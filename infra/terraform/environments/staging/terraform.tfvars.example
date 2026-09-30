@@ -12,6 +12,17 @@ public_base_url = "https://placeholder.invalid"
 email_from = "Falcon CRM <no-reply@notify.example.com>"
 campaign_email_from = "Falcon Campaigns <news@mail.example.com>"
 
+# The git SHA of an image already pushed to ECR — App Runner is created from it.
+# No default: the compute module's default names an image nobody pushes. After
+# the service exists, deploys move the tag outside Terraform and this value is
+# ignored, but keep it naming an image still in ECR. See the variable's
+# description and docs/operations/deployment.md.
+image_tag = "<git sha of a pushed image>"
+
+# Only when bringing the database back after a cost teardown; see
+# docs/operations/deployment.md. Leave unset otherwise.
+# db_snapshot_identifier = "falcon-crm-staging-final"
+
 common_tags = {
   Owner = "platform"
 }

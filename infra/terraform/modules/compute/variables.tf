@@ -25,7 +25,7 @@ variable "application_security_group_id" {
 }
 
 variable "access_role_arn" {
-  description = "Role App Runner assumes to pull the image and read secrets, from the secrets module."
+  description = "Role App Runner assumes to pull the image, from the secrets module. Secrets are read with the instance role."
   type        = string
 }
 

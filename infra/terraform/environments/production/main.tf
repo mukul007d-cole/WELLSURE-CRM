@@ -17,7 +17,18 @@
  *   * no WAF, no rate limiting beyond the API's own, and no alerting on the
  *     health check;
  *   * the email sending domain and reputation, which staging shares with
- *     nothing real.
+ *     nothing real;
+ *   * the database module's connection URL, which ends `sslmode=no-verify`:
+ *     encrypted, but the RDS CA is not validated. Production wants the RDS CA
+ *     bundle in the image and `verify-full`;
+ *   * no `image_tag` passthrough and no one-off runner (staging's `oneoff.tf`),
+ *     so a first apply here would try to create App Runner from the compute
+ *     module's placeholder tag and would have no way to migrate.
+ *
+ * Staging's first apply found both of the last two the hard way; see
+ * docs/operations/deployment.md. Keep the database module's default
+ * `deletion_protection = true` here. Staging turns it off to allow a cost
+ * teardown, and production must not copy that.
  *
  * Everything below describes the shared shape.
  *

@@ -165,9 +165,10 @@ filled in `network`, `database`, `compute` and `secrets` for the staging
 environment; `cache`, `object-storage`, `observability` and `backup` remain
 interface-only, each for a reason recorded in the environment root.
 
-**Nothing has been applied.** No AWS resources exist. See
-[`docs/operations/deployment.md`](docs/operations/deployment.md) for what
-provisioning would involve and what it needs first.
+**Staging is live**, applied to a real AWS account in `ap-south-1`. Production
+has never been applied. See
+[`docs/operations/deployment.md`](docs/operations/deployment.md) for how staging
+is built, deployed, migrated and paused.
 
 ```bash
 terraform fmt -check -recursive infra/terraform

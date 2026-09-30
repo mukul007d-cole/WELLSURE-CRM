@@ -27,7 +27,7 @@ all of the problems at once rather than the first.
 
 | Variable | What it is | Local | Real |
 | --- | --- | --- | --- |
-| `FALCON_DATABASE_URL` | PostgreSQL connection string. Must be a `postgres:`/`postgresql:` URL. | `postgresql://falcon:falcon_local_only@localhost:5432/falcon?schema=public` | From the secret store, never a literal. Terraform generates the password and publishes it. |
+| `FALCON_DATABASE_URL` | PostgreSQL connection string. Must be a `postgres:`/`postgresql:` URL. | `postgresql://falcon:falcon_local_only@localhost:5432/falcon?schema=public` | From the secret store, never a literal. Terraform generates the password and publishes it. Against RDS it must carry an `sslmode`: the server requires TLS, and node-postgres sends plaintext without one. Staging uses `sslmode=no-verify` — see `infra/terraform/modules/database/README.md`. |
 | `FALCON_HTTP_PORT` | Listen port, 1–65535. | `3000` | `3000`; the platform maps it. |
 | `FALCON_CORS_ORIGIN` | Comma-separated allowed origins. Each must be a bare origin — scheme and host, no path or trailing slash. | `http://localhost:5173` | The public origin. Same-origin when deployed, but still required. |
 | `FALCON_LOG_LEVEL` | A Pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`. | `info` | `info`. |

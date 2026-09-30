@@ -76,6 +76,48 @@ jobs:
           SELECT tgname FROM pg_trigger WHERE tgname IN ('activity_logs_append_only', 'system_audit_logs_append_only');
           SQL
 
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The deploy build, never pushed. `pnpm build` has gone green twice while
+      # this was broken: once when a prune step emptied apps/api/node_modules,
+      # once when .dockerignore dropped docs/guides. The flags match the deploy
+      # command in docs/operations/deployment.md. The organization UUID is a
+      # placeholder, since nothing here serves the bundle to a browser.
+      - name: Build the image
+        run: >-
+          docker build
+          --provenance=false
+          --sbom=false
+          --build-arg VITE_FALCON_ORGANIZATION_ID=00000000-0000-4000-8000-000000000000
+          --tag falcon-crm:ci
+          .
+      # A clean build is not enough on its own. The pruned image built without
+      # error and failed only at startup, when node could not resolve fastify.
+      # Booting it catches that. No database is needed, because the API connects
+      # lazily and /health does not touch it.
+      - name: Boot the image and check /health
+        run: |
+          docker run --detach --name falcon-crm-ci --publish 3000:3000 \
+            --env FALCON_DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci \
+            --env FALCON_HTTP_PORT=3000 \
+            --env FALCON_CORS_ORIGIN=http://localhost:3000 \
+            --env FALCON_LOG_LEVEL=info \
+            --env FALCON_SESSION_COOKIE_SECURE=false \
+            falcon-crm:ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://localhost:3000/health \
+              && curl --fail --silent --output /dev/null http://localhost:3000/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs falcon-crm-ci
+          exit 1
+
   terraform:
     name: Terraform validation
     runs-on: ubuntu-latest

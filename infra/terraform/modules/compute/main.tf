@@ -52,9 +52,10 @@ resource "aws_ecr_lifecycle_policy" "this" {
 }
 
 # The role the running container assumes. Distinct from the access role in the
-# secrets module, which is used before the container starts. This one holds
-# nothing: the API talks only to Postgres and an HTTPS API, neither of which
-# uses IAM. It exists so that adding S3 later (ADR-0012) has an obvious home.
+# secrets module, which App Runner uses only to pull the image. The application
+# itself needs no IAM — it talks only to Postgres and an HTTPS API — so the one
+# permission here is the secrets read below, which App Runner performs as this
+# role. Adding S3 later (ADR-0012) belongs here too.
 data "aws_iam_policy_document" "tasks_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -103,9 +104,10 @@ resource "aws_apprunner_service" "this" {
   service_name = local.name_prefix
 
   source_configuration {
-    # Deploys are driven by the pipeline pushing a new immutable tag and calling
-    # StartDeployment, not by App Runner watching the repository. That keeps the
-    # deployed tag something a human chose and can name in a rollback.
+    # Deploys are driven by pushing a new immutable tag and calling
+    # UpdateService with it, not by App Runner watching the repository. That
+    # keeps the deployed tag something a human chose and can name in a
+    # rollback. StartDeployment only re-runs the tag already pinned here.
     auto_deployments_enabled = false
 
     authentication_configuration {

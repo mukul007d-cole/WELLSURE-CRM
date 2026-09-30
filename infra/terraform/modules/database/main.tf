@@ -73,8 +73,14 @@ resource "aws_db_instance" "this" {
   # Single-AZ: staging accepts a maintenance-window restart. Production would
   # set this true.
   multi_az = false
- 
-  snapshot_identifier = var.snapshot_identifier
+
+  # Null creates an empty database. Set, the instance is restored from that
+  # snapshot — the way back after a cost teardown. RDS restores the snapshot's
+  # master password, and the provider then immediately sets `password` above on
+  # it (a ModifyDBInstance after the restore), so the restored database and
+  # connection_url always agree, even when random_password.master is new.
+  # Forces replacement: only change it while the instance does not exist.
+  snapshot_identifier        = var.snapshot_identifier
   auto_minor_version_upgrade = true
   deletion_protection        = var.deletion_protection
   # A final snapshot is what makes `terraform destroy` recoverable rather than

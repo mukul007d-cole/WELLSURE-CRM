@@ -13,16 +13,19 @@ as the interface-only stubs they have been since phase 1.
 | --- | --- | --- |
 | `network` | Real | VPC, private and public subnets, NAT, security groups. |
 | `database` | Real | RDS PostgreSQL, private, encrypted, automated backups. |
-| `secrets` | Real | Secrets Manager entries and the role App Runner reads them with. |
-| `compute` | Real | ECR repository, VPC connector, App Runner service. |
+| `secrets` | Real | Secrets Manager entries and the role App Runner pulls the image with. |
+| `compute` | Real | ECR repository, VPC connector, App Runner service, and the instance role that reads the secrets. |
 | `cache` | Stub | Nothing in the application reads Redis — no client, no queue, no `REDIS_URL` reader. |
 | `object-storage` | Stub | Optional by ADR-0012; without the `S3_*` variables the locker answers `503` and the API still boots. |
 | `observability` | Stub | The API has a real `/health` and structured logs, and App Runner ships stdout to CloudWatch. |
 | `backup` | Stub | RDS automated backups plus the final snapshot cover the documented restore path. |
 
-**Nothing has been applied.** No AWS resources exist and no account has been
-touched. See `docs/operations/deployment.md`, and ADR-0018 for the decisions
-behind this shape.
+Staging also has `oneoff.tf`, which exists in no other root: an ECS cluster and
+task definition that run migrations and the bootstrap CLI inside the VPC.
+
+**Staging has been applied** and is live. The first real apply found five bugs
+that `validate` could not see. All are fixed, and the procedure is recorded in
+`docs/operations/deployment.md`. ADR-0018 holds the decisions behind this shape.
 
 Production has never been applied and is not ready; the header of
 `environments/production/main.tf` lists what must be answered first.
