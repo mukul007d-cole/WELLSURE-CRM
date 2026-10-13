@@ -70,9 +70,10 @@ resource "aws_db_instance" "this" {
   maintenance_window      = "Sun:03:30-Sun:04:30"
   copy_tags_to_snapshot   = true
 
-  # Single-AZ: staging accepts a maintenance-window restart. Production would
-  # set this true.
-  multi_az = false
+  # A standby in a second AZ. Off by default (staging accepts a
+  # maintenance-window restart); production turns it on, at about twice the
+  # instance cost.
+  multi_az = var.multi_az
 
   # Null creates an empty database. Set, the instance is restored from that
   # snapshot — the way back after a cost teardown. RDS restores the snapshot's

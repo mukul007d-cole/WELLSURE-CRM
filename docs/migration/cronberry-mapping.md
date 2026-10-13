@@ -173,7 +173,8 @@ mapping. They are blocking for the import mapping, not for the Phase 0 docs.
 
 | Source column(s) | Open question / provisional treatment |
 |---|---|
-| `pcid`, `seller_merchant_token` | Which is the authoritative marketplace seller ID for ADR-0004 priority 2, or do they represent different concepts? Retain both in staging. |
+| `pcid`, `seller_merchant_token` | Which is the authoritative marketplace seller ID for ADR-0004 priority 2, or do they represent different concepts? Retain both in staging. **The September 2026 export contradicts `seller_merchant_token` as an ID:** it holds only `P1`/`P2`/`P3` (bracketed or not). See `cronberry-export-verification-2026-09.md` §2. |
+| `mtn_merchant_token` | **Not in the original 120-column header**; first seen in the September 2026 export (121 columns). Near-unique per row, so a candidate for ADR-0004 priority 2 alongside `pcid`. Retain in staging until Wellsure confirms its meaning. |
 | `seller_status`, `lead_status` | Determine whether they duplicate the one process Status or whether `seller_status` is a separate account-health Field. Do not merge yet. |
 | `source_name`, `lead_source` | Determine whether they duplicate/overlap and establish conflict precedence. Do not merge yet. |
 | `quotation_total_amount`, `quotation_customer_name`, `quotation_date`, `quotation_expiry_date`, `quotation_number` | V1 has no quotation module under ADR-0003. Proposed disposition is informational configurable Fields, but this remains a scope decision. |
@@ -199,6 +200,11 @@ disposition. The final missing header was `message`; it has an explicit open
 mapping decision rather than a guessed destination. Header coverage is complete,
 while the substantive questions in `docs/requirements/open-decisions.md` still
 block final import mapping where noted.
+
+The September 2026 export has a 121st column, `mtn_merchant_token`, now in
+§3.8. That month's data was checked against this ledger and the bulk importer
+in `cronberry-export-verification-2026-09.md`, which lists what blocks a
+faithful migration.
 
 **Scope note (ADR-0016).** The requirements below describe the *Cronberry
 migration run*, not the general bulk-import feature built in phase 15. That

@@ -71,6 +71,12 @@ variable "snapshot_identifier" {
   default     = null
 }
 
+variable "multi_az" {
+  description = "Run a synchronous standby in a second AZ. Roughly doubles the instance cost."
+  type        = bool
+  default     = false
+}
+
 variable "deletion_protection" {
   description = "Refuse to delete the instance until this is turned off."
   type        = bool

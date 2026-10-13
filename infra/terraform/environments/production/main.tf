@@ -1,36 +1,29 @@
 /*
- * Production — NEVER APPLIED, AND NOT READY TO BE.
+ * Production — not yet applied. The procedure is
+ * docs/operations/production-deployment.md.
  *
- * Phase 17 stood up staging only, and deliberately: production cutover was
- * explicitly out of that phase's scope and needs separate approval. This root
- * validates, which — as phase 17 found the hard way — means the HCL is
- * internally consistent and nothing more.
+ * Same shape as staging, which has been applied for real, plus what staging's
+ * first apply taught: an `image_tag` with no default, and a one-off runner
+ * (`oneoff.tf`) for migrations and bootstrap.
  *
- * Before this is ever applied, at least the following have to be answered rather
- * than inherited from staging, because staging's defaults are wrong for
- * production in every one of these:
+ * Differs from staging on purpose:
  *
- *   * `multi_az = false` and a `db.t4g.micro` in the database module;
+ *   * the database is Multi-AZ, with 14 days of backups, by default —
+ *     `db_multi_az`, `db_backup_retention_days` and `db_instance_class` are
+ *     decisions in terraform.tfvars, and the guide prices them;
+ *   * `deletion_protection` keeps the module default of true. Staging turns it
+ *     off to allow a cost teardown. Production must not.
+ *
+ * Accepted for launch, and listed in the guide's known gaps:
+ *
  *   * a single NAT gateway, so an AZ outage takes egress with it;
- *   * `backup_retention_days = 7`, with no restore drill yet performed —
- *     `docs/operations/runbook.md` lists that drill as a prerequisite;
+ *   * the connection URL ends `sslmode=no-verify` — encrypted, but the RDS CA
+ *     is not validated. Hardening means the RDS CA bundle in the image and
+ *     `verify-full`;
  *   * no WAF, no rate limiting beyond the API's own, and no alerting on the
  *     health check;
- *   * the email sending domain and reputation, which staging shares with
- *     nothing real;
- *   * the database module's connection URL, which ends `sslmode=no-verify`:
- *     encrypted, but the RDS CA is not validated. Production wants the RDS CA
- *     bundle in the image and `verify-full`;
- *   * no `image_tag` passthrough and no one-off runner (staging's `oneoff.tf`),
- *     so a first apply here would try to create App Runner from the compute
- *     module's placeholder tag and would have no way to migrate.
- *
- * Staging's first apply found both of the last two the hard way; see
- * docs/operations/deployment.md. Keep the database module's default
- * `deletion_protection = true` here. Staging turns it off to allow a cost
- * teardown, and production must not copy that.
- *
- * Everything below describes the shared shape.
+ *   * no restore drill yet — `docs/operations/runbook.md` lists it as a
+ *     prerequisite for cutover.
  *
  * Four modules, not seven. `cache`, `observability` and `backup` are still
  * interface-only stubs, deliberately:
@@ -80,6 +73,9 @@ module "database" {
   common_tags                = local.common_tags
   private_subnet_ids         = module.network.private_subnet_ids
   database_security_group_id = module.network.database_security_group_id
+  instance_class             = var.db_instance_class
+  multi_az                   = var.db_multi_az
+  backup_retention_days      = var.db_backup_retention_days
 }
 
 module "secrets" {
@@ -105,6 +101,7 @@ module "compute" {
   public_base_url               = var.public_base_url
   email_from                    = var.email_from
   campaign_email_from           = var.campaign_email_from
+  image_tag                     = var.image_tag
 }
 
 # Interface-only, as they have been since phase 1. Kept wired so the environment

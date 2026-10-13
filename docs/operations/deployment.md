@@ -3,10 +3,12 @@
 How the staging environment is built, deployed to, migrated, paused and rolled
 back.
 
-> ## Status: live
+> ## Status: taken down
 >
-> Staging has been applied to AWS account `509726421007` in `ap-south-1`, and is
-> serving. Phase 17 wrote the first version of this document before any of it
+> Staging was applied to AWS account `509726421007` in `ap-south-1` and served
+> real evaluation use. It has since been taken down ahead of production. This
+> document remains the record of how it was built and the reference for
+> rebuilding it. Phase 17 wrote the first version of this document before any of it
 > had run, and warned that `validate`-clean HCL proves nothing more than
 > internal consistency. The first real apply bore that out. It surfaced five
 > bugs in the repository that `validate` had passed, all now fixed, plus several
@@ -14,8 +16,8 @@ back.
 > works. Where a step failed, the failure is quoted, because the error message
 > is what the next person will search for.
 >
-> Production is **not** covered here and is not ready. See the header of
-> `infra/terraform/environments/production/main.tf`.
+> Production has its own step-by-step guide, built on these procedures:
+> `docs/operations/production-deployment.md`.
 
 ---
 

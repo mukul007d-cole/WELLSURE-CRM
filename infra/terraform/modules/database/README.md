@@ -18,6 +18,7 @@ Operating procedures (migrations, the cost teardown, restoring) live in
 | `instance_class` | `db.t4g.micro` | |
 | `allocated_storage` | `20` | GiB. Autoscales to four times this. |
 | `backup_retention_days` | `7` | Must be at least 1: point-in-time restore is the documented rollback path. |
+| `multi_az` | `false` | A synchronous standby in a second AZ, at about twice the instance cost. Production turns it on. |
 | `deletion_protection` | `true` | Refuse to delete the instance until this is turned off. |
 | `snapshot_identifier` | `null` | Restore the instance from this RDS snapshot instead of creating an empty database. |
 

@@ -20,15 +20,16 @@ as the interface-only stubs they have been since phase 1.
 | `observability` | Stub | The API has a real `/health` and structured logs, and App Runner ships stdout to CloudWatch. |
 | `backup` | Stub | RDS automated backups plus the final snapshot cover the documented restore path. |
 
-Staging also has `oneoff.tf`, which exists in no other root: an ECS cluster and
+Staging and production each have `oneoff.tf`: an ECS cluster and
 task definition that run migrations and the bootstrap CLI inside the VPC.
 
-**Staging has been applied** and is live. The first real apply found five bugs
+**Staging was applied for real**, and has since been taken down. The first apply found five bugs
 that `validate` could not see. All are fixed, and the procedure is recorded in
 `docs/operations/deployment.md`. ADR-0018 holds the decisions behind this shape.
 
-Production has never been applied and is not ready; the header of
-`environments/production/main.tf` lists what must be answered first.
+Production has not been applied yet. It now carries the same `image_tag` and
+`oneoff.tf` as staging, and `docs/operations/production-deployment.md` is the
+step-by-step procedure.
 
 ## State
 
