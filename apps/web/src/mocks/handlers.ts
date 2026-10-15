@@ -403,6 +403,7 @@ const MOCK_JOURNEY_FIELDS: Array<{
   journeyId: string;
   requirement: string;
   requiredFromStatusId: string | null;
+  requiredRoleIds?: string[];
 }> = JOURNEYS.flatMap((journey) =>
   MOCK_ADMIN_FIELDS.map((field) => ({
     fieldId: field.id,
@@ -816,6 +817,7 @@ export const handlers = [
     const body = (await request.json()) as {
       requirement: string;
       requiredFromStatusId: string | null;
+      requiredRoleIds?: string[];
     };
     const existing = MOCK_JOURNEY_FIELDS.find(
       (setting) => setting.journeyId === params.id && setting.fieldId === params.fieldId,
@@ -824,7 +826,8 @@ export const handlers = [
       journeyId: String(params.id),
       fieldId: String(params.fieldId),
       requirement: body.requirement,
-      requiredFromStatusId: body.requiredFromStatusId,
+      requiredFromStatusId: body.requiredFromStatusId ?? null,
+      requiredRoleIds: body.requiredRoleIds ?? [],
     };
     if (existing) Object.assign(existing, value);
     else MOCK_JOURNEY_FIELDS.push(value);

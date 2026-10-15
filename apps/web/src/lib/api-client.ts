@@ -201,6 +201,8 @@ export const adminApi = {
         journeyId: string;
         requirement: string;
         requiredFromStatusId: string | null;
+        /** ADR-0026 — roles a `required_on_create` rule applies to; empty = every role. */
+        requiredRoleIds?: string[];
         field: AdminField;
       }>
     >(`/journeys/${journeyId}/fields`),
@@ -680,6 +682,8 @@ export const configApi = {
         journeyId: string;
         requirement: string;
         requiredFromStatusId: string | null;
+        /** ADR-0026 — roles a `required_on_create` rule applies to; empty = every role. */
+        requiredRoleIds?: string[];
         active?: boolean;
         field: AdminField;
       }>
