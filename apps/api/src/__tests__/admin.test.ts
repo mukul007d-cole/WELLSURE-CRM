@@ -18,8 +18,8 @@ describe('administration validation', () => {
         { module: 'leads', action: 'view', scope: 'SELF' },
       ]),
     ).toEqual([
-      { module: 'leads', action: 'view', scope: 'SELF' },
-      { module: 'users', action: 'edit', scope: 'TEAM' },
+      { module: 'leads', action: 'view', scope: 'SELF', journeyIds: [] },
+      { module: 'users', action: 'edit', scope: 'TEAM', journeyIds: [] },
     ]);
   });
   it('rejects unknown and duplicate grants', () => {

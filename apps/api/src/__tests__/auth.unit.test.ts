@@ -106,6 +106,7 @@ describe('self capabilities', () => {
       } as never,
     });
     expect(body.body).toEqual({
+      roleId: 'role',
       permissions: [{ module: 'users', action: 'view', scope: 'TEAM' }],
       journeyIds: ['journey-a', 'journey-b'],
       fieldVisibility: [{ fieldId: 'field-a', accessLevel: 'VIEW' }],

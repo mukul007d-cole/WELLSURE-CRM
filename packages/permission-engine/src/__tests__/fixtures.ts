@@ -30,6 +30,11 @@ export interface FixtureState {
    * existing test that never touches this axis stays correct unmodified.
    */
   statusVisibilityBypassRoleIds: string[];
+  /** ADR-0025 — role reporting lines. Empty by default: no role reports to another. */
+  reportingLines: Array<{ roleId: string; reportsToRoleId: string; organizationId: string }>;
+  /** ADR-0026 — journeys that restrict access to members, and their members. */
+  restrictedJourneyIds: string[];
+  journeyMembers: Array<{ journeyId: string; userId: string }>;
 }
 
 export const orgA = 'org-synthetic-a';
@@ -119,7 +124,15 @@ export function createFixtureState(): FixtureState {
     // manager chain.
     activeRoutingRuleStatusIds: [{ statusId: statusRestricted, organizationId: orgA }],
     statusVisibilityBypassRoleIds: [],
+    reportingLines: [],
+    restrictedJourneyIds: [],
+    journeyMembers: [],
   };
+}
+
+function memberAllows(state: FixtureState, journeyId: string, userId: string | undefined) {
+  if (!state.restrictedJourneyIds.includes(journeyId)) return true;
+  return state.journeyMembers.some((row) => row.journeyId === journeyId && row.userId === userId);
 }
 
 export function createRepository(state = createFixtureState()): PermissionRepository {
@@ -155,7 +168,7 @@ export function createRepository(state = createFixtureState()): PermissionReposi
             row.organizationId === input.organizationId &&
             row.journeyId === input.journeyId &&
             row.active,
-        ),
+        ) && memberAllows(state, input.journeyId, input.userId),
       );
     },
     hasActiveRoutingRule(input) {
@@ -175,9 +188,31 @@ export function createRepository(state = createFixtureState()): PermissionReposi
             (row) =>
               row.roleId === input.roleId &&
               row.organizationId === input.organizationId &&
-              row.active,
+              row.active &&
+              memberAllows(state, row.journeyId, input.userId),
           )
           .map((row) => row.journeyId),
+      );
+    },
+    listReportingRoleUserIds(input) {
+      const descendants = new Set<string>();
+      const queue = [input.roleId];
+      while (queue.length > 0) {
+        const parent = queue.shift()!;
+        for (const line of state.reportingLines) {
+          if (line.organizationId !== input.organizationId || line.reportsToRoleId !== parent)
+            continue;
+          if (descendants.has(line.roleId) || line.roleId === input.roleId) continue;
+          descendants.add(line.roleId);
+          queue.push(line.roleId);
+        }
+      }
+      return Promise.resolve(
+        state.users
+          .filter(
+            (row) => row.organizationId === input.organizationId && descendants.has(row.roleId),
+          )
+          .map((row) => row.id),
       );
     },
     getFieldVisibility(input) {

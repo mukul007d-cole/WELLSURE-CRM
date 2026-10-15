@@ -214,6 +214,7 @@ export class PrismaAdminRepository implements AdminRepository {
         permissions: { orderBy: [{ module: 'asc' }, { action: 'asc' }] },
         journeyAccess: { orderBy: { journeyId: 'asc' } },
         fieldVisibility: { orderBy: { fieldId: 'asc' } },
+        reportsTo: { select: { reportsToRoleId: true }, orderBy: { reportsToRoleId: 'asc' } },
       },
     });
   }
@@ -329,6 +330,17 @@ export class PrismaAdminRepository implements AdminRepository {
           'conflict',
           'replacement would leave no active permission administrator',
         );
+      const limitedJourneyIds = [...new Set(rows.flatMap((r) => r.journeyIds))];
+      if (limitedJourneyIds.length > 0) {
+        const known = await tx.journey.count({
+          where: { organizationId: org, id: { in: limitedJourneyIds } },
+        });
+        if (known !== limitedJourneyIds.length)
+          throw new AdminError(
+            'validation_error',
+            'one or more journeys are outside the organization',
+          );
+      }
       await tx.rolePermission.deleteMany({ where: { organizationId: org, roleId } });
       if (rows.length)
         await tx.rolePermission.createMany({
@@ -365,6 +377,117 @@ export class PrismaAdminRepository implements AdminRepository {
       await bump(tx as Tx, org, roleId, actor);
       await audit(tx as Tx, org, actor, 'role_journey_access', roleId, 'replace', old, journeyIds);
       return journeyIds;
+    });
+  }
+  /**
+   * ADR-0025 — replaces the roles this role reports to. A line that would
+   * make the role its own ancestor is refused: walk up from each proposed
+   * parent and fail on reaching `roleId`.
+   */
+  replaceReportingLines(org: string, actor: string, roleId: string, reportsToRoleIds: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockRole(tx as Tx, org, roleId);
+      if (reportsToRoleIds.includes(roleId))
+        throw new AdminError('validation_error', 'a role cannot report to itself');
+      const known = await tx.role.count({
+        where: { organizationId: org, id: { in: reportsToRoleIds } },
+      });
+      if (known !== reportsToRoleIds.length)
+        throw new AdminError('validation_error', 'one or more roles are outside the organization');
+      const lines = await tx.roleReportingLine.findMany({
+        where: { organizationId: org, roleId: { not: roleId } },
+        select: { roleId: true, reportsToRoleId: true },
+      });
+      const parentsOf = new Map<string, string[]>();
+      for (const line of lines)
+        parentsOf.set(line.roleId, [...(parentsOf.get(line.roleId) ?? []), line.reportsToRoleId]);
+      const seen = new Set<string>();
+      const queue = [...reportsToRoleIds];
+      while (queue.length > 0) {
+        const next = queue.shift()!;
+        if (next === roleId)
+          throw new AdminError('validation_error', 'reporting lines cannot form a cycle');
+        if (seen.has(next)) continue;
+        seen.add(next);
+        queue.push(...(parentsOf.get(next) ?? []));
+      }
+      const old = (
+        await tx.roleReportingLine.findMany({
+          where: { organizationId: org, roleId },
+          select: { reportsToRoleId: true },
+          orderBy: { reportsToRoleId: 'asc' },
+        })
+      ).map((row) => row.reportsToRoleId);
+      await tx.roleReportingLine.deleteMany({ where: { organizationId: org, roleId } });
+      if (reportsToRoleIds.length)
+        await tx.roleReportingLine.createMany({
+          data: reportsToRoleIds.map((reportsToRoleId) => ({
+            organizationId: org,
+            roleId,
+            reportsToRoleId,
+          })),
+        });
+      // Version bump: every role above this one now resolves a different
+      // REPORTING_ROLES set, but this role's own decisions change too
+      // (Status Visibility ancestors), and bumping one row is what the
+      // authorization cache keys on.
+      await bump(tx as Tx, org, roleId, actor);
+      await audit(tx as Tx, org, actor, 'role_reporting_lines', roleId, 'replace', old, reportsToRoleIds);
+      return { reportsToRoleIds };
+    });
+  }
+  async getJourneyMembers(org: string, journeyId: string) {
+    const journey = await this.prisma.journey.findFirst({
+      where: { organizationId: org, id: journeyId },
+      select: { restrictToMembers: true },
+    });
+    if (journey === null) return null;
+    const members = await this.prisma.journeyMember.findMany({
+      where: { organizationId: org, journeyId },
+      select: { userId: true },
+      orderBy: { userId: 'asc' },
+    });
+    return { restrictToMembers: journey.restrictToMembers, userIds: members.map((m) => m.userId) };
+  }
+  replaceJourneyMembers(
+    org: string,
+    actor: string,
+    journeyId: string,
+    input: { restrictToMembers: boolean; userIds: string[] },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const journey = await tx.journey.findFirst({ where: { organizationId: org, id: journeyId } });
+      if (journey === null) throw new AdminError('not_found', 'journey not found');
+      const known = await tx.user.count({
+        where: { organizationId: org, id: { in: input.userIds } },
+      });
+      if (known !== input.userIds.length)
+        throw new AdminError('validation_error', 'one or more users are outside the organization');
+      const old = {
+        restrictToMembers: journey.restrictToMembers,
+        userIds: (
+          await tx.journeyMember.findMany({
+            where: { organizationId: org, journeyId },
+            select: { userId: true },
+            orderBy: { userId: 'asc' },
+          })
+        ).map((m) => m.userId),
+      };
+      await tx.journeyMember.deleteMany({ where: { organizationId: org, journeyId } });
+      if (input.userIds.length)
+        await tx.journeyMember.createMany({
+          data: input.userIds.map((userId) => ({ organizationId: org, journeyId, userId })),
+        });
+      await tx.journey.update({
+        where: { organizationId_id: { organizationId: org, id: journeyId } },
+        data: {
+          restrictToMembers: input.restrictToMembers,
+          updatedById: actor,
+          version: { increment: 1 },
+        },
+      });
+      await audit(tx as Tx, org, actor, 'journey_members', journeyId, 'replace', old, input);
+      return input;
     });
   }
   replaceFieldVisibility(org: string, actor: string, roleId: string, rows: FieldVisibilityInput[]) {
@@ -649,7 +772,7 @@ function userView<T extends { passwordHash: string | null }>(user: T) {
   const { passwordHash, ...safe } = user;
   return { ...safe, hasPassword: passwordHash !== null };
 }
-const permissionSelect = { module: true, action: true, scope: true } as const;
+const permissionSelect = { module: true, action: true, scope: true, journeyIds: true } as const;
 const memberSelect = { userId: true, isLeader: true } as const;
 const teamInclude = {
   members: {

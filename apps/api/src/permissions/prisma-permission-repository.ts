@@ -26,6 +26,12 @@ interface PrismaPermissionClient {
     findUnique(args: unknown): Promise<JourneyAccessRow | null>;
     findMany(args: unknown): Promise<JourneyAccessRow[]>;
   };
+  journey: { findUnique(args: unknown): Promise<{ restrictToMembers: boolean } | null> };
+  journeyMember: {
+    findUnique(args: unknown): Promise<{ id: string } | null>;
+    findMany(args: unknown): Promise<Array<{ journeyId: string }>>;
+  };
+  $queryRaw<T = unknown>(query: TemplateStringsArray, ...values: unknown[]): Promise<T>;
   statusRoutingRule: { findFirst(args: unknown): Promise<StatusRoutingRuleRow | null> };
   fieldVisibility: { findMany(args: unknown): Promise<FieldVisibilityRow[]> };
   resourceVisibility: {
@@ -54,9 +60,11 @@ interface RolePermissionRow {
   module: string;
   action: string;
   scope: DataScope;
+  journeyIds?: string[];
 }
 interface JourneyAccessRow {
   journeyId: string;
+  journey?: { restrictToMembers: boolean };
 }
 interface StatusRoutingRuleRow {
   id: string;
@@ -114,26 +122,57 @@ export class PrismaPermissionRepository implements PermissionRepository {
     const row = await this.prisma.rolePermission.findUnique({
       where: { organizationId_roleId_module_action: input },
     });
-    return row === null ? null : { module: row.module, action: row.action, scope: row.scope };
+    return row === null
+      ? null
+      : { module: row.module, action: row.action, scope: row.scope, journeyIds: row.journeyIds ?? [] };
   }
 
   async listRolePermissions(input: { roleId: string; organizationId: string }) {
     return this.prisma.rolePermission.findMany({
       where: input,
-      select: { module: true, action: true, scope: true },
+      select: { module: true, action: true, scope: true, journeyIds: true },
       orderBy: [{ module: 'asc' }, { action: 'asc' }],
     });
   }
 
+  /**
+   * Role journey access, then — ADR-0026 — membership when the journey
+   * restricts to members. A caller that names no user cannot be a member, so
+   * it is refused a restricted journey rather than waved through.
+   */
   async hasJourneyAccess(input: {
     roleId: string;
     organizationId: string;
     journeyId: string;
+    userId?: string;
   }): Promise<boolean> {
     const row = await this.prisma.roleJourneyAccess.findUnique({
-      where: { organizationId_roleId_journeyId: input },
+      where: {
+        organizationId_roleId_journeyId: {
+          organizationId: input.organizationId,
+          roleId: input.roleId,
+          journeyId: input.journeyId,
+        },
+      },
     });
-    return row !== null;
+    if (row === null) return false;
+    const journey = await this.prisma.journey.findUnique({
+      where: { organizationId_id: { organizationId: input.organizationId, id: input.journeyId } },
+      select: { restrictToMembers: true },
+    });
+    if (journey === null || !journey.restrictToMembers) return true;
+    if (input.userId === undefined) return false;
+    const member = await this.prisma.journeyMember.findUnique({
+      where: {
+        organizationId_journeyId_userId: {
+          organizationId: input.organizationId,
+          journeyId: input.journeyId,
+          userId: input.userId,
+        },
+      },
+      select: { id: true },
+    });
+    return member !== null;
   }
 
   /**
@@ -175,12 +214,52 @@ export class PrismaPermissionRepository implements PermissionRepository {
   async listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
+    userId?: string;
   }): Promise<readonly string[]> {
     const rows = await this.prisma.roleJourneyAccess.findMany({
       where: { organizationId: input.organizationId, roleId: input.roleId },
-      select: { journeyId: true },
+      select: { journeyId: true, journey: { select: { restrictToMembers: true } } },
     });
-    return rows.map((row) => row.journeyId);
+    if (!rows.some((row) => row.journey?.restrictToMembers === true)) {
+      return rows.map((row) => row.journeyId);
+    }
+    const memberships =
+      input.userId === undefined
+        ? []
+        : await this.prisma.journeyMember.findMany({
+            where: { organizationId: input.organizationId, userId: input.userId },
+            select: { journeyId: true },
+          });
+    const memberOf = new Set(memberships.map((row) => row.journeyId));
+    return rows
+      .filter((row) => row.journey?.restrictToMembers !== true || memberOf.has(row.journeyId))
+      .map((row) => row.journeyId);
+  }
+
+  /**
+   * ADR-0025 — users (active or not) whose role reports, transitively, to
+   * `roleId`. `UNION` (not `UNION ALL`) is the cycle guard: a role already
+   * collected is not expanded again.
+   */
+  async listReportingRoleUserIds(input: {
+    organizationId: string;
+    roleId: string;
+  }): Promise<readonly string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH RECURSIVE descendants(role_id) AS (
+        SELECT role_id FROM role_reporting_lines
+         WHERE organization_id = ${input.organizationId}::uuid
+           AND reports_to_role_id = ${input.roleId}::uuid
+        UNION
+        SELECT l.role_id FROM role_reporting_lines l
+          JOIN descendants d ON l.reports_to_role_id = d.role_id
+         WHERE l.organization_id = ${input.organizationId}::uuid
+      )
+      SELECT u.id::text AS id FROM users u
+       WHERE u.organization_id = ${input.organizationId}::uuid
+         AND u.role_id IN (SELECT role_id FROM descendants)
+         AND u.role_id <> ${input.roleId}::uuid`;
+    return rows.map((row) => row.id);
   }
 
   async getFieldVisibility(input: {

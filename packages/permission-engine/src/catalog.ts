@@ -5,6 +5,7 @@ export const dataScopes = [
   'TEAM',
   'DEPARTMENT',
   'ORGANIZATION',
+  'REPORTING_ROLES',
 ] as const satisfies readonly DataScope[];
 
 export const permissionCatalog = [
@@ -46,6 +47,11 @@ export const permissionCatalog = [
       'import',
       'bypass_status_visibility',
       'retain_view_after_reassignment',
+      // ADR-0026 — skips a status's "Allowed roles" list when moving a lead
+      // into it. Same shape as `bypass_status_visibility`: a role-level
+      // boolean for oversight roles, granted by bootstrap so the first admin
+      // is never locked out of a status, implied by nothing else.
+      'bypass_status_rules',
     ],
     // Which of this module's actions actually consult the granted DataScope
     // — see `scoped()`'s doc comment below for what that means and why most

@@ -192,8 +192,14 @@ describe.runIf(shouldRunAdminPostgres)(
       });
       expect(audits).toHaveLength(2);
       expect(audits.map(({ oldValue, newValue }) => ({ oldValue, newValue }))).toEqual([
-        { oldValue: [], newValue: [{ module: 'leads', action: 'view', scope: 'SELF' }] },
-        { oldValue: [{ module: 'leads', action: 'view', scope: 'SELF' }], newValue: [] },
+        {
+          oldValue: [],
+          newValue: [{ module: 'leads', action: 'view', scope: 'SELF', journeyIds: [] }],
+        },
+        {
+          oldValue: [{ module: 'leads', action: 'view', scope: 'SELF', journeyIds: [] }],
+          newValue: [],
+        },
       ]);
       await server.close();
     }, 120_000);

@@ -126,10 +126,22 @@ export async function exportSellers(input: {
     return { status: 400, body: { error: error.code, details: error.details } };
   }
 
+  // ADR-0026 — an export grant limited to some journeys removes the others
+  // from the view predicate. It only ever narrows: `view` still decides the
+  // rows within the journeys both grants allow.
+  const exportJourneys = new Set(gate.recordPredicate?.journeyIds ?? []);
+  const recordPredicate =
+    input.list.journeyId === undefined
+      ? {
+          ...decision.recordPredicate,
+          journeyIds: decision.recordPredicate.journeyIds.filter((id) => exportJourneys.has(id)),
+        }
+      : decision.recordPredicate;
+
   const result = await buildSellerExport({
     organizationId,
     sellerRepository: input.sellerRepository,
-    recordPredicate: decision.recordPredicate,
+    recordPredicate,
     conditions,
     list: input.list,
     fields: allFields.filter((field) => visible.has(field.id)),

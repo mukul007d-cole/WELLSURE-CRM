@@ -18,6 +18,8 @@ export { isGrantActive } from './grants.js';
 export {
   assignmentScopeAllowsLead,
   buildRecordPredicate,
+  expandHierarchyUserIds,
+  expandReportingRoleUserIds,
   expandScopeUserIds,
   expandTeamUserIds,
 } from './scope.js';

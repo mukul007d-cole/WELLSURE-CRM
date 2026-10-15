@@ -12,6 +12,13 @@ export interface PermissionInput {
   module: string;
   action: string;
   scope: DataScope;
+  /** ADR-0026 — journeys this action is limited to; empty = every accessible journey. */
+  journeyIds: string[];
+}
+
+export interface JourneyMembersInput {
+  restrictToMembers: boolean;
+  userIds: string[];
 }
 export interface FieldVisibilityInput {
   fieldId: string;

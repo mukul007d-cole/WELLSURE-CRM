@@ -1,5 +1,6 @@
 import type {
   FieldVisibilityInput,
+  JourneyMembersInput,
   Page,
   PageRequest,
   PermissionInput,
@@ -50,6 +51,21 @@ export interface AdminRepository {
     actor: string,
     roleId: string,
     journeyIds: string[],
+  ): Promise<unknown>;
+  /** ADR-0025 — the roles this role reports to. */
+  replaceReportingLines(
+    org: string,
+    actor: string,
+    roleId: string,
+    reportsToRoleIds: string[],
+  ): Promise<unknown>;
+  /** ADR-0026 — null when the journey is not in the organization. */
+  getJourneyMembers(org: string, journeyId: string): Promise<JourneyMembersInput | null>;
+  replaceJourneyMembers(
+    org: string,
+    actor: string,
+    journeyId: string,
+    input: JourneyMembersInput,
   ): Promise<unknown>;
   replaceFieldVisibility(
     org: string,

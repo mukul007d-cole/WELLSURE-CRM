@@ -2,6 +2,7 @@ import { resolveFieldDecision } from './fields.js';
 import {
   assignmentScopeAllowsLead,
   buildRecordPredicate,
+  expandHierarchyUserIds,
   expandScopeUserIds,
   expandTeamUserIds,
 } from './scope.js';
@@ -72,17 +73,34 @@ export async function resolveAuthorization(input: {
     action: input.request.action,
   });
 
-  if (permission === null) {
+  /*
+   * ADR-0026 — an action may be limited to some journeys. A single-record
+   * (or single-journey) check outside the list is denied as the feature
+   * itself would be; a list-level check keeps the action but narrows the
+   * predicate's journeys to the intersection below.
+   */
+  const actionJourneyLimit =
+    permission !== null && permission.journeyIds !== undefined && permission.journeyIds.length > 0
+      ? new Set(permission.journeyIds)
+      : null;
+  const outsideActionJourneys =
+    actionJourneyLimit !== null &&
+    input.request.journeyId !== undefined &&
+    !actionJourneyLimit.has(input.request.journeyId);
+  if (permission === null || outsideActionJourneys) {
     deniedReasons.push('FEATURE_ACTION_DENIED');
   }
   const effectiveScope = permission?.scope ?? null;
 
   const accessibleJourneyIds =
     input.request.journeyId === undefined
-      ? await input.repository.listAccessibleJourneyIds({
-          roleId: role.id,
-          organizationId: input.request.organizationId,
-        })
+      ? (
+          await input.repository.listAccessibleJourneyIds({
+            roleId: role.id,
+            organizationId: input.request.organizationId,
+            userId: user.id,
+          })
+        ).filter((journeyId) => actionJourneyLimit === null || actionJourneyLimit.has(journeyId))
       : [];
   const journeyAllowed =
     input.request.journeyId === undefined
@@ -91,6 +109,7 @@ export async function resolveAuthorization(input: {
           roleId: role.id,
           organizationId: input.request.organizationId,
           journeyId: input.request.journeyId,
+          userId: user.id,
         });
   const predicateJourneyIds =
     input.request.journeyId === undefined ? accessibleJourneyIds : [input.request.journeyId];
@@ -134,9 +153,17 @@ export async function resolveAuthorization(input: {
           });
     return assignmentsPromise;
   };
+  // TEAM scope is the manager chain alone (ADR-0006); Status Visibility's
+  // ancestor set is that chain unioned with role reporting lines (ADR-0025).
+  // Two loaders, so neither meaning leaks into the other.
+  let teamUserIdsPromise: Promise<readonly string[]> | null = null;
+  const loadTeamUserIds = () => {
+    teamUserIdsPromise ??= expandTeamUserIds(input.repository, user);
+    return teamUserIdsPromise;
+  };
   let hierarchyUserIdsPromise: Promise<readonly string[]> | null = null;
   const loadHierarchyUserIds = () => {
-    hierarchyUserIdsPromise ??= expandTeamUserIds(input.repository, user);
+    hierarchyUserIdsPromise ??= expandHierarchyUserIds(input.repository, user);
     return hierarchyUserIdsPromise;
   };
 
@@ -223,7 +250,7 @@ export async function resolveAuthorization(input: {
   if (effectiveScope !== null) {
     const allowedUserIds =
       effectiveScope === 'TEAM'
-        ? await loadHierarchyUserIds()
+        ? await loadTeamUserIds()
         : await expandScopeUserIds({
             repository: input.repository,
             user,

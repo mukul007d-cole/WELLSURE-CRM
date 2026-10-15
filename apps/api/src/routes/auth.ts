@@ -23,12 +23,14 @@ export interface CapabilityReader {
     readonly {
       module: string;
       action: string;
-      scope: 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION';
+      scope: 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION' | 'REPORTING_ROLES';
+      journeyIds?: readonly string[];
     }[]
   >;
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
+    userId?: string;
   }): Promise<readonly string[]>;
   listFieldVisibility(input: {
     roleId: string;
@@ -53,13 +55,18 @@ export async function capabilitiesRoute(input: {
   };
   const [permissions, journeyIds, fieldVisibility, hasAccessibleTools] = await Promise.all([
     input.repository.listRolePermissions(identity),
-    input.repository.listAccessibleJourneyIds(identity),
+    // ADR-0026 — the user is named so journey membership applies.
+    input.repository.listAccessibleJourneyIds({ ...identity, userId: input.auth.user.id }),
     input.repository.listFieldVisibility(identity),
     input.repository.hasAnyResourceVisibility(identity),
   ]);
   return {
     status: 200 as const,
     body: {
+      // The caller's own role id: status "Allowed roles" (ADR-0026) are
+      // role ids, and the client filters status pickers against them. The
+      // server still enforces; this only avoids offering a refused option.
+      roleId: input.auth.user.roleId,
       permissions,
       journeyIds: [...journeyIds].sort(),
       fieldVisibility,

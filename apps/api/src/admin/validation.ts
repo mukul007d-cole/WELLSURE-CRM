@@ -49,7 +49,8 @@ export function permissions(value: unknown): PermissionInput[] {
     const scope = text(row.scope, 'scope');
     if (!isPermissionPair(module, action) || !isDataScope(scope))
       throw new AdminError('validation_error', 'unknown permission or scope');
-    return { module, action, scope };
+    const journeyIds = row.journeyIds === undefined ? [] : ids(row.journeyIds, 'journeyIds');
+    return { module, action, scope, journeyIds };
   });
   unique(
     result.map((row) => `${row.module}:${row.action}`),

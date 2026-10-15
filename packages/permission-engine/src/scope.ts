@@ -26,7 +26,43 @@ export async function expandScopeUserIds(input: {
       });
     case 'ORGANIZATION':
       return 'ALL_ORGANIZATION_USERS';
+    case 'REPORTING_ROLES':
+      return expandReportingRoleUserIds(input.repository, input.user);
   }
+}
+
+/**
+ * ADR-0025 — the caller plus every user whose role reports, transitively, to
+ * the caller's role. Inactive users are deliberately included (unlike TEAM):
+ * the role relationship outlives a person, and a departed owner's leads must
+ * stay visible to whoever has to reassign them.
+ */
+export async function expandReportingRoleUserIds(
+  repository: PermissionRepository,
+  user: UserSnapshot,
+): Promise<readonly string[]> {
+  const descendants =
+    (await repository.listReportingRoleUserIds?.({
+      organizationId: user.organizationId,
+      roleId: user.roleId,
+    })) ?? [];
+  return [...new Set([user.id, ...descendants])];
+}
+
+/**
+ * Status Visibility's "everyone above the assignee" (ADR-0020), asked from
+ * the caller's side: the manager-chain reports (TEAM) unioned with the
+ * reporting-role reports (ADR-0025).
+ */
+export async function expandHierarchyUserIds(
+  repository: PermissionRepository,
+  user: UserSnapshot,
+): Promise<readonly string[]> {
+  const [team, reporting] = await Promise.all([
+    expandTeamUserIds(repository, user),
+    expandReportingRoleUserIds(repository, user),
+  ]);
+  return [...new Set([...team, ...reporting])];
 }
 
 export async function expandTeamUserIds(

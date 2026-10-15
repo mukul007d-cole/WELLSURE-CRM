@@ -1,4 +1,4 @@
-export type DataScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION';
+export type DataScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION' | 'REPORTING_ROLES';
 export type FieldAccessLevel = 'VIEW' | 'EDIT';
 export type WorkflowCheck = { status: 'not_enforced' };
 
@@ -33,6 +33,11 @@ export interface RolePermissionSnapshot {
   module: string;
   action: string;
   scope: DataScope;
+  /**
+   * ADR-0026 — the journeys this action is limited to. Absent or empty means
+   * every journey the role can otherwise access.
+   */
+  journeyIds?: readonly string[];
 }
 
 export interface JourneyAccessSnapshot {
@@ -81,10 +86,16 @@ export interface PermissionRepository {
     module: string;
     action: string;
   }): Promise<RolePermissionSnapshot | null>;
+  /**
+   * Role journey access, and — ADR-0026 — journey membership when the journey
+   * restricts to members. `userId` is optional only so narrow test fakes keep
+   * compiling; the real repository needs it to apply membership.
+   */
   hasJourneyAccess(input: {
     roleId: string;
     organizationId: string;
     journeyId: string;
+    userId?: string;
   }): Promise<boolean>;
   /**
    * Phase 20 — does this Status have an active routing rule?
@@ -118,6 +129,17 @@ export interface PermissionRepository {
   listAccessibleJourneyIds(input: {
     roleId: string;
     organizationId: string;
+    userId?: string;
+  }): Promise<readonly string[]>;
+  /**
+   * ADR-0025 — every user (active or not) whose role is a transitive
+   * descendant of `roleId` through role reporting lines. The caller is added
+   * by the engine, not here. Optional: a repository without reporting lines
+   * behaves as if none were configured.
+   */
+  listReportingRoleUserIds?(input: {
+    organizationId: string;
+    roleId: string;
   }): Promise<readonly string[]>;
   getFieldVisibility(input: {
     roleId: string;
@@ -191,7 +213,8 @@ export interface RecordPredicate {
    * Phase 20 — the caller's own id plus every active user reachable
    * downward through `users.manager_id` (i.e. `expandScopeUserIds(...,
    * 'TEAM')`, computed unconditionally regardless of the caller's own
-   * granted scope for this action), so a many-row query (the Seller List,
+   * granted scope for this action) — and, since ADR-0025, every user whose
+   * role reports to the caller's role — so a many-row query (the Seller List,
    * export, bulk import matching) can apply the same Status Visibility rule
    * `AuthorizationRequest.statusId` applies to a single record, per process
    * instance, in SQL: unrestricted unless the instance's current Status has

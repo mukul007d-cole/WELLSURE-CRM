@@ -1,5 +1,6 @@
 import type { AuthConfig } from '../auth/config.js';
 import { preparePasswordReset, type EmailSender } from '../auth/password-reset.js';
+import { AdminError } from './errors.js';
 import type { AdminRepository } from './repository.js';
 import type { AdminContext, UserWriteInput } from './types.js';
 import {
@@ -102,6 +103,25 @@ export class AdminService {
       id,
       ids(value, 'journeyIds'),
     );
+  }
+  replaceReportingLines(ctx: AdminContext, id: string, value: unknown) {
+    return this.repository.replaceReportingLines(
+      ctx.organizationId,
+      ctx.actorUserId,
+      id,
+      ids(value, 'reportsToRoleIds'),
+    );
+  }
+  getJourneyMembers(ctx: AdminContext, journeyId: string) {
+    return this.repository.getJourneyMembers(ctx.organizationId, journeyId);
+  }
+  replaceJourneyMembers(ctx: AdminContext, journeyId: string, body: Record<string, unknown>) {
+    if (typeof body.restrictToMembers !== 'boolean')
+      throw new AdminError('validation_error', 'restrictToMembers must be a boolean');
+    return this.repository.replaceJourneyMembers(ctx.organizationId, ctx.actorUserId, journeyId, {
+      restrictToMembers: body.restrictToMembers,
+      userIds: ids(body.userIds, 'userIds'),
+    });
   }
   replaceFieldVisibility(ctx: AdminContext, id: string, value: unknown) {
     return this.repository.replaceFieldVisibility(

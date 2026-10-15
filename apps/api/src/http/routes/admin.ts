@@ -128,6 +128,36 @@ export function registerAdminRoutes(
     'edit',
     (s, c, b, p, q) => s.replaceJourneyAccess(c, String(p.roleId), b.journeyIds),
   );
+  // ADR-0025 — role reporting lines. Gated like every other role axis.
+  bind(
+    'GET',
+    '/api/v1/roles/:roleId/reporting-lines',
+    'roles_permissions',
+    'view',
+    async (s, c, _b, p, q) => {
+      const role = (await s.getRole(c, String(p.roleId))) as {
+        reportsTo?: Array<{ reportsToRoleId: string }>;
+      } | null;
+      return role === null
+        ? null
+        : { reportsToRoleIds: (role.reportsTo ?? []).map((row) => row.reportsToRoleId) };
+    },
+  );
+  bind(
+    'PUT',
+    '/api/v1/roles/:roleId/reporting-lines',
+    'roles_permissions',
+    'edit',
+    (s, c, b, p, q) => s.replaceReportingLines(c, String(p.roleId), b.reportsToRoleIds),
+  );
+  // ADR-0026 — journey members are a personnel assignment, gated on the
+  // Users module like Teams (ADR-0014), not on journey configuration.
+  bind('GET', '/api/v1/journeys/:journeyId/members', 'users', 'view', (s, c, _b, p, q) =>
+    s.getJourneyMembers(c, String(p.journeyId)),
+  );
+  bind('PUT', '/api/v1/journeys/:journeyId/members', 'users', 'edit', (s, c, b, p, q) =>
+    s.replaceJourneyMembers(c, String(p.journeyId), b),
+  );
   bind(
     'GET',
     '/api/v1/roles/:roleId/field-visibility',

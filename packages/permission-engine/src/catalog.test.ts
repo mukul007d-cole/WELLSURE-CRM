@@ -21,7 +21,7 @@ describe('permission catalog', () => {
   });
 
   it('publishes only the permission engine scopes', () => {
-    expect(dataScopes).toEqual(['SELF', 'TEAM', 'DEPARTMENT', 'ORGANIZATION']);
+    expect(dataScopes).toEqual(['SELF', 'TEAM', 'DEPARTMENT', 'ORGANIZATION', 'REPORTING_ROLES']);
     expect(isDataScope('ORGANIZATION')).toBe(true);
     expect(isDataScope('GLOBAL')).toBe(false);
   });

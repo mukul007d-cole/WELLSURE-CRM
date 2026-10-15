@@ -20,9 +20,10 @@ import type { FalconPrismaClient } from '@falcon/database';
  * mapping row's id, and nothing is lost, because every cascaded row is in
  * `old_value`.
  *
- * **Four of the blockers are not foreign keys.** `leads.field_values` is a JSONB
+ * **Several blockers are not foreign keys.** `leads.field_values` is a JSONB
  * object keyed by field id; `campaigns.filter` and `import_jobs.mapping_json`
- * carry field and journey ids inside JSON. No constraint would ever fire for
+ * carry field and journey ids inside JSON; `role_permissions.journey_ids` and
+ * `field_journey_settings.required_role_ids` are uuid arrays. No constraint would ever fire for
  * them, which is why this table exists instead of "attempt the delete and see".
  *
  * **Standing obligation:** a future feature that stores a configuration id in a
@@ -147,8 +148,32 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
         table: 'import_jobs',
         count: jsonPathCount('import_jobs', 'mapping_json', '$.journeyId ? (@ == $v)'),
       },
+      {
+        // Not a foreign key: `journey_ids` is a uuid array (ADR-0026). A grant
+        // limited to this Journey is another Role's configuration; dropping the
+        // id would silently widen the grant to every journey.
+        name: 'journeyLimitedPermissions',
+        table: 'role_permissions',
+        count: (tx, organizationId, journeyId) =>
+          rawCount(
+            tx,
+            `SELECT count(*)::int AS count FROM role_permissions
+              WHERE organization_id = $1::uuid AND $2::uuid = ANY (journey_ids)`,
+            organizationId,
+            journeyId,
+          ),
+      },
     ],
     cascades: [
+      {
+        name: 'journeyMembers',
+        table: 'journey_members',
+        list: (tx, organizationId, journeyId) =>
+          tx.journeyMember.findMany({ where: { organizationId, journeyId } }),
+        remove: async (tx, organizationId, journeyId) => {
+          await tx.journeyMember.deleteMany({ where: { organizationId, journeyId } });
+        },
+      },
       {
         name: 'roleJourneyAccess',
         table: 'role_journey_access',
@@ -226,6 +251,25 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
           await tx.statusRoutingPermission.deleteMany({ where: { organizationId, statusId } });
         },
       },
+      {
+        // ADR-0026 status rules describe only this Status.
+        name: 'statusAllowedRoles',
+        table: 'status_allowed_roles',
+        list: (tx, organizationId, statusId) =>
+          tx.statusAllowedRole.findMany({ where: { organizationId, statusId } }),
+        remove: async (tx, organizationId, statusId) => {
+          await tx.statusAllowedRole.deleteMany({ where: { organizationId, statusId } });
+        },
+      },
+      {
+        name: 'statusRequiredFields',
+        table: 'status_required_fields',
+        list: (tx, organizationId, statusId) =>
+          tx.statusRequiredField.findMany({ where: { organizationId, statusId } }),
+        remove: async (tx, organizationId, statusId) => {
+          await tx.statusRequiredField.deleteMany({ where: { organizationId, statusId } });
+        },
+      },
       // `statusVisibility` (Phase 19) retired in Phase 20 — Status
       // Visibility is now computed from routing assignments, not a
       // separate allow-list table with its own dependents to cascade.
@@ -272,6 +316,14 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
         name: 'importJobs',
         table: 'import_jobs',
         count: jsonPathCount('import_jobs', 'mapping_json', '$.**.fieldId ? (@ == $v)'),
+      },
+      {
+        // Another entity's configuration: a Status requires this Field on
+        // entry (ADR-0026).
+        name: 'statusRequiredFields',
+        table: 'status_required_fields',
+        count: (tx, organizationId, fieldId) =>
+          tx.statusRequiredField.count({ where: { organizationId, fieldId } }),
       },
     ],
     cascades: [
@@ -398,6 +450,35 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
         table: 'users',
         count: (tx, organizationId, roleId) => tx.user.count({ where: { organizationId, roleId } }),
       },
+      {
+        // Other roles that report to this one (ADR-0025): their configuration,
+        // and purging would silently cut them out of a hierarchy.
+        name: 'reportingRoles',
+        table: 'role_reporting_lines',
+        count: (tx, organizationId, roleId) =>
+          tx.roleReportingLine.count({ where: { organizationId, reportsToRoleId: roleId } }),
+      },
+      {
+        // A Status restricted to this role (ADR-0026). Dropping the row could
+        // leave the Status with no allowed roles, which means *unrestricted*.
+        name: 'statusAllowedRoles',
+        table: 'status_allowed_roles',
+        count: (tx, organizationId, roleId) =>
+          tx.statusAllowedRole.count({ where: { organizationId, roleId } }),
+      },
+      {
+        // Not a foreign key: `required_role_ids` is a uuid array.
+        name: 'fieldRequiredRoles',
+        table: 'field_journey_settings',
+        count: (tx, organizationId, roleId) =>
+          rawCount(
+            tx,
+            `SELECT count(*)::int AS count FROM field_journey_settings
+              WHERE organization_id = $1::uuid AND $2::uuid = ANY (required_role_ids)`,
+            organizationId,
+            roleId,
+          ),
+      },
     ],
     cascades: [
       {
@@ -438,6 +519,16 @@ export const purgeDescriptors: Record<PurgeEntity, PurgeDescriptor> = {
       },
       // `statusVisibility` (Phase 19) retired in Phase 20 — no more
       // per-Role rows to cascade when a Role is purged.
+      {
+        // This role's own "reports to" lines describe only its participation.
+        name: 'ownReportingLines',
+        table: 'role_reporting_lines',
+        list: (tx, organizationId, roleId) =>
+          tx.roleReportingLine.findMany({ where: { organizationId, roleId } }),
+        remove: async (tx, organizationId, roleId) => {
+          await tx.roleReportingLine.deleteMany({ where: { organizationId, roleId } });
+        },
+      },
       {
         // Phase 22 — the Tools resource library's reverse allow-list. Same
         // shape as `fieldVisibility` above: a pure grant row naming only this
