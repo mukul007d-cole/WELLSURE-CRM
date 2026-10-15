@@ -40,6 +40,10 @@ import type {
   ImportMapping,
   ImportRunResult,
   Resource,
+  FollowUp,
+  FollowUpSummary,
+  FollowUpView,
+  JourneyMembers,
 } from '../types/domain';
 
 const API_BASE = '/api/v1';
@@ -258,6 +262,27 @@ export const adminApi = {
     request(`/roles/${id}/journey-access`, json('PUT', { journeyIds })),
   saveFieldVisibility: (id: string, fieldVisibility: CapabilitySet['fieldVisibility']) =>
     request(`/roles/${id}/field-visibility`, json('PUT', { fieldVisibility })),
+  // ADR-0025 — the roles a role reports to.
+  reportingLines: (id: string) =>
+    request<{ reportsToRoleIds: string[] }>(`/roles/${id}/reporting-lines`),
+  saveReportingLines: (id: string, reportsToRoleIds: string[]) =>
+    request<{ reportsToRoleIds: string[] }>(
+      `/roles/${id}/reporting-lines`,
+      json('PUT', { reportsToRoleIds }),
+    ),
+  // ADR-0026 — journey members and the "members only" switch.
+  journeyMembers: (journeyId: string) => request<JourneyMembers>(`/journeys/${journeyId}/members`),
+  saveJourneyMembers: (journeyId: string, body: JourneyMembers) =>
+    request<JourneyMembers>(`/journeys/${journeyId}/members`, json('PUT', body)),
+  // ADR-0026 — who may choose a status, and what it needs filled in.
+  saveStatusRules: (
+    statusId: string,
+    body: { allowedRoleIds: string[]; requiredFieldIds: string[] },
+  ) =>
+    request<{ statusId: string; allowedRoleIds: string[]; requiredFieldIds: string[] }>(
+      `/statuses/${statusId}/rules`,
+      json('PUT', body),
+    ),
   departments: (page = 1, active?: boolean, pageSize = ADMIN_PAGE_SIZE) =>
     request<Page<Department>>(
       `/departments${toQuery({ page, pageSize, active: active === undefined ? undefined : String(active) })}`,
@@ -424,6 +449,29 @@ export const sellersApi = {
       statusId?: string;
     },
   ) => request<{ processInstanceId: string }>(`/leads/${id}/journey`, json('PATCH', body)),
+};
+
+/**
+ * Follow-ups (ADR-0026). The browser's UTC offset is sent so "today" means the
+ * user's today, not the server's.
+ */
+const tzOffset = () => new Date().getTimezoneOffset();
+export const tasksApi = {
+  list: (view: FollowUpView, page = 1, pageSize = 25) =>
+    request<Page<FollowUp> & { truncated: boolean }>(
+      `/tasks${toQuery({ view, page, pageSize, tzOffset: tzOffset() })}`,
+    ),
+  summary: () => request<FollowUpSummary>(`/tasks/summary${toQuery({ tzOffset: tzOffset() })}`),
+  forLead: (leadId: string) =>
+    request<{ items: FollowUp[] }>(`/leads/${leadId}/tasks`).then((body) => body.items),
+  update: (
+    id: string,
+    body: {
+      action: 'complete' | 'reopen' | 'reschedule' | 'cancel';
+      dueAt?: string;
+      note?: string | null;
+    },
+  ) => request<FollowUp>(`/tasks/${id}`, json('PATCH', body)),
 };
 
 export const attachmentsApi = {

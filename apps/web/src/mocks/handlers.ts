@@ -21,6 +21,7 @@ import {
   setCookieHeader,
 } from './session';
 import type { NotificationItem, NotificationRule } from '../types/domain';
+import { phase24Handlers, resetPhase24MockState } from './phase24';
 
 const API_BASE = '/api/v1';
 
@@ -458,6 +459,7 @@ export function resetAdminMockState() {
   MOCK_JOURNEY_FIELDS.splice(0, MOCK_JOURNEY_FIELDS.length, ...initial.journeyFields);
   MOCK_RESOURCES.splice(0, MOCK_RESOURCES.length, ...initial.resources);
   MOCK_REQUIRED_FIELD_RULES.splice(0);
+  resetPhase24MockState();
 }
 
 function pageResponse<T>(request: Request, rows: T[]) {
@@ -558,6 +560,8 @@ function serializeDetail(lead: MockLead, user: ReturnType<typeof requireUser>) {
 }
 
 export const handlers = [
+  // Before the generic routes so `/tasks/summary` and `/statuses/:id/rules` win.
+  ...phase24Handlers,
   http.post(`${API_BASE}/auth/login`, async ({ request }) => {
     await delay(500);
     const body = (await request.json()) as {

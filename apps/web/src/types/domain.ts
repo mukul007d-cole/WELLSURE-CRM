@@ -3,15 +3,43 @@
  * verbatim. Keep in sync with the backend — this is not a hypothetical shape.
  */
 
-export type DataScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION';
+/** `REPORTING_ROLES` (ADR-0025): the caller plus users of every role that reports to theirs. */
+export type DataScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION' | 'REPORTING_ROLES';
 export type FieldAccessLevel = 'VIEW' | 'EDIT';
 export type OutcomeType = 'open' | 'closed_won' | 'closed_lost';
 export type BehaviorType = 'default' | 'call_later' | 'follow_up' | 'archived';
 
 export type FieldType =
-  'text' | 'textarea' | 'email' | 'phone' | 'date' | 'select' | 'number' | 'boolean' | 'json';
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'phone'
+  | 'date'
+  | 'datetime'
+  | 'select'
+  | 'multi_select'
+  | 'number'
+  | 'boolean'
+  | 'json';
 
-export type FieldRequirement = 'required' | 'optional' | 'hidden';
+/** `required_on_create` (ADR-0026): enforced only when a lead is created, for its roles. */
+export type FieldRequirement = 'required' | 'optional' | 'hidden' | 'required_on_create';
+
+/** Status color palette tokens — mirrors `statusColors` in the API. */
+export const STATUS_COLORS = [
+  'gray',
+  'blue',
+  'teal',
+  'green',
+  'lime',
+  'amber',
+  'orange',
+  'red',
+  'pink',
+  'purple',
+  'indigo',
+] as const;
+export type StatusColor = (typeof STATUS_COLORS)[number];
 
 export interface Journey {
   id: string;
@@ -38,6 +66,47 @@ export interface Status {
    * fails, so the client has to know whether one exists.
    */
   isDefaultOnCreate: boolean;
+  /** ADR-0026 status rules — present on every configuration read. */
+  color?: StatusColor | null;
+  reasonOptions?: string[];
+  /** Roles allowed to choose this status; empty = everyone. */
+  allowedRoles?: Array<{ roleId: string }>;
+  /** Fields that must hold a value to enter this status. */
+  requiredFields?: Array<{ fieldId: string }>;
+}
+
+/** What a status change may carry besides the status (ADR-0026). */
+export interface StatusEntryExtras {
+  statusReason?: string | null | undefined;
+  followUp?: { dueAt: string; note?: string | null | undefined } | undefined;
+}
+
+export type FollowUpView = 'overdue' | 'today' | 'upcoming' | 'done';
+export type FollowUpStatus = 'open' | 'done' | 'rescheduled' | 'cancelled';
+
+export interface FollowUp {
+  id: string;
+  leadId: string;
+  leadName: string;
+  processInstanceId: string | null;
+  journeyId: string | null;
+  journeyName: string | null;
+  statusId: string | null;
+  statusName: string | null;
+  assignedToUserId: string;
+  assignedToName: string;
+  dueDate: string;
+  status: FollowUpStatus;
+  note: string | null;
+  completedAt: string | null;
+  completedByName: string | null;
+  createdAt: string;
+}
+
+export interface FollowUpSummary {
+  overdue: number;
+  today: number;
+  upcoming: number;
 }
 
 /**
@@ -297,7 +366,7 @@ export interface SellerListResponse {
   rows: SellerListRow[];
 }
 
-export interface CreateLeadInput {
+export interface CreateLeadInput extends StatusEntryExtras {
   journeyId: string;
   statusId?: string | undefined;
   existingLeadId?: string | undefined;
@@ -308,7 +377,7 @@ export interface CreateLeadInput {
   assignments: ReadonlyArray<{ assignmentType: string; userId: string }>;
 }
 
-export interface EditLeadInput {
+export interface EditLeadInput extends StatusEntryExtras {
   leadId: string;
   processInstanceId: string;
   journeyId: string;
@@ -330,7 +399,15 @@ export interface SessionUser {
 }
 
 export interface CapabilitySet {
-  permissions: Array<{ module: string; action: string; scope: DataScope }>;
+  /** The caller's role — status pickers filter against `Status.allowedRoles`. */
+  roleId?: string;
+  permissions: Array<{
+    module: string;
+    action: string;
+    scope: DataScope;
+    /** ADR-0026 — journeys this grant is limited to; empty or absent = all. */
+    journeyIds?: string[];
+  }>;
   journeyIds: string[];
   fieldVisibility: Array<{ fieldId: string; accessLevel: FieldAccessLevel }>;
   /** Whether the caller's Role can access at least one Tools resource — gates the nav entry. */
@@ -349,6 +426,8 @@ export interface AdminJourney {
   active: boolean;
   statuses?: Status[];
   version?: number;
+  /** ADR-0026 — only `journey_members` may work it. */
+  restrictToMembers?: boolean;
   /**
    * The distinct assignment types this Journey's current assignments actually
    * use. Derived from data, so a Journey with no leads reports none — these are
@@ -445,6 +524,13 @@ export interface AdminRole {
   permissions?: CapabilitySet['permissions'];
   journeyAccess?: Array<{ journeyId: string }>;
   fieldVisibility?: CapabilitySet['fieldVisibility'];
+  /** ADR-0025 — roles this role reports to. */
+  reportsTo?: Array<{ reportsToRoleId: string }>;
+}
+
+export interface JourneyMembers {
+  restrictToMembers: boolean;
+  userIds: string[];
 }
 export interface Department {
   id: string;
