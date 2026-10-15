@@ -14,6 +14,7 @@ rest of this file is reference for people who already have it running.
 
 - Every environment variable: [`docs/operations/environment-variables.md`](docs/operations/environment-variables.md)
 - How the deployed environment is run: [`docs/operations/deployment.md`](docs/operations/deployment.md)
+- Moving from Cronberry (one-time cutover script): [`docs/operations/cutover-runbook.md`](docs/operations/cutover-runbook.md)
 
 ## Prerequisites
 

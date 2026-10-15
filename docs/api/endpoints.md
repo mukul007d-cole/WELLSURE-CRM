@@ -18,6 +18,15 @@ documented target without a backing route function and is not exposed by the
 HTTP transport.
 
 ### Users, Roles, Departments
+
+Phase 24: `GET/PUT /roles/:id/reporting-lines` (`{ reportsToRoleIds }`,
+self-lines and cycles rejected; ADR-0025). `PUT /roles/:id/permissions` rows
+may carry `journeyIds` (ADR-0026). `GET /auth/capabilities` returns the
+caller's `roleId`. Status-changing requests (`POST /leads`, `PATCH /leads/:id`,
+`PATCH /leads/:id/journey`) accept `statusReason`; a status the caller's role
+may not choose is `403`, and missing required-to-enter fields are `400` with
+`details.fieldIds`.
+
 ```
 GET    /users
 POST   /users
@@ -61,6 +70,22 @@ Department, and an active Team must have at least one leader — see ADR-0014 fo
 both, and for why a Team is not the `TEAM` data scope.
 
 ### Journeys, Statuses, Services
+
+Phase 24 (ADR-0026) additions:
+
+```
+PUT    /statuses/:id/rules              -- { allowedRoleIds, requiredFieldIds }; journeys_statuses:edit
+GET    /journeys/:id/members            -- { restrictToMembers, userIds }; users:view
+PUT    /journeys/:id/members            -- users:edit; audited, bumps the journey version
+```
+
+`POST /journeys/:id/statuses` and `PATCH /statuses/:id` accept `color` (a
+palette token or null) and `reasonOptions` (string[]). Journey reads return each
+status with `allowedRoles: [{roleId}]` and `requiredFields: [{fieldId}]`.
+`PUT /journeys/:id/fields/:fieldId` accepts requirement `required_on_create`
+with `requiredRoleIds` (empty = every role). Field types are validated
+(OD-020): text, textarea, email, phone, date, datetime, select, multi_select,
+number, boolean, json.
 
 Routing rules live under a Status. Every routing route needs the `lead_routing`
 module action; `status_routing_permissions` layers a per-(status, role, action)
@@ -299,14 +324,25 @@ PUT    /notification-rules/:id
 POST   /notification-rules/:id/purge   -- permanent; roles_permissions:purge
 ```
 
-### Tasks
+### Tasks — follow-ups (Phase 24, ADR-0026)
 
-**Not implemented.** No route file exists. The `Task` model and the `call_later`/`follow_up` behavior types are in place, but `packages/workflow-engine` is still a placeholder, so nothing creates or reads a task. Paths below are the V1 target, not the current surface.
+Follow-ups are `tasks` rows of type `follow_up`, status `open | done |
+rescheduled | cancelled`. One is scheduled by sending `followUp: { dueAt, note? }`
+with `POST /leads` or `PATCH /leads/:id` (always assigned to the caller;
+scheduling closes any open follow-up on the same process instance as
+`rescheduled`). Registered only with a real database client.
 
 ```
-GET    /tasks
-PATCH  /tasks/:id/complete
+GET    /tasks?view=overdue|today|upcoming|done&page&pageSize&tzOffset
+                                        -- the caller's own, on leads the caller can still view
+GET    /tasks/summary?tzOffset          -- { overdue, today, upcoming }
+GET    /leads/:id/tasks                 -- on the process instances the caller may view
+PATCH  /tasks/:id                       -- { action: complete|reopen|cancel|reschedule, dueAt?, note? }
+                                        -- assignee needs leads:view; anyone else leads:edit
 ```
+
+`tzOffset` is the browser's `Date#getTimezoneOffset()`, so "today" is the
+user's day. Every change writes a `follow_up` activity row.
 
 ### Attachments
 

@@ -224,15 +224,13 @@ values in it.
 See [§5.4](#54-field-visibility) — it's documented once, from the Roles side, since the
 two screens write the same data.
 
-### 3.4 A real defect: unsupported field types are accepted silently
+### 3.4 Supported field types
 
-If you create a Field with a **Type** value other than the nine listed in §3.1 — the
-obvious mistake is reaching for something like "currency" — the create form and the API
-both accept it without complaint. The Field then exists, is filterable-as-"not
-filterable", and **every attempt to actually put a value into it fails validation**,
-permanently, with nothing at creation time telling you this will happen. This is a known,
-open, recorded defect (not something this guide invented) — if you hit it, the fix is to
-recreate the Field with one of the nine supported types; there's no in-place repair.
+Since Phase 24 the server only accepts these types: text, long text, email, phone, date,
+**date & time**, single choice (select), **multiple choice**, number, yes/no and JSON. Any
+other type is refused when you save the Field, so a Field can no longer be created that
+could never hold a value. Single and multiple choice both need at least one option.
+Amounts (for example a "currency" Field) are numbers.
 
 ---
 

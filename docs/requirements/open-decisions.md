@@ -91,7 +91,12 @@ mapping is approved; do not guess destinations.
 
 ### OD-020 — `fields.field_type` accepted on create but unusable at write time
 
-- **Status:** Open; a real defect, found during Phase 13b planning. Not blocking
+- **Status:** Resolved in Phase 24 (ADR-0026, "Field rules"): `createField` and
+  `updateField` reject any type outside `supportedFieldTypes`
+  (`apps/api/src/leads/validation.ts`), which also gained `datetime` and
+  `multi_select`. The `currency` question below stays open; amounts remain
+  `number`.
+- **Original problem (kept for history):** Not blocking
   the filter engine, which simply reports such a Field as not filterable.
 - **Need:** `ConfigurationService.createField` stores `field_type` as any
   non-blank string, while `validateValue` in `apps/api/src/leads/validation.ts`

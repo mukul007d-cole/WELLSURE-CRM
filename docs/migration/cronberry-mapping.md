@@ -5,6 +5,34 @@ is a disposition ledger, not executable migration logic. Wellsure-specific field
 names are seed/import configuration and must not become hardcoded application
 behavior.
 
+## 0. As implemented — Phase 24 cutover (supersedes the ledger below where they differ)
+
+The ledger from §1 onwards was written against the original 120-column header.
+The exports actually migrated were trimmed by Wellsure first (unneeded fields
+removed from both the field list and the data). What the one-time cutover
+(`pnpm --filter @falcon/api cutover`, plan D13) does today:
+
+| Source | Falcon | Notes |
+|---|---|---|
+| `audience_id` | `process_instances.external_ref = 'cronberry:<id>'` | Matched first on every run, so a re-run skips migrated records (ADR-0027). |
+| `name`, `mobile`, `email` | `leads.name/phone/email` | Phone keeps its digits; a nameless record is named from its email, phone or id (counted in the report). |
+| `lead_status` | The process instance's status | Matched case-insensitively against the status name and its configured `aliases`; an unmatched status rejects the row (reported, never guessed). |
+| `Lead Owner` | Current `owner` assignment | Unknown former owners become **inactive placeholder users** (D3). |
+| `Prev Lead Owner` | Non-current `previous_owner` assignment | Unresolvable names are counted, not invented. |
+| `entry_date` | `leads.created_at` (earliest of a merged lead), `process_instances.created_at` | Source times are local (`sourceUtcOffset`). |
+| `lead_followdate` | Open follow-up (`tasks`, type `follow_up`) for the owner | Only on statuses with an `open` outcome. |
+| `lead_last_followdate` | `last_followup_at` field (datetime, locked) | |
+| `source_name` | `lead_source` field (text, locked) | |
+| `Remarks` | Backdated `comment` activities, `source = migrated_cronberry_remark` | Author resolved by exact name; an unresolved author's name stays in the text. **No status inference from remark text** (C5, D10). |
+| Every configured attribute | A Field (`fields[].sourceColumn`) | Typed per the field: numbers, dates, date-times, `[x]`-style dropdown values matched to options; values that cannot be stored are dropped and listed per field in the report. |
+| `pass` | **Never read** | Dropped at read time, with `message`, `updated` and `lead_update_date` (D11). |
+
+Duplicates follow **ADR-0027**, not §1's phone-alone rung: records merge across
+journeys only on phone **plus** name, email or GST, at most one record per
+journey; everything else stays separate and is listed in the report's review
+queue. The configuration's shape is `docs/migration/cutover-config.example.json`;
+the real file is generated outside the repository because it names people.
+
 ## 1. Matching / deduplication priority (ADR-0004)
 
 1. `audience_id` — exact match, highest priority.
@@ -99,7 +127,7 @@ review queue. The import must not fabricate transaction detail.
 
 | Source column(s) | Falcon destination / transformation |
 |---|---|
-| `Remarks` | Parse into backdated `activity_logs` rows. Known configured Status text becomes `status_change`; other text becomes `comment`. Set `source = migrated_cronberry_remark`. |
+| `Remarks` | Parse into backdated `comment` activity rows with `source = migrated_cronberry_remark`. Status text inside a remark is **not** turned into `status_change` (Phase 24 C5/D10: the lines are free text, so a label match would be guesswork). |
 | `cr_call_date`, `cr_call_duration`, `cr_call_status`, `cr_call_type`, `cr_campaign_name`, `cr_recording_duration`, `cr_recording_url` | Combine the fields belonging to a source call into a historical `comment` activity with `source = migrated_cronberry_call_log`. Preserve `cr_recording_url` as a reference URL; do not download or re-host recordings in V1. |
 | `ops_last_comments` | Backdated/imported `comment` activity with a source discriminator and original text. |
 | `sales_comments` | Backdated/imported `comment` activity with a source discriminator and original text. |

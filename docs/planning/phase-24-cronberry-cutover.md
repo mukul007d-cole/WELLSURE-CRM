@@ -198,17 +198,28 @@ Routing.
 ### D13 — One-time setup script
 
 `pnpm --filter @falcon/api cutover -- --config <file> --users <users.txt>
---export <journeyKey>=<file.xlsx> … [--commit]` — dry run by default. It
-applies configuration idempotently (matched by Cronberry key, never by
-display name), creates users (no invitation mail unless `--send-invites`),
-then migrates leads in one transaction per journey file. Every run writes a
+--export <journeyKey>=<file.xlsx> … --actor-email <admin> [--commit]
+[--send-invites] [--report <prefix>]` — dry run by default. It applies
+configuration idempotently (matched by key, never by display name), creates
+users (no invitation mail unless `--send-invites`), then migrates the leads.
+**The whole run is one transaction**: a dry run executes everything and rolls
+back, so its report is exactly what a commit would do, and a commit lands
+completely or not at all. Every change is audited against `--actor-email`.
+Every run writes a
 JSON + Markdown report: source / created / merged / skipped / rejected counts
 per file, unresolved owners, review-queue duplicates, dropped requirements,
 status mismatches. Re-running with `--commit` after a successful commit is a
 no-op for existing records (`process_instances.external_ref =
-'cronberry:<audience_id>'` is matched first, ADR-0004 priority 1). `xlsx` is read with
-`exceljs` (new dependency: reading the exports as supplied, without asking an
-operator to hand-convert 3 workbooks to CSV and risk mangling dates/numbers).
+'cronberry:<audience_id>'` is matched first, ADR-0004 priority 1). The `.xlsx`
+exports are read as supplied by a small reader on `node:zlib`
+(`cutover/xlsx.ts`) — **no new dependency**: the exports use namespace-prefixed
+SpreadsheetML without package relationships, which `exceljs` (the first
+choice) refuses to open.
+
+The configuration file's shape is documented by the committed synthetic
+example `docs/migration/cutover-config.example.json` (validated in CI). The
+real Wellsure file names real people, so it is generated outside the
+repository and never committed.
 
 ### D14 — Departments
 
@@ -231,10 +242,11 @@ Drop Or Refund Required, Completed-type Not Interested); everything else `open`.
 | # | Conflict | Handling |
 | - | --- | --- |
 | C1 | ADR-0004 phone-alone match vs. data (shared phones) | ADR-0027 |
-| C2 | 606 B2B rows in removed status "1st Order Done" | Config maps them to "1st Order Done Ready For Audit"; reported, adjustable in the config `statusAliases` |
+| C2 | 606 B2B rows in removed status "1st Order Done" | Config maps them to "1st Order Done Ready For Audit" via that status's `aliases`; reported, adjustable |
 | C3 | 13 mandatory attributes reference removed fields (incl. `pass`) | Requirement dropped, reported |
 | C4 | Two Account Management "Not Interested"/"Not Working" tag lists are truncated in the screenshots | Imported as visible; flagged for the admin to complete |
 | C5 | `cronberry-mapping.md` §3.4 says remark lines naming a status become `status_change` | D10: comments only; the mapping doc is updated |
+| C6 | "Audit Date" is mandatory for *every* role in Cronberry | Not applied as required-on-create: it would block every lead added in Audience and Unique, including API-sourced ones. Left optional and flagged in the config `notes` for the owner to decide |
 
 ## Files to touch
 
@@ -246,7 +258,7 @@ API: `apps/api/src/permissions/prisma-permission-repository.ts`,
 `admin/*` (reporting lines, journey limits, members),
 `leads/{service,validation,filter-model,filter-validation,filter-sql,prisma-lead-repository}.ts`,
 new `tasks/*`, `routes/*` and `http/routes/*` for the new endpoints,
-new `cutover/*` CLI, `package.json` (`exceljs`, `cutover` script).
+new `cutover/*` CLI, `package.json` (`cutover` script).
 Web: sidebar + new `pages/admin/AdminLayout`, journey/status/role/field
 editors, status-change prompts, `pages/follow-ups/*`, types and API client.
 Docs: this plan, ADR-0025/26/27, `access-model.md`, `schema.md`,

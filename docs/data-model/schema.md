@@ -285,6 +285,34 @@ settings
   id, organization_id, key, value (JSONB), version, updated_by, updated_at
 ```
 
+## Phase 24 additions (migration `00000000000008_cutover_engine_rules`)
+
+```
+role_reporting_lines (ADR-0025)
+  id, organization_id, role_id, reports_to_role_id, created_at
+  -- unique (organization_id, role_id, reports_to_role_id); CHECK role_id <> reports_to_role_id
+
+journey_members (ADR-0026)
+  id, organization_id, journey_id, user_id, created_at
+
+status_allowed_roles / status_required_fields (ADR-0026)
+  id, organization_id, status_id, role_id | field_id, created_at
+
+journeys.restrict_to_members      boolean default false
+role_permissions.journey_ids      uuid[] default '{}'   -- empty = every accessible journey
+statuses.color                    text (palette token)
+statuses.reason_options           text[] default '{}'
+field_journey_settings.required_role_ids uuid[] default '{}'  -- for required_on_create
+process_instances.status_reason   text
+process_instances.external_ref    text, partial unique per organization (ADR-0027)
+tasks.note, tasks.completed_at, tasks.completed_by_user_id
+  -- tasks.status CHECK in (open, done, rescheduled, cancelled)
+DataScope enum gains REPORTING_ROLES
+```
+
+The two uuid-array columns are not foreign keys; purge (ADR-0017) counts them
+as blockers explicitly. `rollback.sql` beside the migration reverses all of it.
+
 ## Relationship invariants
 
 - A Lead has zero or more `process_instances`; Journey and current Status are

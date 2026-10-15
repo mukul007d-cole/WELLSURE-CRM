@@ -100,7 +100,7 @@ never on `lead_routing:configure`. See ADR-0015 (amended).
 
 `campaigns:send` is deliberately distinct from `campaigns:edit`: composing a marketing email and actually mailing customers are different levels of trust, and a role may hold one without the other. A manual send is additionally bounded by the sender's own Leads data scope and field visibility, re-evaluated at send time.
 
-**B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`
+**B. Data scope** (per module, independently): `SELF` → `TEAM` → `DEPARTMENT` → `ORGANIZATION`, plus `REPORTING_ROLES`
 
 - `SELF`: records assigned to the requester under the applicable assignment rule.
 - `TEAM`: the requester plus all recursive downstream reports through
@@ -111,6 +111,12 @@ never on `lead_routing:configure`. See ADR-0015 (amended).
 - `DEPARTMENT`: all active users sharing the requester's `department_id`,
   regardless of reporting branch or depth.
 - `ORGANIZATION`: all records in the requester's organization.
+- `REPORTING_ROLES` (Phase 24, ADR-0025, UI "Reporting roles"): the requester
+  plus every user — **inactive ones included** — whose role is a transitive
+  descendant of the requester's role through `role_reporting_lines`. This is
+  how a role-based hierarchy ("Team Leader reports to Sales Manager") is
+  expressed without setting a manager on every user. It sits beside `TEAM`;
+  neither changes the other.
 
 **Not every action's scope is enforced (ADR-0022).** A `DataScope` answers
 "whose record is this," which is only a real question for an action the
@@ -162,6 +168,29 @@ delete`) are genuinely independent, and the visibility write is gated on
 `roles_permissions`, never `tools`, for the identical self-escalation reason
 `field_visibility`'s reverse endpoint is. See
 `docs/planning/phase-22-tools-resource-library.md` and ADR-0024.
+
+## Phase 24 additions (ADR-0025, ADR-0026)
+
+- **Journey-limited actions.** A `role_permissions` row may carry
+  `journey_ids`: the action applies only in those journeys (empty = every
+  journey the role can access). A single-record request in another journey is
+  `FEATURE_ACTION_DENIED`; a list request narrows its journeys. Export
+  additionally intersects its view predicate with the `leads:export` grant's
+  journeys.
+- **Journey members.** A journey with `restrict_to_members` is reachable only by
+  users listed in `journey_members` **and** holding role journey access. Editing
+  members is gated on `users:edit`.
+- **Status Visibility ancestors** are the union of the `manager_id` chain and
+  role ancestry through reporting lines, in both the single-record decision and
+  the list predicate.
+- **Status rules** are not visibility: `status_allowed_roles` restricts who may
+  *choose* a status (no rows = everyone; `leads:bypass_status_rules` skips it);
+  `status_required_fields` must be filled to *enter* one. Both are enforced in
+  `LeadService`, on create, edit, journey move and import; system moves
+  (routing, status consolidation) are exempt.
+- **Follow-ups** (`tasks`, type `follow_up`): a user lists their own, filtered to
+  leads they can still see; completing someone else's needs `leads:edit` on the
+  lead.
 
 ## Additional mechanism: direct record grants
 
