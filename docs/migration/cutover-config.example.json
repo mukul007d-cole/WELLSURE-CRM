@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "source": "legacy_crm",
+  "assignmentTypes": { "owner": "owner", "previousOwner": "previous_owner" },
+  "placeholderEmailDomain": "former-users.invalid",
+  "placeholderRole": "example_executive",
+  "sourceUtcOffset": "+05:30",
+  "excludedColumns": ["pass", "message", "updated"],
+  "departments": [
+    { "key": "example_sales", "name": "Example Sales" },
+    { "key": "example_operations", "name": "Example Operations" }
+  ],
+  "roles": [
+    {
+      "key": "example_manager",
+      "name": "Example Manager",
+      "sourceName": "Example Manager",
+      "department": "example_sales",
+      "reportsTo": [],
+      "journeys": ["example_pipeline", "example_onboarding"],
+      "permissions": [
+        { "module": "leads", "action": "view", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "comment", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "edit", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "create", "scope": "ORGANIZATION" },
+        {
+          "module": "leads",
+          "action": "export",
+          "scope": "ORGANIZATION",
+          "journeys": ["example_pipeline"]
+        },
+        { "module": "journeys_statuses", "action": "view", "scope": "ORGANIZATION" },
+        { "module": "fields", "action": "view", "scope": "ORGANIZATION" }
+      ]
+    },
+    {
+      "key": "example_executive",
+      "name": "Example Executive",
+      "sourceName": "Example Executive",
+      "department": "example_sales",
+      "reportsTo": ["example_manager"],
+      "journeys": ["example_pipeline"],
+      "permissions": [
+        { "module": "leads", "action": "view", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "comment", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "edit", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "create", "scope": "ORGANIZATION" },
+        { "module": "journeys_statuses", "action": "view", "scope": "ORGANIZATION" },
+        { "module": "fields", "action": "view", "scope": "ORGANIZATION" }
+      ]
+    },
+    {
+      "key": "example_operator",
+      "name": "Example Operator",
+      "sourceName": "Example Operator",
+      "department": "example_operations",
+      "reportsTo": ["example_manager"],
+      "journeys": ["example_onboarding"],
+      "permissions": [
+        { "module": "leads", "action": "view", "scope": "REPORTING_ROLES" },
+        { "module": "leads", "action": "edit", "scope": "REPORTING_ROLES" },
+        { "module": "journeys_statuses", "action": "view", "scope": "ORGANIZATION" },
+        { "module": "fields", "action": "view", "scope": "ORGANIZATION" }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "example_tax_id",
+      "name": "Example Tax Id",
+      "sourceColumn": "tax_id",
+      "type": "text",
+      "journeys": "all",
+      "section": "Business",
+      "requiredOnCreateForRoles": ["example_executive"]
+    },
+    {
+      "key": "example_tier",
+      "name": "Example Tier",
+      "sourceColumn": "tier",
+      "type": "select",
+      "options": ["Gold", "Silver"],
+      "journeys": ["example_pipeline"],
+      "section": "Business"
+    },
+    {
+      "key": "example_services",
+      "name": "Example Services",
+      "sourceColumn": "services",
+      "type": "multi_select",
+      "options": ["Listing", "Advertising", "Cataloguing"],
+      "journeys": ["example_onboarding"],
+      "section": "Operations",
+      "hiddenForRoles": ["example_executive"]
+    },
+    {
+      "key": "example_order_value",
+      "name": "Example Order Value",
+      "sourceColumn": "order_value",
+      "type": "number",
+      "journeys": ["example_pipeline"],
+      "section": "Business",
+      "locked": true
+    },
+    {
+      "key": "example_launch_date",
+      "name": "Example Launch Date",
+      "sourceColumn": "launch_date",
+      "type": "date",
+      "journeys": ["example_onboarding"],
+      "section": "Operations",
+      "viewOnlyForRoles": ["example_executive"]
+    }
+  ],
+  "journeys": [
+    {
+      "key": "example_pipeline",
+      "name": "Example Pipeline",
+      "restrictToMembers": false,
+      "members": [],
+      "statuses": [
+        {
+          "key": "example_new",
+          "name": "Example New",
+          "outcome": "open",
+          "behavior": "default",
+          "color": "teal",
+          "isDefault": true
+        },
+        {
+          "key": "example_contacted",
+          "name": "Example Contacted",
+          "aliases": ["Example Reached"],
+          "outcome": "open",
+          "behavior": "follow_up",
+          "color": "purple",
+          "allowedRoles": ["example_executive", "example_manager"],
+          "reasons": ["Example Hot", "Example Cold"]
+        },
+        {
+          "key": "example_won",
+          "name": "Example Won",
+          "outcome": "closed_won",
+          "behavior": "default",
+          "color": "green",
+          "requiredFields": ["example_order_value"],
+          "autoAssign": ["Example Manager One"]
+        }
+      ]
+    },
+    {
+      "key": "example_onboarding",
+      "name": "Example Onboarding",
+      "restrictToMembers": true,
+      "members": ["Example Manager One", "Example Operator One"],
+      "statuses": [
+        {
+          "key": "example_waiting",
+          "name": "Example Waiting",
+          "outcome": "open",
+          "behavior": "default",
+          "color": "amber",
+          "isDefault": true
+        },
+        {
+          "key": "example_launched",
+          "name": "Example Launched",
+          "outcome": "closed_won",
+          "behavior": "default",
+          "color": "green",
+          "allowedRoles": ["example_operator"],
+          "requiredFields": ["example_launch_date"]
+        }
+      ]
+    }
+  ],
+  "columns": {
+    "externalId": "record_id",
+    "name": "name",
+    "phone": "mobile",
+    "email": "email",
+    "status": "status",
+    "owner": "owner",
+    "previousOwner": "previous_owner",
+    "createdAt": "created",
+    "followUpAt": "follow_up",
+    "remarks": "remarks",
+    "matchColumns": { "gst": "tax_id" }
+  },
+  "notes": [
+    "Synthetic example: every name, key and value here is invented. The real file is generated per organization and never committed."
+  ]
+}

@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "bootstrap": "pnpm build && node --env-file=../../.env dist/bootstrap-cli.js",
+    "cutover": "pnpm build && node --env-file=../../.env dist/cutover/cli.js",
     "dev": "tsc -p tsconfig.json && node --env-file=../../.env --watch dist/main.js",
     "start": "node --env-file=../../.env dist/main.js",
     "lint": "eslint src",
