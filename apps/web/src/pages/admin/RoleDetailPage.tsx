@@ -5,21 +5,27 @@ import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { Popover } from '../../components/ui/Popover';
 import { Select } from '../../components/ui/Select';
 import { PageBody, PageHeader, SectionCard } from '../../components/layout/PageFrame';
 import { adminApi } from '../../lib/api-client';
-import { friendlyErrorMessage } from '../../lib/api-error';
+import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { cn } from '../../lib/cn';
 import type { CapabilitySet, DataScope, FieldAccessLevel } from '../../types/domain';
 import { usePageChrome } from '../../app/page-chrome';
 import { useUnsavedChanges } from '../../app/use-unsaved-changes';
 import { loadAllPages } from './shared';
 import {
+  actionHint,
+  actionLabel,
   hasPermission,
   isActionScoped,
+  journeyLimit,
   moduleSelection,
   normalizeScopes,
+  reportingRolesScopeHint,
   setAll,
+  setJourneyLimit,
   setModule,
   setPermission,
   setScopeForAll,
@@ -60,6 +66,97 @@ function AxisActions({
   );
 }
 
+/**
+ * ADR-0026 — the optional "Only in journeys…" limit on one granted action.
+ *
+ * Offers the role's accessible journeys (the Journey access axis as currently
+ * edited, saved or not), because a limit naming a journey the role cannot
+ * reach grants nothing there. A journey already in the limit that the role no
+ * longer reaches is still listed, marked, so it can be seen and removed rather
+ * than kept invisibly.
+ */
+function JourneyLimitControl({
+  label,
+  selected,
+  accessibleIds,
+  journeys,
+  onChange,
+}: {
+  /** Names the grant, e.g. "Leads view". */
+  label: string;
+  selected: readonly string[];
+  accessibleIds: readonly string[];
+  journeys: readonly { id: string; name: string }[];
+  onChange: (journeyIds: string[]) => void;
+}) {
+  const nameOf = (id: string) =>
+    journeys.find((journey) => journey.id === id)?.name ?? 'Inactive journey';
+  const options = [...accessibleIds, ...selected.filter((id) => !accessibleIds.includes(id))];
+  const summary =
+    selected.length === 0
+      ? 'Only in journeys…'
+      : selected.length === 1
+        ? `Only in ${nameOf(selected[0]!)}`
+        : `Only in ${selected.length} journeys`;
+  // Kept in option order so ticking and unticking a journey returns the row
+  // to exactly what it was, rather than an equal set that reads as an edit.
+  const toggle = (id: string, checked: boolean) =>
+    onChange(options.filter((option) => (option === id ? checked : selected.includes(option))));
+  return (
+    <Popover
+      label={`${label} journeys`}
+      align="left"
+      trigger={
+        <>
+          <span className="sr-only">{label} journeys: </span>
+          {summary}
+        </>
+      }
+      triggerClassName={cn(
+        'text-xs underline-offset-2 hover:text-ink hover:underline',
+        selected.length ? 'font-medium text-ink' : 'text-ink-soft',
+      )}
+      panelClassName="w-64 p-3"
+    >
+      <p className="mb-2 text-xs text-ink-soft">
+        Leave every journey unticked to apply this grant in all journeys the role can access.
+      </p>
+      {options.length === 0 ? (
+        <p className="text-xs text-ink-soft">This role has no journey access yet.</p>
+      ) : (
+        <div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+          {options.map((id) => (
+            <Checkbox
+              key={id}
+              label={accessibleIds.includes(id) ? nameOf(id) : `${nameOf(id)} (no access)`}
+              checked={selected.includes(id)}
+              onChange={(event) => toggle(id, event.target.checked)}
+            />
+          ))}
+        </div>
+      )}
+      {selected.length ? (
+        <Button variant="ghost" size="sm" className="mt-2" onClick={() => onChange([])}>
+          All journeys
+        </Button>
+      ) : null}
+    </Popover>
+  );
+}
+
+/**
+ * The admin routes send a refused reporting line as a bare `validation_error`
+ * — the repository's reason ("cannot form a cycle", "cannot report to itself")
+ * isn't on the wire — so name the only things a 400 here can mean rather than
+ * the generic "some fields need a second look". A reason, if one is ever
+ * sent, wins.
+ */
+function reportingLinesErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'validation_error' && !error.reason)
+    return 'These reporting lines were refused: a role cannot report to itself, or to a role that already reports to it at any depth — that would form a cycle.';
+  return friendlyErrorMessage(error);
+}
+
 export function RoleDetailPage() {
   const { roleId = '' } = useParams();
   usePageChrome('Role', [['admin', 'role', roleId]]);
@@ -78,6 +175,15 @@ export function RoleDetailPage() {
     queryKey: ['admin', 'fields', 'role-editor'],
     queryFn: () => loadAllPages((page, pageSize) => adminApi.fields(page, true, pageSize)),
   });
+  const roles = useQuery({
+    queryKey: ['admin', 'roles', 'role-editor'],
+    queryFn: () => loadAllPages((page, pageSize) => adminApi.roles(page, true, pageSize)),
+  });
+  // Under the role's own key, so every axis's save refreshes it too.
+  const reportingLines = useQuery({
+    queryKey: ['admin', 'role', roleId, 'reporting-lines'],
+    queryFn: () => adminApi.reportingLines(roleId),
+  });
 
   const [permissions, setPermissions] = useState<CapabilitySet['permissions']>([]);
   const [journeyIds, setJourneyIds] = useState<string[]>([]);
@@ -88,6 +194,12 @@ export function RoleDetailPage() {
     setPermissions(role.data.permissions ?? []);
     setJourneyIds((role.data.journeyAccess ?? []).map((x) => x.journeyId));
     setVisibility(role.data.fieldVisibility ?? []);
+  }
+  const [reportsTo, setReportsTo] = useState<string[]>([]);
+  const [syncedLines, setSyncedLines] = useState(reportingLines.data);
+  if (reportingLines.data && reportingLines.data !== syncedLines) {
+    setSyncedLines(reportingLines.data);
+    setReportsTo(reportingLines.data.reportsToRoleIds);
   }
 
   const saved = async () => {
@@ -114,12 +226,20 @@ export function RoleDetailPage() {
     mutationFn: () => adminApi.saveFieldVisibility(roleId, visibility),
     onSuccess: saved,
   });
+  // No capability refresh: reporting lines widen what a Reporting roles scope
+  // resolves to at request time, not which actions the caller holds.
+  const saveReportingLines = useMutation({
+    mutationFn: () => adminApi.saveReportingLines(roleId, reportsTo),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'role', roleId] }),
+  });
 
   const error =
     role.error ??
     catalog.error ??
     journeys.error ??
     fields.error ??
+    roles.error ??
+    reportingLines.error ??
     savePermissions.error ??
     saveJourneys.error ??
     saveVisibility.error;
@@ -133,13 +253,22 @@ export function RoleDetailPage() {
   const visibilityDirty =
     JSON.stringify([...visibility].sort((a, b) => a.fieldId.localeCompare(b.fieldId))) !==
     JSON.stringify([...originalVisibility].sort((a, b) => a.fieldId.localeCompare(b.fieldId)));
-  useUnsavedChanges(permissionDirty || journeyDirty || visibilityDirty);
+  const originalReportsTo = reportingLines.data?.reportsToRoleIds ?? [];
+  const reportsToDirty =
+    JSON.stringify([...reportsTo].sort()) !== JSON.stringify([...originalReportsTo].sort());
+  useUnsavedChanges(permissionDirty || journeyDirty || visibilityDirty || reportsToDirty);
 
   const modules: CatalogModule[] = catalog.data?.modules ?? [];
   const grantedCount = permissions.length;
   const totalCount = modules.reduce((sum, module) => sum + module.actions.length, 0);
   const allJourneysSelected =
     (journeys.data ?? []).length > 0 && journeyIds.length === (journeys.data ?? []).length;
+  const otherRoles = (roles.data ?? []).filter((candidate) => candidate.id !== roleId);
+  // A line to a since-deactivated role isn't offered as a checkbox, but it
+  // stays in the saved set untouched rather than being dropped on save.
+  const unlistedReportsTo = roles.data
+    ? reportsTo.filter((id) => !otherRoles.some((candidate) => candidate.id === id)).length
+    : 0;
 
   return (
     <PageBody>
@@ -199,7 +328,12 @@ export function RoleDetailPage() {
             (ADR-0014). Saying so where the scope is actually chosen is the
             mitigation; anywhere else is too late.
           */}
-          <p className="rounded-control bg-paper px-3 py-2 text-xs text-ink-soft">{scopeHint}</p>
+          <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-xs text-ink-soft">
+            <p>{scopeHint}</p>
+            {catalog.data?.supportedScopes.includes('REPORTING_ROLES') ? (
+              <p>{reportingRolesScopeHint}</p>
+            ) : null}
+          </div>
           {modules.map((module) => {
             const selection = moduleSelection(permissions, module);
             return (
@@ -231,20 +365,27 @@ export function RoleDetailPage() {
                     return (
                       <div
                         className={cn(
-                          'grid grid-cols-[1fr_9rem] items-center gap-2 rounded-control px-2 py-1',
+                          'grid grid-cols-[1fr_9rem] items-center gap-x-2 gap-y-0.5 rounded-control px-2 py-1',
                           row ? 'bg-paper' : '',
                         )}
                         key={action}
                       >
-                        <Checkbox
-                          label={action.replaceAll('_', ' ')}
-                          checked={hasPermission(permissions, module.module, action)}
-                          onChange={(e) =>
-                            setPermissions(
-                              setPermission(permissions, module.module, action, e.target.checked),
-                            )
-                          }
-                        />
+                        <span className="min-w-0" title={actionHint(action)}>
+                          <Checkbox
+                            label={actionLabel(action)}
+                            checked={hasPermission(permissions, module.module, action)}
+                            onChange={(e) =>
+                              setPermissions(
+                                setPermission(
+                                  permissions,
+                                  module.module,
+                                  action,
+                                  e.target.checked,
+                                ),
+                              )
+                            }
+                          />
+                        </span>
                         {isActionScoped(module, action) ? (
                           <Select
                             aria-label={`${module.label} ${action} scope`}
@@ -274,6 +415,21 @@ export function RoleDetailPage() {
                             Always organization-wide
                           </span>
                         )}
+                        {row ? (
+                          <div className="col-span-2 pl-6">
+                            <JourneyLimitControl
+                              label={`${module.label} ${action}`}
+                              selected={journeyLimit(permissions, module.module, action)}
+                              accessibleIds={journeyIds}
+                              journeys={journeys.data ?? []}
+                              onChange={(ids) =>
+                                setPermissions((rows) =>
+                                  setJourneyLimit(rows, module.module, action, ids),
+                                )
+                              }
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -392,6 +548,52 @@ export function RoleDetailPage() {
           onSave={() => saveVisibility.mutate()}
           onReset={() => setVisibility(originalVisibility)}
           label="Save Field visibility"
+        />
+      </SectionCard>
+
+      <SectionCard
+        title="Reports to"
+        description="Users of this role see leads owned by users of every role that reports to it (Reporting roles scope)."
+      >
+        <p className="mb-3 text-xs text-ink-soft">
+          Tick the roles this role reports to. Lines may branch — a role can report to several —
+          but never loop back to itself.
+        </p>
+        {saveReportingLines.error ? (
+          <div className="mb-3">
+            <Banner tone="error">{reportingLinesErrorMessage(saveReportingLines.error)}</Banner>
+          </div>
+        ) : null}
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {otherRoles.map((candidate) => (
+            <Checkbox
+              key={candidate.id}
+              label={candidate.name}
+              checked={reportsTo.includes(candidate.id)}
+              onChange={(e) =>
+                setReportsTo((ids) =>
+                  e.target.checked
+                    ? [...ids, candidate.id]
+                    : ids.filter((id) => id !== candidate.id),
+                )
+              }
+            />
+          ))}
+        </div>
+        {unlistedReportsTo ? (
+          <p className="mt-2 text-xs text-ink-soft">
+            {`Also reports to ${unlistedReportsTo} inactive ${unlistedReportsTo === 1 ? 'role' : 'roles'}, kept as is.`}
+          </p>
+        ) : null}
+        <AxisActions
+          dirty={reportsToDirty}
+          saving={saveReportingLines.isPending}
+          onSave={() => saveReportingLines.mutate()}
+          onReset={() => {
+            saveReportingLines.reset();
+            setReportsTo(originalReportsTo);
+          }}
+          label="Save reporting lines"
         />
       </SectionCard>
     </PageBody>

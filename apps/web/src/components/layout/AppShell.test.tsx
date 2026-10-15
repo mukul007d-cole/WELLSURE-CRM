@@ -26,8 +26,9 @@ function FlakyPage({ shouldThrow }: { shouldThrow: () => boolean }) {
 function renderShell(
   page: React.ReactNode = <StubPage keys={[['board']]} label="Board" />,
   initialPath = '/stub',
+  userId = 'user-admin',
 ) {
-  document.cookie = setCookieHeader(createSession('user-admin'));
+  document.cookie = setCookieHeader(createSession(userId));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
@@ -80,7 +81,10 @@ describe('app shell', () => {
     // Labels are visually hidden, not removed.
     expect(await screen.findByRole('link', { name: 'Sellers' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    // Waits on capabilities, which Sellers and Dashboard never needed.
+    expect(await screen.findByRole('link', { name: 'Admin' })).toBeInTheDocument();
+    // The due count joins the name, so the collapsed rail still announces it.
+    expect(await screen.findByRole('link', { name: 'Follow-ups, 1 due' })).toBeInTheDocument();
     // The board is a view of the sellers module now, reached from its view
     // switcher rather than competing for a sidebar row of its own.
     expect(screen.queryByRole('link', { name: 'Board' })).not.toBeInTheDocument();
@@ -98,21 +102,76 @@ describe('app shell', () => {
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument();
   });
 
-  it('still labels Tasks and Finance as unbuilt', async () => {
+  it('still labels Finance as unbuilt', async () => {
     renderShell();
 
     expect(await screen.findByText('Coming soon')).toBeInTheDocument();
     // The label is an inner span; the disabled state lives on its wrapper.
-    expect(screen.getByText('Tasks').closest('[aria-disabled]')).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
     expect(screen.getByText('Finance').closest('[aria-disabled]')).toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    // Not links — there is nothing behind them.
-    expect(screen.queryByRole('link', { name: 'Tasks' })).not.toBeInTheDocument();
+    // Not a link — there is nothing behind it.
+    expect(screen.queryByRole('link', { name: 'Finance' })).not.toBeInTheDocument();
+  });
+
+  it('links Follow-ups with a badge counting overdue and today', async () => {
+    renderShell();
+
+    // The seed has one overdue follow-up and one upcoming; only the first is due.
+    const link = await screen.findByRole('link', { name: 'Follow-ups, 1 due' });
+    expect(link).toHaveAttribute('href', '/follow-ups');
+    expect(screen.queryByText('Tasks')).not.toBeInTheDocument();
+  });
+
+  it('folds every admin area into one Admin entry', async () => {
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin');
+    // The areas themselves are reached from the admin area's own navigation.
+    for (const name of ['Journeys', 'Fields', 'Import leads', 'Campaigns', 'Roles & permissions']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+    for (const heading of ['Configuration', 'Engagement', 'People & access']) {
+      expect(screen.queryByText(heading)).not.toBeInTheDocument();
+    }
+  });
+
+  it('hides Admin from someone who can open no admin area', async () => {
+    renderShell(undefined, '/stub', 'user-rep');
+
+    // Signed in, with capabilities read — only then does the absence mean anything.
+    await screen.findByRole('button', { name: /Aman Verma/ });
+    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+  });
+
+  it('keeps Admin lit on an admin area outside /admin', async () => {
+    renderShell(undefined, '/import');
+
+    const link = await screen.findByRole('link', { name: 'Admin' });
+    expect(link).toHaveClass('border-gold');
+  });
+
+  it('moves Settings from the sidebar into the account menu', async () => {
+    renderShell();
+
+    const account = await screen.findByRole('button', { name: /Priya Shah/ });
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+
+    fireEvent.click(account);
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    expect(settings).toHaveAttribute('href', '/settings');
+
+    // Choosing it navigates and closes the menu behind it.
+    fireEvent.click(settings);
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: /Priya Shah/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   });
 
   it('refreshes only the query keys the active route declared', async () => {

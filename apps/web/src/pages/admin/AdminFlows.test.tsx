@@ -182,9 +182,14 @@ describe('administration resource flows', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Deactivate Status' })).not.toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Attach Field' }));
+    // Field mapping lives on its own tab of the Journey editor.
+    fireEvent.click(screen.getByRole('tab', { name: /^Fields/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Attach Field' }));
     await screen.findByRole('option', { name: 'Company Name' });
-    change('Field', 'field-company');
+    // Scoped to the panel: the panel is itself labelled "Fields" by its tab.
+    fireEvent.change(within(screen.getByRole('tabpanel')).getByLabelText(/^Field/i), {
+      target: { value: 'field-company' },
+    });
     change('Requirement', 'required');
     change('Required from Status', 'status-overlapping-contacted');
     const saveRule = screen.getByRole('button', { name: 'Save Field rule' });
@@ -604,7 +609,7 @@ describe('administration resource flows', () => {
     expect(screen.queryAllByRole('option', { name: 'TEAM' })).toHaveLength(0);
   });
 
-  it('configures a per-status routing rule and its role grants inside the Statuses list', async () => {
+  it('configures a per-status routing rule and its role grants on the Routing tab', async () => {
     renderPage(
       <JourneyDetailPage />,
       '/admin/journeys/journey-alpha',
@@ -612,7 +617,9 @@ describe('administration resource flows', () => {
     );
     await screen.findByRole('heading', { level: 2 });
 
-    // Routing lives inside the Statuses list, not in a tab of its own.
+    // Routing has its own tab of the Journey editor (Phase 24 D12), one
+    // expandable section per Status.
+    fireEvent.click(await screen.findByRole('tab', { name: 'Routing' }));
     const toggles = await screen.findAllByRole('button', { name: 'Routing' });
     fireEvent.click(toggles[0] as HTMLElement);
     expect(
@@ -667,9 +674,10 @@ describe('administration resource flows', () => {
         }),
       ),
     );
+    // Lands straight on the tab through the URL.
     renderPage(
       <JourneyDetailPage />,
-      '/admin/journeys/journey-alpha',
+      '/admin/journeys/journey-alpha?tab=routing',
       '/admin/journeys/:journeyId',
     );
     fireEvent.click((await screen.findAllByRole('button', { name: 'Routing' }))[0] as HTMLElement);

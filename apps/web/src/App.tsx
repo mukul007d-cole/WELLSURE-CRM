@@ -29,6 +29,9 @@ import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
 import { NotFoundPage } from './pages/not-found/NotFoundPage';
 import { PreferencesProvider } from './app/preferences';
+import { AdminLayout } from './pages/admin-hub/AdminLayout';
+import { AdminHomePage } from './pages/admin-hub/AdminHomePage';
+import { FollowUpsPage } from './pages/follow-ups/FollowUpsPage';
 
 export function App() {
   return (
@@ -53,36 +56,48 @@ export function App() {
                   <Route element={<PermissionRoute module="tools" />}>
                     <Route path="/tools" element={<ToolsPage />} />
                   </Route>
-                  <Route element={<PermissionRoute module="journeys_statuses" />}>
-                    <Route path="/admin/journeys" element={<JourneysPage />} />
-                    <Route path="/admin/journeys/:journeyId" element={<JourneyDetailPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute module="fields" />}>
-                    <Route path="/admin/fields" element={<FieldsPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute module="users" />}>
-                    {/* Directory and org chart are two views of one area. */}
-                    <Route path="/admin/users" element={<UserManagementPage />}>
-                      <Route index element={<UsersPage />} />
-                      <Route path="org-chart" element={<OrgChartPage />} />
+                  {/* Any signed-in user: the API returns only the caller's own. */}
+                  <Route path="/follow-ups" element={<FollowUpsPage />} />
+                  {/*
+                    The admin area (D12). A layout route adds no URL segment,
+                    so every page keeps its address — including /import — and
+                    each keeps its own permission guard inside the layout.
+                  */}
+                  <Route element={<AdminLayout />}>
+                    <Route path="/admin" element={<AdminHomePage />} />
+                    <Route element={<PermissionRoute module="journeys_statuses" />}>
+                      <Route path="/admin/journeys" element={<JourneysPage />} />
+                      <Route path="/admin/journeys/:journeyId" element={<JourneyDetailPage />} />
                     </Route>
-                    <Route path="/admin/departments" element={<DepartmentsPage />} />
-                    {/* Teams live inside a Department, not in a tab of their own. */}
-                    <Route
-                      path="/admin/departments/:departmentId"
-                      element={<DepartmentDetailPage />}
-                    />
-                  </Route>
-                  <Route element={<PermissionRoute module="leads" action="import" />}>
-                    <Route path="/import" element={<ImportPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute module="campaigns" />}>
-                    <Route path="/admin/campaigns" element={<CampaignsPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute module="roles_permissions" />}>
-                    <Route path="/admin/roles" element={<RolesPage />} />
-                    <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
-                    <Route path="/admin/notification-rules" element={<NotificationRulesPage />} />
+                    <Route element={<PermissionRoute module="fields" />}>
+                      <Route path="/admin/fields" element={<FieldsPage />} />
+                    </Route>
+                    <Route element={<PermissionRoute module="users" />}>
+                      {/* Directory and org chart are two views of one area. */}
+                      <Route path="/admin/users" element={<UserManagementPage />}>
+                        <Route index element={<UsersPage />} />
+                        <Route path="org-chart" element={<OrgChartPage />} />
+                      </Route>
+                      <Route path="/admin/departments" element={<DepartmentsPage />} />
+                      {/* Teams live inside a Department, not in a tab of their own. */}
+                      <Route
+                        path="/admin/departments/:departmentId"
+                        element={<DepartmentDetailPage />}
+                      />
+                    </Route>
+                    <Route element={<PermissionRoute module="leads" action="import" />}>
+                      <Route path="/import" element={<ImportPage />} />
+                      {/* An alias under the admin prefix; /import stays canonical. */}
+                      <Route path="/admin/import" element={<Navigate to="/import" replace />} />
+                    </Route>
+                    <Route element={<PermissionRoute module="campaigns" />}>
+                      <Route path="/admin/campaigns" element={<CampaignsPage />} />
+                    </Route>
+                    <Route element={<PermissionRoute module="roles_permissions" />}>
+                      <Route path="/admin/roles" element={<RolesPage />} />
+                      <Route path="/admin/roles/:roleId" element={<RoleDetailPage />} />
+                      <Route path="/admin/notification-rules" element={<NotificationRulesPage />} />
+                    </Route>
                   </Route>
                   {/*
                     Last: only reached once every route above it has already

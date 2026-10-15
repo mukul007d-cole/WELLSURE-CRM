@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CapabilitySet } from '../../types/domain';
 import {
+  actionLabel,
   hasPermission,
+  journeyLimit,
   moduleSelection,
+  normalizeScopes,
+  scopeLabel,
   setAll,
+  setJourneyLimit,
   setModule,
   setPermission,
   setScopeForAll,
@@ -83,5 +88,54 @@ describe('permission matrix bulk edits', () => {
 
     expect(twice).toHaveLength(1);
     expect(setPermission(twice, 'synthetic_module_a', 'view', false)).toEqual([]);
+  });
+});
+
+describe('journey-limited grants (ADR-0026)', () => {
+  it('limits one action to some journeys and clears back to every journey', () => {
+    const base = rows(['synthetic_module_a', 'view'], ['synthetic_module_a', 'edit']);
+    const limited = setJourneyLimit(base, 'synthetic_module_a', 'view', ['journey-x']);
+
+    expect(journeyLimit(limited, 'synthetic_module_a', 'view')).toEqual(['journey-x']);
+    expect(journeyLimit(limited, 'synthetic_module_a', 'edit')).toEqual([]);
+
+    const cleared = setJourneyLimit(limited, 'synthetic_module_a', 'view', []);
+    expect(journeyLimit(cleared, 'synthetic_module_a', 'view')).toEqual([]);
+  });
+
+  it('leaves a never-limited row untouched when cleared, so it does not read as an edit', () => {
+    const base = rows(['synthetic_module_a', 'view']);
+    expect(setJourneyLimit(base, 'synthetic_module_a', 'view', [])).toEqual(base);
+  });
+
+  it('keeps a journey limit through bulk grants, re-scoping and save normalization', () => {
+    // A bulk edit that rebuilt rows from module/action/scope alone would
+    // silently widen a limited grant back to every journey on the next save.
+    const limited = setJourneyLimit(
+      rows(['synthetic_module_a', 'view', 'ORGANIZATION']),
+      'synthetic_module_a',
+      'view',
+      ['journey-x'],
+    );
+
+    for (const next of [
+      setAll(limited, modules, true),
+      setModule(limited, leads, true),
+      setScopeForAll(limited, 'DEPARTMENT'),
+      normalizeScopes(limited, modules),
+    ]) {
+      expect(journeyLimit(next, 'synthetic_module_a', 'view')).toEqual(['journey-x']);
+    }
+  });
+});
+
+describe('labels', () => {
+  it('names the reporting-roles scope and the status-rules bypass for people', () => {
+    expect(scopeLabel('REPORTING_ROLES')).toBe('Reporting roles');
+    expect(scopeLabel('TEAM')).toBe('Team (reporting line)');
+    expect(scopeLabel('SELF')).toBe('SELF');
+    expect(actionLabel('bypass_status_rules')).toBe('Bypass status rules');
+    // Anything without a curated label keeps the derived one.
+    expect(actionLabel('synthetic_action_name')).toBe('synthetic action name');
   });
 });

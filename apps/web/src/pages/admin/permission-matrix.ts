@@ -78,6 +78,25 @@ export function setPermission(
   return granted ? [...without, { module, action, scope }] : without;
 }
 
+/**
+ * The row a bulk grant produces for one action: the existing row untouched
+ * when there is one — its chosen scope *and* any journey limit (ADR-0026) —
+ * so "grant all" never quietly downgrades a deliberate ORGANIZATION grant to
+ * SELF or widens a journey-limited grant back to every journey.
+ */
+function grantedRow(
+  rows: PermissionRows,
+  module: string,
+  action: string,
+  scope: DataScope,
+): PermissionRows[number] {
+  return rows.find((row) => row.module === module && row.action === action) ?? {
+    module,
+    action,
+    scope,
+  };
+}
+
 /** Grant or revoke every action on one module in a single step. */
 export function setModule(
   rows: PermissionRows,
@@ -87,15 +106,9 @@ export function setModule(
 ): PermissionRows {
   const without = rows.filter((row) => row.module !== module.module);
   if (!granted) return without;
-  // Preserve the scope already chosen for an action rather than flattening it.
   return [
     ...without,
-    ...module.actions.map((action) => ({
-      module: module.module,
-      action,
-      scope:
-        rows.find((row) => row.module === module.module && row.action === action)?.scope ?? scope,
-    })),
+    ...module.actions.map((action) => grantedRow(rows, module.module, action, scope)),
   ];
 }
 
@@ -108,18 +121,38 @@ export function setAll(
 ): PermissionRows {
   if (!granted) return [];
   return modules.flatMap((module) =>
-    module.actions.map((action) => ({
-      module: module.module,
-      action,
-      scope:
-        rows.find((row) => row.module === module.module && row.action === action)?.scope ?? scope,
-    })),
+    module.actions.map((action) => grantedRow(rows, module.module, action, scope)),
   );
 }
 
 /** Re-scope every currently granted action — the common "make this role org-wide" move. */
 export function setScopeForAll(rows: PermissionRows, scope: DataScope): PermissionRows {
   return rows.map((row) => ({ ...row, scope }));
+}
+
+/**
+ * ADR-0026 — limit one granted action to some of the role's journeys. An
+ * empty list is the unlimited default ("every journey the role can access"),
+ * the same meaning the server gives a row that omits `journeyIds` entirely —
+ * so a row that never had a limit is left as it was rather than gaining a
+ * `[]` that would only show up as an unsaved change.
+ */
+export function setJourneyLimit(
+  rows: PermissionRows,
+  module: string,
+  action: string,
+  journeyIds: readonly string[],
+): PermissionRows {
+  return rows.map((row) => {
+    if (row.module !== module || row.action !== action) return row;
+    if (journeyIds.length === 0 && row.journeyIds === undefined) return row;
+    return { ...row, journeyIds: [...journeyIds] };
+  });
+}
+
+/** The journeys one granted action is limited to; empty means unlimited. */
+export function journeyLimit(rows: PermissionRows, module: string, action: string): string[] {
+  return rows.find((row) => row.module === module && row.action === action)?.journeyIds ?? [];
 }
 
 /**
@@ -132,11 +165,39 @@ export function setScopeForAll(rows: PermissionRows, scope: DataScope): Permissi
  * label plus `scopeHint` is the whole mitigation for that collision.
  */
 export function scopeLabel(scope: DataScope): string {
-  return scope === 'TEAM' ? 'Team (reporting line)' : scope;
+  if (scope === 'TEAM') return 'Team (reporting line)';
+  // ADR-0025 — the role-tree counterpart of TEAM, named for what it reads.
+  if (scope === 'REPORTING_ROLES') return 'Reporting roles';
+  return scope;
 }
 
 export const scopeHint =
   'Team (reporting line) means everyone reporting to this user through the org chart, at any depth. It is not related to Teams configured under Departments.';
+
+export const reportingRolesScopeHint =
+  'Reporting roles means users of every role that reports to this one under "Reports to", at any depth — inactive users included, so their leads stay reachable for reassignment.';
+
+/**
+ * Catalog actions whose derived label (`bypass_status_rules` → "bypass status
+ * rules") doesn't read well enough on its own. These are engine catalog
+ * constants, not business configuration — the same footing as `scopeLabel`.
+ */
+const actionLabels: Record<string, string> = {
+  bypass_status_rules: 'Bypass status rules',
+};
+
+const actionHints: Record<string, string> = {
+  bypass_status_rules:
+    "Lets this role move a lead into any status, ignoring that status's allowed roles.",
+};
+
+export function actionLabel(action: string): string {
+  return actionLabels[action] ?? action.replaceAll('_', ' ');
+}
+
+export function actionHint(action: string): string | undefined {
+  return actionHints[action];
+}
 
 export const unscopedHint =
   "This action isn't checked against any specific record, so a narrower scope would have no effect — granting it reaches the whole organization.";

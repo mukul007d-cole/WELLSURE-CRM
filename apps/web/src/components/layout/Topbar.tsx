@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { usePageChromeValue } from '../../app/page-chrome';
 import { useSignOut } from '../../app/use-sign-out';
@@ -47,6 +48,7 @@ export function Topbar({ title, onOpenMenu }: TopbarProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   const signOut = useSignOut();
   const searchToggleRef = useRef<HTMLButtonElement>(null);
+  const { pathname } = useLocation();
 
   /*
    * The mobile search sheet is not a `Popover` — it drops below the whole
@@ -150,6 +152,10 @@ export function Topbar({ title, onOpenMenu }: TopbarProps) {
         </div>
         {user ? (
           <Popover
+            // `Popover` gives its children no way to close it, and the shell
+            // outlives navigation — so a new route remounts (and closes) the
+            // menu after "Settings" is chosen, instead of leaving it open.
+            key={pathname}
             label="Account"
             align="right"
             triggerClassName="flex items-center gap-2 rounded-control px-2 py-1.5 hover:bg-surface-sunken"
@@ -170,6 +176,13 @@ export function Topbar({ title, onOpenMenu }: TopbarProps) {
               <p className="truncate text-sm font-medium text-ink">{user.name}</p>
               <p className="truncate text-xs text-ink-soft">{user.email}</p>
             </div>
+            {/* Personal preferences live with the person, not in the sidebar (D12). */}
+            <Link
+              to="/settings"
+              className="flex w-full items-center px-3 py-2 text-left text-sm text-ink hover:bg-paper"
+            >
+              Settings
+            </Link>
             <button
               type="button"
               onClick={() => void handleLogout()}

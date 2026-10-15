@@ -18,6 +18,7 @@ import type {
   CalculationConfig,
   FieldAccessLevel,
   FieldRoleVisibility,
+  FieldType,
 } from '../../types/domain';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
 import { usePageChrome } from '../../app/page-chrome';
@@ -43,6 +44,25 @@ const SOURCE_SUGGESTION: Record<string, string> = {
 };
 /** The only two fieldTypes a calculated Field can have — arithmetic needs a number, a template needs text. */
 const CALCULABLE_TYPES = new Set(['number', 'text', 'textarea']);
+/**
+ * The types the API validates `fieldType` against on create (ADR-0026), in
+ * picker order. Labels only where the raw token isn't self-explanatory.
+ */
+const FIELD_TYPES: ReadonlyArray<{ value: FieldType; label?: string }> = [
+  { value: 'text' },
+  { value: 'textarea' },
+  { value: 'email' },
+  { value: 'phone' },
+  { value: 'date' },
+  { value: 'datetime', label: 'Date & time' },
+  { value: 'select' },
+  { value: 'multi_select', label: 'Multiple choice' },
+  { value: 'number' },
+  { value: 'boolean' },
+  { value: 'json' },
+];
+/** Types whose values come from `validationRule.options` — both need at least one. */
+const OPTION_TYPES = new Set<string>(['select', 'multi_select']);
 
 type OperandDraft = { kind: 'field' | 'constant'; fieldId: string; constant: string };
 type CalculationDraft =
@@ -465,15 +485,14 @@ function fieldBody(draft: FieldDraft) {
   return {
     name: draft.name,
     fieldType: draft.fieldType,
-    validationRule:
-      draft.fieldType === 'select'
-        ? {
-            options: draft.options
-              .split('\n')
-              .map((value) => value.trim())
-              .filter(Boolean),
-          }
-        : null,
+    validationRule: OPTION_TYPES.has(draft.fieldType)
+      ? {
+          options: draft.options
+            .split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        }
+      : null,
     section: draft.section || null,
     editMode: draft.editMode,
     source: draft.source,
@@ -752,7 +771,7 @@ function FieldEditor({
     draft.editMode === 'calculated' && !CALCULABLE_TYPES.has(draft.fieldType);
   const saveDisabled =
     !draft.name ||
-    (draft.fieldType === 'select' && !draft.options.trim()) ||
+    (OPTION_TYPES.has(draft.fieldType) && !draft.options.trim()) ||
     (draft.editMode === 'calculated' &&
       (calculationUnsupportedType || calculationIncomplete(draft.calculation))) ||
     (draft.editMode === 'system' && !draft.systemKey.trim());
@@ -782,23 +801,15 @@ function FieldEditor({
             value={draft.fieldType}
             onChange={(event) => updateFieldType(event.target.value)}
           >
-            {[
-              'text',
-              'textarea',
-              'email',
-              'phone',
-              'date',
-              'select',
-              'number',
-              'boolean',
-              'json',
-            ].map((type) => (
-              <option key={type}>{type}</option>
+            {FIELD_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label ?? type.value}
+              </option>
             ))}
           </Select>
         )}
       </Field>
-      {draft.fieldType === 'select' ? (
+      {OPTION_TYPES.has(draft.fieldType) ? (
         <Field label="Options" hint="One unique option per line." required>
           {({ inputId }) => (
             <textarea

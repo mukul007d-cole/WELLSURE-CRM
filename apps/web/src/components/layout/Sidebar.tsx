@@ -1,13 +1,19 @@
 import type { ReactElement } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { Eyebrow } from '../ui/Heading';
 import { useAuth } from '../../app/AuthContext';
+import { isAdminPath, useAdminGroups } from '../../pages/admin-hub/admin-sections';
+import { useFollowUpSummary } from '../../pages/follow-ups/follow-up-queries';
 
 interface NavItem {
   label: string;
   to?: string;
   icon: ReactElement;
+  /** A count worth glancing at — rendered only when above zero. */
+  badge?: number;
+  /** Extra paths this entry owns beyond its own URL prefix. */
+  owns?: (pathname: string) => boolean;
 }
 
 function Icon({ d }: { d: string }) {
@@ -50,22 +56,23 @@ const TOOLS_ITEM: NavItem = {
   ),
 };
 
-const SETTINGS: NavItem = {
-  label: 'Settings',
-  to: '/settings',
-  icon: (
-    <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-3a8 8 0 0 1-.1 1.3l2 1.6-2 3.4-2.3-.9a8 8 0 0 1-2.2 1.3L15 22H9l-.4-2.3a8 8 0 0 1-2.2-1.3l-2.3.9-2-3.4 2-1.6A8 8 0 0 1 4 12a8 8 0 0 1 .1-1.3l-2-1.6 2-3.4 2.3.9c.66-.55 1.4-1 2.2-1.3L9 2h6l.4 2.3c.8.3 1.54.75 2.2 1.3l2.3-.9 2 3.4-2 1.6c.07.43.1.86.1 1.3Z" />
-  ),
+const FOLLOW_UPS_ITEM: NavItem = {
+  label: 'Follow-ups',
+  to: '/follow-ups',
+  icon: <Icon d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />,
+};
+
+const ADMIN_ITEM: NavItem = {
+  label: 'Admin',
+  to: '/admin',
+  icon: <Icon d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />,
 };
 
 /**
  * Genuinely unbuilt — no route, no API. Rendered non-interactive rather than
  * linked to a stub, so nobody demos a page that doesn't exist.
  */
-const UPCOMING: NavItem[] = [
-  { label: 'Tasks', icon: <Icon d="m5 13 4 4L19 7" /> },
-  { label: 'Finance', icon: <Icon d="M4 7h16M4 12h16M4 17h10" /> },
-];
+const UPCOMING: NavItem[] = [{ label: 'Finance', icon: <Icon d="M4 7h16M4 12h16M4 17h10" /> }];
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -76,7 +83,7 @@ interface SidebarProps {
 function navLinkClass(collapsed: boolean) {
   return ({ isActive }: { isActive: boolean }) =>
     cn(
-      'flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-colors',
+      'relative flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-colors',
       collapsed && 'justify-center gap-0 px-0',
       isActive
         ? cn('bg-ink-raised text-on-ink border-l-2 border-gold', collapsed ? '' : 'pl-[10px]')
@@ -114,8 +121,14 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
   const { can, capabilities } = useAuth();
   const canAdministerTools =
     can('tools', 'create') || can('tools', 'edit') || can('tools', 'delete');
+  const { pathname } = useLocation();
+  const adminGroups = useAdminGroups();
+  const followUps = useFollowUpSummary();
+  const dueCount = followUps.data ? followUps.data.overdue + followUps.data.today : 0;
   const primaryItems: NavItem[] = [
     ...PRIMARY,
+    // Every signed-in user has follow-ups of their own; the API decides which.
+    { ...FOLLOW_UPS_ITEM, badge: dueCount },
     // Gated on the module permission *and* actually having something to see —
     // no existing nav entry needed this second check before, since none of
     // them hide behind a per-item allow-list the way Tools resources do. An
@@ -128,93 +141,51 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
       : []),
   ];
   /**
-   * Grouped by what the user is doing, not by which table it writes to:
-   * configuration shapes the pipeline, people & access decides who can act.
-   * Each group still hides entirely when its permission is absent.
+   * One entry for every administration area (D12). Its own grouped navigation
+   * lives inside the area; here it shows as soon as any one of those areas is
+   * open to the user, and stays lit on the ones outside `/admin` (Import).
    */
-  const configurationItems: NavItem[] = [
-    ...(can('journeys_statuses', 'view')
-      ? [{ label: 'Journeys', to: '/admin/journeys', icon: <Icon d="M4 6h16M4 12h12M4 18h8" /> }]
-      : []),
-    ...(can('fields', 'view')
-      ? [{ label: 'Fields', to: '/admin/fields', icon: <Icon d="M5 5h14v14H5z" /> }]
-      : []),
-    ...(can('leads', 'import')
-      ? [
-          {
-            label: 'Import leads',
-            to: '/import',
-            icon: (
-              <Icon d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 17v1.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V17" />
-            ),
-          },
-        ]
-      : []),
-    ...(can('roles_permissions', 'view')
-      ? [
-          {
-            label: 'Notification rules',
-            to: '/admin/notification-rules',
-            icon: <Icon d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
-          },
-        ]
-      : []),
-  ];
+  const adminItems: NavItem[] = adminGroups.length ? [{ ...ADMIN_ITEM, owns: isAdminPath }] : [];
 
-  const engagementItems: NavItem[] = [
-    ...(can('campaigns', 'view')
-      ? [
-          {
-            label: 'Campaigns',
-            to: '/admin/campaigns',
-            icon: <Icon d="M4 6h16v12H4zM4 7l8 6 8-6" />,
-          },
-        ]
-      : []),
-  ];
-
-  const peopleItems: NavItem[] = [
-    ...(can('users', 'view')
-      ? [
-          {
-            label: 'User management',
-            to: '/admin/users',
-            icon: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8" />,
-          },
-          {
-            label: 'Departments',
-            to: '/admin/departments',
-            icon: <Icon d="M4 21V7l8-4 8 4v14M9 21v-5h6v5" />,
-          },
-        ]
-      : []),
-    ...(can('roles_permissions', 'view')
-      ? [
-          {
-            label: 'Roles & permissions',
-            to: '/admin/roles',
-            icon: <Icon d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" />,
-          },
-        ]
-      : []),
-  ];
-
-  const renderLink = (item: NavItem) => (
-    <li key={item.label}>
-      <NavLink
-        to={item.to ?? '#'}
-        onClick={onNavigate}
-        // The label leaves the page visually but stays in the accessibility
-        // tree, so the collapsed rail is still navigable by name.
-        aria-label={collapsed ? item.label : undefined}
-        title={collapsed ? item.label : undefined}
-        className={navLinkClass(collapsed)}
-      >
-        {item.icon}
-        <span className={collapsed ? 'sr-only' : undefined}>{item.label}</span>
-      </NavLink>
-    </li>
-  );
+  const renderLink = (item: NavItem) => {
+    const badge = item.badge ? item.badge : null;
+    // The count joins the name, so it is announced, not just seen.
+    const name = badge ? `${item.label}, ${badge} due` : item.label;
+    const owned = item.owns?.(pathname) ?? false;
+    return (
+      <li key={item.label}>
+        <NavLink
+          to={item.to ?? '#'}
+          onClick={onNavigate}
+          // The label leaves the page visually but stays in the accessibility
+          // tree, so the collapsed rail is still navigable by name.
+          aria-label={collapsed ? name : undefined}
+          title={collapsed ? name : undefined}
+          className={({ isActive }) => navLinkClass(collapsed)({ isActive: isActive || owned })}
+        >
+          {item.icon}
+          <span className={collapsed ? 'sr-only' : undefined}>{item.label}</span>
+          {badge && collapsed ? (
+            <span
+              aria-hidden="true"
+              className="absolute right-2.5 top-1.5 h-2 w-2 rounded-full bg-gold"
+            />
+          ) : null}
+          {badge && !collapsed ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="ml-auto rounded-pill bg-gold px-1.5 py-0.5 text-xs font-semibold leading-none tabular-nums text-ink"
+              >
+                {badge}
+              </span>
+              <span className="sr-only">, {badge} due</span>
+            </>
+          ) : null}
+        </NavLink>
+      </li>
+    );
+  };
 
   return (
     <div
@@ -244,24 +215,10 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
         <SectionHeading label="Workspace" collapsed={collapsed} first />
         <ul className="mt-2 flex flex-col gap-1">{primaryItems.map(renderLink)}</ul>
 
-        {configurationItems.length ? (
+        {adminItems.length ? (
           <>
-            <SectionHeading label="Configuration" collapsed={collapsed} />
-            <ul className="mt-2 flex flex-col gap-1">{configurationItems.map(renderLink)}</ul>
-          </>
-        ) : null}
-
-        {engagementItems.length ? (
-          <>
-            <SectionHeading label="Engagement" collapsed={collapsed} />
-            <ul className="mt-2 flex flex-col gap-1">{engagementItems.map(renderLink)}</ul>
-          </>
-        ) : null}
-
-        {peopleItems.length ? (
-          <>
-            <SectionHeading label="People & access" collapsed={collapsed} />
-            <ul className="mt-2 flex flex-col gap-1">{peopleItems.map(renderLink)}</ul>
+            <SectionHeading label="Administration" collapsed={collapsed} />
+            <ul className="mt-2 flex flex-col gap-1">{adminItems.map(renderLink)}</ul>
           </>
         ) : null}
 
@@ -283,9 +240,6 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
             </li>
           ))}
         </ul>
-
-        <SectionHeading label="Account" collapsed={collapsed} />
-        <ul className="mt-2 flex flex-col gap-1">{renderLink(SETTINGS)}</ul>
       </nav>
 
       {onToggleCollapse ? (
