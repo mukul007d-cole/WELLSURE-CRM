@@ -9,6 +9,7 @@ import { registerOpenApi } from './plugins/openapi.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerCampaignRoutes } from './routes/campaigns.js';
+import { registerTaskRoutes } from './routes/tasks.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerConfigurationRoutes } from './routes/configuration.js';
@@ -86,6 +87,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     registerAttachmentRoutes(app, deps);
     registerCampaignRoutes(app, deps);
     registerRoutingRoutes(app, deps);
+    registerTaskRoutes(app, deps);
     registerToolRoutes(app, deps);
     registerGuideRoutes(app, deps);
     registerInternalRoutes(app, deps);

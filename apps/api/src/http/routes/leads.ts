@@ -90,6 +90,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
           assignments: Array.isArray(body.assignments)
             ? (body.assignments as { assignmentType: string; userId: string }[])
             : [],
+          ...statusEntryExtras(body),
         }),
       );
     },
@@ -149,6 +150,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
         targetJourneyId: String(body.targetJourneyId),
         assignmentTypes: strings(body.assignmentTypes),
         ...(optionalString(body.statusId) ? { statusId: String(body.statusId) } : {}),
+        ...statusReasonOf(body),
       }),
     );
   });
@@ -173,6 +175,7 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
           ...(body.email !== undefined ? { email: body.email as string | null } : {}),
           ...(body.fieldValues !== undefined ? { fieldValues: body.fieldValues as Json } : {}),
           ...(optionalString(body.statusId) ? { statusId: String(body.statusId) } : {}),
+          ...statusEntryExtras(body),
         }),
       );
     },
@@ -336,4 +339,33 @@ export function registerLeadRoutes(server: FastifyInstance, deps: ServerDependen
       }
     });
   }
+}
+
+/** ADR-0026 — `statusReason` as sent: a string, an explicit null, or absent. */
+function statusReasonOf(body: Json): { statusReason?: string | null } {
+  return typeof body.statusReason === 'string' || body.statusReason === null
+    ? { statusReason: body.statusReason }
+    : {};
+}
+
+/**
+ * `followUp: { dueAt, note? }`. A malformed object is passed through with an
+ * unparseable date so the service rejects it with its own validation error.
+ */
+function statusEntryExtras(body: Json): {
+  statusReason?: string | null;
+  followUp?: { dueAt: string; note?: string | null };
+} {
+  const raw = body.followUp;
+  if (typeof raw !== 'object' || raw === null) return statusReasonOf(body);
+  const followUp = raw as Json;
+  return {
+    ...statusReasonOf(body),
+    followUp: {
+      dueAt: typeof followUp.dueAt === 'string' ? followUp.dueAt : '',
+      ...(typeof followUp.note === 'string' || followUp.note === null
+        ? { note: followUp.note }
+        : {}),
+    },
+  };
 }

@@ -12,11 +12,13 @@ import {
 import type { LeadActivityInput } from '../leads/activity.js';
 import type { LeadActivityRow } from '../leads/activity-read.js';
 import type {
+  FollowUpRecord,
   LeadAssignmentRecord,
   LeadCoreRecord,
   LeadProcessRecord,
   LeadRepository,
 } from '../leads/service.js';
+import type { StatusRules } from '../leads/status-rules.js';
 import type { Seller360Record, SellerListRecord } from '../routes/leads.js';
 import type { LeadFieldSetting } from '../leads/validation.js';
 import type { PermissionRepository } from '@falcon/permission-engine';
@@ -755,6 +757,262 @@ describe('Lead activity timeline', () => {
   });
 });
 
+describe('ADR-0026 status rules, field rules and follow-ups', () => {
+  const otherRole = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+
+  function seeded() {
+    const repo = new MemoryLeadRepository();
+    const lead = repo.seedLead({ fieldValues: {} });
+    const process = repo.seedProcess(lead.id, journeyA, statusEarly);
+    return { repo, lead, process };
+  }
+  function edit(
+    repo: MemoryLeadRepository,
+    ids: { lead: { id: string }; process: { id: string } },
+    extra: Partial<Parameters<typeof editLead>[0]>,
+    permissions: PermissionRepository = withoutBypass(),
+  ) {
+    return editLead({
+      auth,
+      leadRepository: repo,
+      permissionRepository: permissions,
+      processInstanceId: ids.process.id,
+      journeyId: journeyA,
+      leadId: ids.lead.id,
+      assignmentTypes: [assignmentType],
+      now,
+      ...extra,
+    });
+  }
+
+  it('refuses a status the caller role is not allowed to choose', async () => {
+    const ids = seeded();
+    ids.repo.statusRules.set(statusRequired, {
+      allowedRoleIds: [otherRole],
+      requiredFieldIds: [],
+      reasonOptions: [],
+    });
+    const response = await edit(ids.repo, ids, { statusId: statusRequired });
+    expect(response).toMatchObject({ status: 403, body: { error: 'forbidden' } });
+    expect(ids.process.currentStatusId).toBe(statusEarly);
+  });
+
+  it('lets an allowed role, or a role holding leads:bypass_status_rules, choose it', async () => {
+    const allowed = seeded();
+    allowed.repo.statusRules.set(statusRequired, {
+      allowedRoleIds: [roleId],
+      requiredFieldIds: [],
+      reasonOptions: [],
+    });
+    expect((await edit(allowed.repo, allowed, { statusId: statusRequired })).status).toBe(200);
+
+    const bypass = seeded();
+    bypass.repo.statusRules.set(statusRequired, {
+      allowedRoleIds: [otherRole],
+      requiredFieldIds: [],
+      reasonOptions: [],
+    });
+    const response = await edit(
+      bypass.repo,
+      bypass,
+      { statusId: statusRequired },
+      permissionRepository({ editableFields: [fieldVisible] }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('never blocks landing in the default status on create', async () => {
+    const repo = new MemoryLeadRepository();
+    repo.statusRules.set(statusEarly, {
+      allowedRoleIds: [otherRole],
+      requiredFieldIds: [],
+      reasonOptions: [],
+    });
+    const response = await createLead({
+      auth,
+      leadRepository: repo,
+      permissionRepository: withoutBypass(),
+      journeyId: journeyA,
+      name: 'Synthetic Seller',
+      fieldValues: {},
+      assignments: [{ assignmentType, userId: actorId }],
+      now,
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('requires the status fields on entry, reporting every missing one, and not afterwards', async () => {
+    const ids = seeded();
+    ids.repo.statusRules.set(statusRequired, {
+      allowedRoleIds: [],
+      requiredFieldIds: [fieldVisible],
+      reasonOptions: [],
+    });
+    expect(await edit(ids.repo, ids, { statusId: statusRequired })).toEqual({
+      status: 400,
+      body: {
+        error: 'validation_error',
+        reason: 'this status requires more fields',
+        details: { statusId: statusRequired, fieldIds: [fieldVisible] },
+      },
+    });
+    const entered = await edit(ids.repo, ids, {
+      statusId: statusRequired,
+      fieldValues: { [fieldVisible]: 'filled' },
+    });
+    expect(entered.status).toBe(200);
+    // Already in the status: clearing the field is an ordinary edit.
+    const cleared = await edit(ids.repo, ids, { fieldValues: { [fieldVisible]: null } });
+    expect(cleared.status).toBe(200);
+  });
+
+  it('records a configured reason on the status change and rejects anything else', async () => {
+    const ids = seeded();
+    ids.repo.statusRules.set(statusRequired, {
+      allowedRoleIds: [],
+      requiredFieldIds: [],
+      reasonOptions: ['Synthetic reason'],
+    });
+    const rejected = await edit(ids.repo, ids, {
+      statusId: statusRequired,
+      statusReason: 'Invented reason',
+    });
+    expect(rejected).toMatchObject({ status: 400, body: { error: 'validation_error' } });
+    const accepted = await edit(ids.repo, ids, {
+      statusId: statusRequired,
+      statusReason: 'Synthetic reason',
+    });
+    expect(accepted.status).toBe(200);
+    expect(ids.repo.statusReasons.get(ids.process.id)).toBe('Synthetic reason');
+    expect(ids.repo.activities.at(-1)).toMatchObject({
+      actionType: 'status_change',
+      newValue: { statusId: statusRequired, reason: 'Synthetic reason' },
+    });
+    const without = await edit(ids.repo, ids, { statusReason: 'Synthetic reason' });
+    expect(without).toMatchObject({
+      status: 400,
+      body: { reason: 'a status reason needs a status change' },
+    });
+  });
+
+  it('schedules one open follow-up per process instance, rescheduling the previous one', async () => {
+    const ids = seeded();
+    const first = await edit(ids.repo, ids, {
+      followUp: { dueAt: '2026-01-05T09:00:00.000Z', note: 'Call back' },
+    });
+    expect(first.status).toBe(200);
+    const second = await edit(ids.repo, ids, {
+      statusId: statusRequired,
+      followUp: { dueAt: '2026-01-07T09:00:00.000Z' },
+    });
+    expect(second.status).toBe(200);
+    expect(ids.repo.tasks.map((task) => task.status)).toEqual(['rescheduled', 'open']);
+    expect(ids.repo.tasks[1]).toMatchObject({ assignedToUserId: actorId, note: null });
+    expect(ids.repo.activities.filter((row) => row.actionType === 'follow_up')).toHaveLength(2);
+    const invalid = await edit(ids.repo, ids, { followUp: { dueAt: 'not a date' } });
+    expect(invalid).toMatchObject({ status: 400, body: { reason: 'follow-up date is invalid' } });
+  });
+
+  it('enforces required_on_create only on create, and only for the listed roles', async () => {
+    const setting = (roles: string[]): LeadFieldSetting => ({
+      ...optionalField(fieldVisible),
+      requirement: 'required_on_create',
+      requiredRoleIds: roles,
+    });
+    const create = (repo: MemoryLeadRepository) =>
+      createLead({
+        auth,
+        leadRepository: repo,
+        permissionRepository: withoutBypass(),
+        journeyId: journeyA,
+        name: 'Synthetic Seller',
+        fieldValues: {},
+        assignments: [{ assignmentType, userId: actorId }],
+        now,
+      });
+    const mine = new MemoryLeadRepository();
+    mine.fieldSettings = [setting([roleId])];
+    expect(await create(mine)).toMatchObject({
+      status: 400,
+      body: { reason: 'required field is missing', details: { fieldId: fieldVisible } },
+    });
+    const others = new MemoryLeadRepository();
+    others.fieldSettings = [setting([otherRole])];
+    expect((await create(others)).status).toBe(201);
+
+    const ids = seeded();
+    ids.repo.fieldSettings = [setting([])];
+    expect((await edit(ids.repo, ids, { name: 'Renamed Seller' })).status).toBe(200);
+  });
+
+  it('validates multi_select and datetime values', async () => {
+    const ids = seeded();
+    ids.repo.fieldSettings = [
+      {
+        ...optionalField(fieldVisible),
+        field: {
+          id: fieldVisible,
+          fieldType: 'multi_select',
+          validationRule: { options: ['Alpha', 'Beta'] },
+          editMode: 'manual',
+          active: true,
+        },
+      },
+      {
+        ...optionalField(fieldHidden),
+        field: {
+          id: fieldHidden,
+          fieldType: 'datetime',
+          validationRule: null,
+          editMode: 'manual',
+          active: true,
+        },
+      },
+    ];
+    const permissions = withoutBypass([fieldVisible, fieldHidden]);
+    expect(
+      (
+        await edit(
+          ids.repo,
+          ids,
+          { fieldValues: { [fieldVisible]: ['Alpha', 'Beta'] } },
+          permissions,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      await edit(ids.repo, ids, { fieldValues: { [fieldVisible]: ['Gamma'] } }, permissions),
+    ).toMatchObject({ status: 400, body: { reason: 'value is not one of the field options' } });
+    expect(
+      await edit(ids.repo, ids, { fieldValues: { [fieldVisible]: 'Alpha' } }, permissions),
+    ).toMatchObject({ status: 400, body: { reason: 'field value type is invalid' } });
+    expect(
+      (
+        await edit(
+          ids.repo,
+          ids,
+          { fieldValues: { [fieldHidden]: '2026-01-05T09:30:00' } },
+          permissions,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      await edit(ids.repo, ids, { fieldValues: { [fieldHidden]: '2026-01-05' } }, permissions),
+    ).toMatchObject({ status: 400, body: { reason: 'field value type is invalid' } });
+  });
+});
+
+/** The default fake grants every action; this one withholds the status-rule bypass. */
+function withoutBypass(editableFields: string[] = [fieldVisible]): PermissionRepository {
+  const base = permissionRepository({ editableFields });
+  return {
+    ...base,
+    async getRolePermission(input) {
+      return input.action === 'bypass_status_rules' ? null : base.getRolePermission(input);
+    },
+  };
+}
+
 class MemoryLeadRepository implements LeadRepository {
   leads: LeadCoreRecord[] = [];
   processes: LeadProcessRecord[] = [];
@@ -764,6 +1022,44 @@ class MemoryLeadRepository implements LeadRepository {
   lastRecordPredicate: unknown;
   lastConditions: readonly unknown[] = [];
   fieldSettings: LeadFieldSetting[] = [optionalField(fieldVisible)];
+  statusRules = new Map<string, StatusRules>();
+  tasks: Array<FollowUpRecord & { leadId: string }> = [];
+
+  async getStatusRules(_organizationId: string, statusId: string): Promise<StatusRules> {
+    return (
+      this.statusRules.get(statusId) ?? {
+        allowedRoleIds: [],
+        requiredFieldIds: [],
+        reasonOptions: [],
+      }
+    );
+  }
+  async closeOpenFollowUps(input: { processInstanceId: string; status: string }) {
+    const open = this.tasks.filter(
+      (task) => task.processInstanceId === input.processInstanceId && task.status === 'open',
+    );
+    for (const task of open) task.status = input.status;
+    return open.length;
+  }
+  async createFollowUp(input: {
+    leadId: string;
+    processInstanceId: string;
+    assignedToUserId: string;
+    dueDate: Date;
+    note: string | null;
+  }) {
+    const task = {
+      id: `task-${this.tasks.length + 1}`,
+      leadId: input.leadId,
+      processInstanceId: input.processInstanceId,
+      assignedToUserId: input.assignedToUserId,
+      dueDate: input.dueDate,
+      note: input.note,
+      status: 'open',
+    };
+    this.tasks.push(task);
+    return task;
+  }
 
   async transaction<T>(work: (repository: LeadRepository) => Promise<T>): Promise<T> {
     return work(this);
@@ -841,14 +1137,17 @@ class MemoryLeadRepository implements LeadRepository {
     process.currentStatusId = patch.currentStatusId;
     return process;
   }
+  statusReasons = new Map<string, string | null>();
   async updateProcessInstanceStatus(
     organizationId: string,
     processInstanceId: string,
     statusId: string,
+    statusReason: string | null = null,
   ) {
     const process = await this.findProcessInstance(organizationId, processInstanceId);
     if (process === null) return null;
     process.currentStatusId = statusId;
+    this.statusReasons.set(processInstanceId, statusReason);
     return process;
   }
   async createAssignment(input: Omit<LeadAssignmentRecord, 'id' | 'isCurrent'>) {

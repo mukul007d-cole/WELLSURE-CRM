@@ -16,10 +16,13 @@ import {
   deactivateService,
   deactivateStatus,
   readConfiguration,
+  replaceStatusRules,
   reorderFields,
   reorderStatuses,
   setDefaultStatus,
   updateField,
+  updateStatus,
+  upsertFieldJourneySetting,
   upsertFieldVisibility,
   type ConfigurationRouteResult,
 } from '../routes/configuration.js';
@@ -32,6 +35,7 @@ import {
   orgA,
   permissionRepository,
   replacementStatusId,
+  roleId,
   statusId,
 } from './fixtures/synthetic-configuration.js';
 
@@ -326,6 +330,134 @@ describe('configuration engine API', () => {
       source: 'manual',
     });
     expect(response.status).toBe(400);
+  });
+
+  describe('ADR-0026 status and field rules', () => {
+    const fieldId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const base = () => ({
+      auth: auth(),
+      permissionRepository: permissionRepository(),
+    });
+
+    it('refuses a field type the platform cannot validate (OD-020)', async () => {
+      const response = await createField({
+        ...base(),
+        configurationRepository: new MemoryConfigurationRepository(),
+        name: 'Test Currency',
+        fieldType: 'currency',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      expect(response).toMatchObject({ status: 400, body: { error: 'validation_error' } });
+    });
+
+    it('requires options for a multi_select Field and accepts datetime', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const missing = await createField({
+        ...base(),
+        configurationRepository: repository,
+        name: 'Test Multi',
+        fieldType: 'multi_select',
+        editMode: 'manual',
+        source: 'manual',
+      });
+      expect(missing.status).toBe(400);
+      for (const [fieldType, validationRule] of [
+        ['multi_select', { options: ['One', 'Two'] }],
+        ['datetime', undefined],
+      ] as const) {
+        const created = await createField({
+          ...base(),
+          configurationRepository: repository,
+          name: `Test ${fieldType}`,
+          fieldType,
+          ...(validationRule === undefined ? {} : { validationRule }),
+          editMode: 'manual',
+          source: 'manual',
+        });
+        expect(created.status).toBe(201);
+      }
+    });
+
+    it('stores a status color and reasons, and refuses an unknown color', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const update = (color: string | null) =>
+        updateStatus({
+          ...base(),
+          configurationRepository: repository,
+          journeyId,
+          statusId,
+          name: 'Test Status A',
+          outcomeType: 'open',
+          behaviorType: 'default',
+          sortOrder: 0,
+          color,
+          reasonOptions: ['Synthetic reason'],
+        });
+      expect((await update('#ff0000')).status).toBe(400);
+      const ok = await update('green');
+      expect(ok).toMatchObject({
+        status: 200,
+        body: { color: 'green', reasonOptions: ['Synthetic reason'] },
+      });
+    });
+
+    it('replaces status rules, requiring every Field to be shown on the journey', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const replace = () =>
+        replaceStatusRules({
+          ...base(),
+          configurationRepository: repository,
+          statusId,
+          allowedRoleIds: [roleId],
+          requiredFieldIds: [fieldId],
+        });
+      expect(await replace()).toMatchObject({ status: 400, body: { error: 'validation_error' } });
+      repository.rows.fieldSettings.set('setting', {
+        id: 'setting',
+        organizationId: orgA,
+        fieldId,
+        journeyId,
+        requirement: 'optional',
+        active: true,
+      });
+      expect(await replace()).toEqual({
+        status: 200,
+        body: { statusId, allowedRoleIds: [roleId], requiredFieldIds: [fieldId] },
+      });
+      expect(repository.systemAudits.at(-1)).toMatchObject({
+        entityType: 'status_rules',
+        entityId: statusId,
+        action: 'edit',
+        oldValue: { allowedRoleIds: [], requiredFieldIds: [] },
+      });
+      const unknownRole = await replaceStatusRules({
+        ...base(),
+        configurationRepository: repository,
+        statusId,
+        allowedRoleIds: ['eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'],
+        requiredFieldIds: [],
+      });
+      expect(unknownRole.status).toBe(400);
+    });
+
+    it('accepts requiredRoleIds only with required_on_create', async () => {
+      const repository = new MemoryConfigurationRepository();
+      const upsert = (requirement: string) =>
+        upsertFieldJourneySetting({
+          ...base(),
+          configurationRepository: repository,
+          journeyId,
+          fieldId,
+          requirement,
+          requiredRoleIds: [roleId],
+        });
+      expect((await upsert('required')).status).toBe(400);
+      expect(await upsert('required_on_create')).toMatchObject({
+        status: 200,
+        body: { requirement: 'required_on_create', requiredRoleIds: [roleId] },
+      });
+    });
   });
 
   describe('Field sort order', () => {

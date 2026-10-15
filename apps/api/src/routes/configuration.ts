@@ -169,6 +169,8 @@ export async function updateStatus(input: {
   outcomeType: string;
   behaviorType: string;
   sortOrder: number;
+  color?: string | null;
+  reasonOptions?: unknown;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
     input,
@@ -185,6 +187,7 @@ export async function updateStatus(input: {
         outcomeType: input.outcomeType,
         behaviorType: input.behaviorType,
         sortOrder: input.sortOrder,
+        ...presentation(input),
       }),
     200,
   );
@@ -256,6 +259,8 @@ export async function createStatus(input: {
   outcomeType: string;
   behaviorType: string;
   sortOrder: number;
+  color?: string | null;
+  reasonOptions?: unknown;
   now?: Date;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
@@ -272,9 +277,52 @@ export async function createStatus(input: {
         outcomeType: input.outcomeType,
         behaviorType: input.behaviorType,
         sortOrder: input.sortOrder,
+        ...presentation(input),
       }),
     201,
   );
+}
+
+/**
+ * ADR-0026 — `PUT /statuses/:statusId/rules`. Scoped on the Status's own
+ * journey, looked up server-side, for the reason `deactivateStatus` gives.
+ */
+export async function replaceStatusRules(input: {
+  auth: AuthenticatedContext;
+  permissionRepository: PermissionRepository;
+  configurationRepository: ConfigurationRepository;
+  statusId: string;
+  allowedRoleIds: unknown;
+  requiredFieldIds: unknown;
+  now?: Date;
+}): Promise<ConfigurationRouteResult> {
+  const status = await input.configurationRepository.findStatus(
+    input.auth.user.organizationId,
+    input.statusId,
+  );
+  if (status === null) return { status: 404, body: { error: 'not_found' } };
+  return mutate(
+    input,
+    configurationModules.statuses,
+    'edit',
+    status.journeyId as string,
+    (service) =>
+      service.replaceStatusRules({
+        organizationId: input.auth.user.organizationId,
+        actorUserId: input.auth.user.id,
+        statusId: input.statusId,
+        allowedRoleIds: input.allowedRoleIds,
+        requiredFieldIds: input.requiredFieldIds,
+      }),
+    200,
+  );
+}
+
+function presentation(input: { color?: string | null; reasonOptions?: unknown }) {
+  return {
+    ...(input.color === undefined ? {} : { color: input.color }),
+    ...(input.reasonOptions === undefined ? {} : { reasonOptions: input.reasonOptions }),
+  };
 }
 export async function setDefaultStatus(input: {
   auth: AuthenticatedContext;
@@ -505,6 +553,7 @@ export async function upsertFieldJourneySetting(input: {
   fieldId: string;
   requirement: string;
   requiredFromStatusId?: string | null;
+  requiredRoleIds?: unknown;
 }): Promise<ConfigurationRouteResult> {
   return mutate(
     input,
@@ -521,6 +570,7 @@ export async function upsertFieldJourneySetting(input: {
         ...(input.requiredFromStatusId === undefined
           ? {}
           : { requiredFromStatusId: input.requiredFromStatusId }),
+        ...(input.requiredRoleIds === undefined ? {} : { requiredRoleIds: input.requiredRoleIds }),
       }),
     200,
   );

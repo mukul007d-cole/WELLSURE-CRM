@@ -197,7 +197,7 @@ async function setupLeadSchema(sql: postgres.Sql): Promise<void> {
   await sql`CREATE TEMP TABLE role_permissions (organization_id uuid NOT NULL, role_id uuid NOT NULL, module text NOT NULL, action text NOT NULL, scope "DataScope" NOT NULL)`;
   await sql`CREATE TEMP TABLE journeys (id uuid NOT NULL, organization_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, active boolean NOT NULL, PRIMARY KEY (organization_id, id))`;
   await sql`CREATE TEMP TABLE role_journey_access (organization_id uuid NOT NULL, role_id uuid NOT NULL, journey_id uuid NOT NULL)`;
-  await sql`CREATE TEMP TABLE statuses (id uuid NOT NULL, organization_id uuid NOT NULL, journey_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, active boolean NOT NULL, is_default_on_create boolean NOT NULL, sort_order integer NOT NULL)`;
+  await sql`CREATE TEMP TABLE statuses (id uuid NOT NULL, organization_id uuid NOT NULL, journey_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, active boolean NOT NULL, is_default_on_create boolean NOT NULL, sort_order integer NOT NULL, reason_options text[] NOT NULL DEFAULT '{}')`;
   await sql`CREATE TEMP TABLE fields (id uuid NOT NULL, organization_id uuid NOT NULL, key text NOT NULL, name text NOT NULL, field_type text NOT NULL, validation_rule jsonb, active boolean NOT NULL, PRIMARY KEY (organization_id, id))`;
   await sql`CREATE TEMP TABLE field_journey_settings (organization_id uuid NOT NULL, field_id uuid NOT NULL, journey_id uuid NOT NULL, requirement text NOT NULL, required_from_status_id uuid, active boolean NOT NULL)`;
   await sql`CREATE TEMP TABLE field_visibility (organization_id uuid NOT NULL, field_id uuid NOT NULL, role_id uuid NOT NULL, access_level "FieldAccessLevel" NOT NULL)`;
@@ -365,6 +365,13 @@ function createPrismaLikeClient(sql: postgres.Sql): PrismaLeadClient {
       },
       async findFirst(args) {
         const where = (args as any).where;
+        if (where.id !== undefined) {
+          // ADR-0026 status rules: the reasons a status offers.
+          const [row] = await sql<
+            { id: string; active: boolean; reasonOptions: string[] }[]
+          >`SELECT id, active, reason_options AS "reasonOptions" FROM statuses WHERE organization_id=${where.organizationId} AND id=${where.id}`;
+          return row ?? null;
+        }
         const [row] = await sql<
           { id: string; active: boolean; isDefaultOnCreate: boolean }[]
         >`SELECT id, active, is_default_on_create AS "isDefaultOnCreate" FROM statuses WHERE organization_id=${where.organizationId} AND journey_id=${where.journeyId} AND is_default_on_create=true ORDER BY sort_order LIMIT 1`;

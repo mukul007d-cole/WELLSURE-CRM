@@ -18,6 +18,7 @@ import {
   deactivateField,
   deactivateService,
   deactivateStatus,
+  replaceStatusRules,
   mapJourneyService,
   unmapJourneyService,
   upsertFieldVisibility,
@@ -94,6 +95,7 @@ export function registerConfigurationRoutes(
       outcomeType: String(b.outcomeType),
       behaviorType: String(b.behaviorType),
       sortOrder: Number(b.sortOrder),
+      ...statusPresentation(b),
     }),
   );
   bind('DELETE', '/api/v1/statuses/:statusId', (r, b, p) =>
@@ -114,6 +116,7 @@ export function registerConfigurationRoutes(
       outcomeType: String(b.outcomeType),
       behaviorType: String(b.behaviorType),
       sortOrder: Number(b.sortOrder),
+      ...statusPresentation(b),
     }),
   );
   bind('PUT', '/api/v1/journeys/:journeyId/status-order', (r, b, p) =>
@@ -121,6 +124,14 @@ export function registerConfigurationRoutes(
       ...base(r),
       journeyId: String(p.journeyId),
       statusIds: Array.isArray(b.statusIds) ? b.statusIds.map(String) : [],
+    }),
+  );
+  bind('PUT', '/api/v1/statuses/:statusId/rules', (r, b, p) =>
+    replaceStatusRules({
+      ...base(r),
+      statusId: String(p.statusId),
+      allowedRoleIds: b.allowedRoleIds ?? [],
+      requiredFieldIds: b.requiredFieldIds ?? [],
     }),
   );
   bind('POST', '/api/v1/statuses/:statusId/set-default', (r, _b, p) =>
@@ -193,6 +204,7 @@ export function registerConfigurationRoutes(
       ...(typeof b.requiredFromStatusId === 'string' || b.requiredFromStatusId === null
         ? { requiredFromStatusId: b.requiredFromStatusId }
         : {}),
+      ...(b.requiredRoleIds === undefined ? {} : { requiredRoleIds: b.requiredRoleIds }),
     }),
   );
   bind('DELETE', '/api/v1/journeys/:journeyId/fields/:fieldId', (r, _b, p) =>
@@ -214,4 +226,12 @@ export function registerConfigurationRoutes(
       accessLevel: String(b.accessLevel),
     }),
   );
+}
+
+/** ADR-0026 — `color` (palette token or null) and `reasonOptions`, when sent. */
+function statusPresentation(b: Json): { color?: string | null; reasonOptions?: unknown } {
+  return {
+    ...(typeof b.color === 'string' || b.color === null ? { color: b.color } : {}),
+    ...(b.reasonOptions === undefined ? {} : { reasonOptions: b.reasonOptions }),
+  };
 }

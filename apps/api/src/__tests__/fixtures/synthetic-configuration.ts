@@ -254,6 +254,24 @@ export class MemoryConfigurationRepository implements ConfigurationRepository {
   async deleteFieldVisibility(org: string, field: string, role: string) {
     return remove(this.rows.fieldVisibility, org, (r) => r.fieldId === field && r.roleId === role);
   }
+  activeRoleIds = new Set<string>([roleId]);
+  statusRules = new Map<string, { allowedRoleIds: string[]; requiredFieldIds: string[] }>();
+  async listActiveRoleIds(_org: string, ids: readonly string[]) {
+    return ids.filter((id) => this.activeRoleIds.has(id));
+  }
+  async getStatusRules(_org: string, status: string) {
+    return this.statusRules.get(status) ?? { allowedRoleIds: [], requiredFieldIds: [] };
+  }
+  async replaceStatusRules(input: {
+    statusId: string;
+    allowedRoleIds: readonly string[];
+    requiredFieldIds: readonly string[];
+  }) {
+    this.statusRules.set(input.statusId, {
+      allowedRoleIds: [...input.allowedRoleIds],
+      requiredFieldIds: [...input.requiredFieldIds],
+    });
+  }
 }
 
 function put(map: Map<string, ConfigRow>, input: Record<string, unknown>): ConfigRow {

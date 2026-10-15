@@ -432,7 +432,16 @@ export class PrismaAdminRepository implements AdminRepository {
       // (Status Visibility ancestors), and bumping one row is what the
       // authorization cache keys on.
       await bump(tx as Tx, org, roleId, actor);
-      await audit(tx as Tx, org, actor, 'role_reporting_lines', roleId, 'replace', old, reportsToRoleIds);
+      await audit(
+        tx as Tx,
+        org,
+        actor,
+        'role_reporting_lines',
+        roleId,
+        'replace',
+        old,
+        reportsToRoleIds,
+      );
       return { reportsToRoleIds };
     });
   }

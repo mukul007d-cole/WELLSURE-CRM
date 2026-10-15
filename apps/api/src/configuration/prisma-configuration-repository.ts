@@ -8,6 +8,12 @@ import { StatusRoutingService } from '../routing/service.js';
 import type { ConfigurationAuditInput, LeadActivityInput } from './audit.js';
 import type { ConfigRow, ConfigurationRepository, ProcessInstanceStatusMove } from './service.js';
 
+/** ADR-0026 — a Status row carries its rules, so the admin UI needs no extra round trip. */
+const statusRuleInclude = {
+  allowedRoles: { select: { roleId: true } },
+  requiredFields: { select: { fieldId: true } },
+} as const;
+
 /** Prisma-backed configuration persistence; organization predicates preserve tenant isolation. */
 export class PrismaConfigurationRepository implements ConfigurationRepository {
   constructor(private readonly prisma: FalconPrismaClient) {}
@@ -39,6 +45,7 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
           statuses: {
             where: active === undefined ? {} : { active },
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            include: statusRuleInclude,
           },
         },
       }),
@@ -52,6 +59,7 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
         statuses: {
           where: active === undefined ? {} : { active },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          include: statusRuleInclude,
         },
       },
     }) as Promise<ConfigRow | null>;
@@ -374,6 +382,54 @@ export class PrismaConfigurationRepository implements ConfigurationRepository {
       where: { organizationId_fieldId_roleId: { organizationId: org, roleId, fieldId } },
     });
     return row as ConfigRow;
+  }
+  async listActiveRoleIds(org: string, roleIds: readonly string[]): Promise<string[]> {
+    if (roleIds.length === 0) return [];
+    const rows = await this.prisma.role.findMany({
+      where: { organizationId: org, id: { in: [...roleIds] }, active: true },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+  async getStatusRules(org: string, statusId: string) {
+    const [allowed, required] = await Promise.all([
+      this.prisma.statusAllowedRole.findMany({
+        where: { organizationId: org, statusId },
+        select: { roleId: true },
+        orderBy: { roleId: 'asc' },
+      }),
+      this.prisma.statusRequiredField.findMany({
+        where: { organizationId: org, statusId },
+        select: { fieldId: true },
+        orderBy: { fieldId: 'asc' },
+      }),
+    ]);
+    return {
+      allowedRoleIds: allowed.map((row) => row.roleId),
+      requiredFieldIds: required.map((row) => row.fieldId),
+    };
+  }
+  /**
+   * Pure current-state mapping rows (ADR-0017's class), replaced as a set; the
+   * caller audits the before/after in one row.
+   */
+  async replaceStatusRules(input: {
+    organizationId: string;
+    statusId: string;
+    allowedRoleIds: readonly string[];
+    requiredFieldIds: readonly string[];
+  }): Promise<void> {
+    const where = { organizationId: input.organizationId, statusId: input.statusId };
+    await this.prisma.statusAllowedRole.deleteMany({ where });
+    await this.prisma.statusRequiredField.deleteMany({ where });
+    if (input.allowedRoleIds.length > 0)
+      await this.prisma.statusAllowedRole.createMany({
+        data: input.allowedRoleIds.map((roleId) => ({ ...where, roleId })),
+      });
+    if (input.requiredFieldIds.length > 0)
+      await this.prisma.statusRequiredField.createMany({
+        data: input.requiredFieldIds.map((fieldId) => ({ ...where, fieldId })),
+      });
   }
   async writeSystemAudit(input: ConfigurationAuditInput): Promise<void> {
     await this.prisma.systemAuditLog.create({ data: input as never });

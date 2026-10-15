@@ -124,7 +124,12 @@ export class PrismaPermissionRepository implements PermissionRepository {
     });
     return row === null
       ? null
-      : { module: row.module, action: row.action, scope: row.scope, journeyIds: row.journeyIds ?? [] };
+      : {
+          module: row.module,
+          action: row.action,
+          scope: row.scope,
+          journeyIds: row.journeyIds ?? [],
+        };
   }
 
   async listRolePermissions(input: { roleId: string; organizationId: string }) {

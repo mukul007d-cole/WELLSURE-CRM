@@ -8,7 +8,30 @@ import { ConfigurationError } from './errors.js';
 
 export const statusOutcomeTypes = ['open', 'closed_won', 'closed_lost'] as const;
 export const statusBehaviorTypes = ['default', 'call_later', 'follow_up', 'archived'] as const;
-export const fieldRequirements = ['required', 'optional', 'hidden'] as const;
+/**
+ * `required_on_create` (ADR-0026) is enforced only when a lead is created, and
+ * only for the roles in `required_role_ids` (empty = every role).
+ */
+export const fieldRequirements = ['required', 'optional', 'hidden', 'required_on_create'] as const;
+/** Kept in step with `validateValue` in `leads/validation.ts` (OD-020). */
+export { supportedFieldTypes } from '../leads/validation.js';
+/**
+ * ADR-0026 — status colors are palette tokens the web client renders, never
+ * raw CSS, so a theme change can't strand a stored value.
+ */
+export const statusColors = [
+  'gray',
+  'blue',
+  'teal',
+  'green',
+  'lime',
+  'amber',
+  'orange',
+  'red',
+  'pink',
+  'purple',
+  'indigo',
+] as const;
 export const fieldAccessLevels = ['VIEW', 'EDIT'] as const;
 export const fieldEditModes = ['manual', 'locked', 'calculated', 'system', 'api-only'] as const;
 export const fieldSources = ['manual', 'system', 'api', 'import', 'calculated'] as const;
@@ -95,7 +118,7 @@ export function isRecordObject(value: unknown): value is Record<string, unknown>
 }
 
 export function requireFieldValidationRule(fieldType: string, value: unknown): unknown {
-  if (fieldType !== 'select') return value ?? null;
+  if (fieldType !== 'select' && fieldType !== 'multi_select') return value ?? null;
   if (
     typeof value !== 'object' ||
     value === null ||
@@ -103,7 +126,7 @@ export function requireFieldValidationRule(fieldType: string, value: unknown): u
   )
     throw new ConfigurationError(
       'validation_error',
-      'select fields require validationRule.options',
+      `${fieldType} fields require validationRule.options`,
     );
   const options = (value as { options: unknown[] }).options;
   if (
@@ -119,4 +142,27 @@ export function requireFieldValidationRule(fieldType: string, value: unknown): u
     ...(value as Record<string, unknown>),
     options: options.map((option) => String(option).trim()),
   };
+}
+
+/** The reason options a status offers: unique, non-blank, at most 50. */
+export function requireReasonOptions(value: unknown): string[] {
+  if (!Array.isArray(value))
+    throw new ConfigurationError('validation_error', 'reasonOptions must be an array');
+  const options = value.map((option) => (typeof option === 'string' ? option.trim() : ''));
+  if (options.some((option) => option === '' || option.length > 200))
+    throw new ConfigurationError('validation_error', 'reason options must be non-blank strings');
+  if (new Set(options).size !== options.length)
+    throw new ConfigurationError('validation_error', 'reason options must be unique');
+  if (options.length > 50)
+    throw new ConfigurationError('validation_error', 'a status may offer at most 50 reasons');
+  return options;
+}
+
+export function requireUniqueIds(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || id.trim() === ''))
+    throw new ConfigurationError('validation_error', `${label} must be an array of ids`);
+  const ids = value as string[];
+  if (new Set(ids).size !== ids.length)
+    throw new ConfigurationError('validation_error', `${label} must be unique`);
+  return ids;
 }

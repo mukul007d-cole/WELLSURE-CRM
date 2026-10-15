@@ -145,7 +145,8 @@ function coerceValue(kind: FilterKind, value: unknown): unknown {
         throw new LeadError('validation_error', 'filter value must be a number');
       return parsed;
     }
-    case 'date': {
+    case 'date':
+    case 'datetime': {
       const text = typeof value === 'string' ? value.trim() : '';
       /*
        * Date Fields store unvalidated strings, so comparison is lexicographic.
@@ -158,7 +159,8 @@ function coerceValue(kind: FilterKind, value: unknown): unknown {
       return text;
     }
     case 'text':
-    case 'select': {
+    case 'select':
+    case 'multi': {
       if (typeof value !== 'string')
         throw new LeadError('validation_error', 'filter value must be a string');
       return value;

@@ -287,7 +287,27 @@ function fieldClause(condition: ResolvedCondition, fieldId: string, params: Para
   const key = () => params.bind(fieldId);
   const contains = (value: unknown) =>
     `l.field_values @> ${params.bind(JSON.stringify({ [fieldId]: value }), '::jsonb')}`;
-  const text = () => `l.field_values ->> ${params.bind(fieldId)}`;
+  const raw = () => `l.field_values ->> ${params.bind(fieldId)}`;
+  // A datetime compares by its calendar day, so "after 2026-01-01" means the
+  // 2nd onwards, exactly as it does for a date Field.
+  const text = condition.kind === 'datetime' ? () => `left(${raw()}, 10)` : raw;
+
+  if (condition.kind === 'multi') {
+    // Array containment: `{"f": ["a", "b"]} @> {"f": ["a"]}` — GIN-served.
+    const holds = (value: unknown) => contains([value]);
+    switch (condition.operator) {
+      case 'in':
+        return `(${condition.values.map(holds).join(' OR ')})`;
+      case 'not_in':
+        return `NOT (${condition.values.map(holds).join(' OR ')})`;
+      case 'is_not_empty':
+        return `(l.field_values ? ${key()} AND ${raw()} NOT IN ('', '[]'))`;
+      case 'is_empty':
+        return `(NOT (l.field_values ? ${key()}) OR ${raw()} IS NULL OR ${raw()} IN ('', '[]'))`;
+      default:
+        break;
+    }
+  }
 
   switch (condition.operator) {
     case 'equals':

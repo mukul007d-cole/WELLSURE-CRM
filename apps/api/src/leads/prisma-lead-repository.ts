@@ -3,11 +3,13 @@ import type { FalconPrismaClient } from '@falcon/database';
 
 import type { LeadActivityInput } from './activity.js';
 import type {
+  FollowUpRecord,
   LeadAssignmentRecord,
   LeadCoreRecord,
   LeadProcessRecord,
   LeadRepository,
 } from './service.js';
+import type { StatusRules } from './status-rules.js';
 import type { LeadFieldSetting } from './validation.js';
 import { buildSellerListQuery } from './filter-sql.js';
 import type { ResolvedCondition } from './filter-validation.js';
@@ -37,6 +39,12 @@ export interface PrismaLeadClient {
   status: {
     findUnique(args: unknown): Promise<StatusRow | null>;
     findFirst(args: unknown): Promise<StatusRow | null>;
+  };
+  statusAllowedRole?: { findMany(args: unknown): Promise<Array<{ roleId: string }>> };
+  statusRequiredField?: { findMany(args: unknown): Promise<Array<{ fieldId: string }>> };
+  task?: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    create(args: unknown): Promise<FollowUpRecord>;
   };
   fieldJourneySetting: {
     findMany(args: unknown): Promise<FieldSettingRow[]>;
@@ -87,6 +95,7 @@ interface StatusRow {
   id: string;
   active: boolean;
   isDefaultOnCreate?: boolean;
+  reasonOptions?: string[];
 }
 
 interface FieldSettingRow {
@@ -94,6 +103,7 @@ interface FieldSettingRow {
   journeyId: string;
   requirement: string;
   requiredFromStatusId: string | null;
+  requiredRoleIds?: string[];
   active: boolean;
   field: {
     id: string;
@@ -216,9 +226,32 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
       journeyId: row.journeyId,
       requirement: row.requirement,
       requiredFromStatusId: row.requiredFromStatusId,
+      requiredRoleIds: row.requiredRoleIds ?? [],
       active: row.active,
       field: row.field,
     }));
+  }
+
+  async getStatusRules(organizationId: string, statusId: string): Promise<StatusRules> {
+    const [status, allowed, required] = await Promise.all([
+      this.prisma.status.findFirst({
+        where: { organizationId, id: statusId },
+        select: { id: true, active: true, reasonOptions: true },
+      }),
+      this.prisma.statusAllowedRole?.findMany({
+        where: { organizationId, statusId },
+        select: { roleId: true },
+      }) ?? [],
+      this.prisma.statusRequiredField?.findMany({
+        where: { organizationId, statusId, field: { active: true } },
+        select: { fieldId: true },
+      }) ?? [],
+    ]);
+    return {
+      allowedRoleIds: allowed.map((row) => row.roleId),
+      requiredFieldIds: required.map((row) => row.fieldId),
+      reasonOptions: status?.reasonOptions ?? [],
+    };
   }
 
   async findLead(organizationId: string, leadId: string): Promise<LeadCoreRecord | null> {
@@ -284,6 +317,7 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
     journeyId: string;
     currentStatusId: string;
     isPrimary: boolean;
+    statusReason?: string | null;
   }): Promise<LeadProcessRecord> {
     return process(await this.prisma.processInstance.create({ data: input }));
   }
@@ -298,14 +332,18 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
   async updateProcessInstanceJourney(
     organizationId: string,
     processInstanceId: string,
-    patch: { journeyId: string; currentStatusId: string },
+    patch: { journeyId: string; currentStatusId: string; statusReason?: string | null },
   ): Promise<LeadProcessRecord | null> {
     const existing = await this.findProcessInstance(organizationId, processInstanceId);
     if (existing === null) return null;
     return process(
       await this.prisma.processInstance.update({
         where: { organizationId_id: { organizationId, id: processInstanceId } },
-        data: { journeyId: patch.journeyId, currentStatusId: patch.currentStatusId },
+        data: {
+          journeyId: patch.journeyId,
+          currentStatusId: patch.currentStatusId,
+          statusReason: patch.statusReason ?? null,
+        },
       }),
     );
   }
@@ -314,15 +352,64 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
     organizationId: string,
     processInstanceId: string,
     statusId: string,
+    statusReason: string | null = null,
   ): Promise<LeadProcessRecord | null> {
     const existing = await this.findProcessInstance(organizationId, processInstanceId);
     if (existing === null) return null;
     return process(
       await this.prisma.processInstance.update({
         where: { organizationId_id: { organizationId, id: processInstanceId } },
-        data: { currentStatusId: statusId },
+        data: { currentStatusId: statusId, statusReason },
       }),
     );
+  }
+
+  async closeOpenFollowUps(input: {
+    organizationId: string;
+    processInstanceId: string;
+    status: 'rescheduled' | 'cancelled';
+    actorUserId: string;
+    at: Date;
+  }): Promise<number> {
+    if (this.prisma.task === undefined) return 0;
+    const result = await this.prisma.task.updateMany({
+      where: {
+        organizationId: input.organizationId,
+        processInstanceId: input.processInstanceId,
+        type: 'follow_up',
+        status: 'open',
+      },
+      data: {
+        status: input.status,
+        completedAt: input.at,
+        completedByUserId: input.actorUserId,
+      },
+    });
+    return result.count;
+  }
+
+  async createFollowUp(input: {
+    organizationId: string;
+    leadId: string;
+    processInstanceId: string;
+    assignedToUserId: string;
+    dueDate: Date;
+    note: string | null;
+    createdFromStatusId: string | null;
+    source: string;
+  }): Promise<FollowUpRecord> {
+    if (this.prisma.task === undefined) throw new Error('task client unavailable');
+    return this.prisma.task.create({
+      data: { ...input, type: 'follow_up', status: 'open' },
+      select: {
+        id: true,
+        processInstanceId: true,
+        assignedToUserId: true,
+        dueDate: true,
+        status: true,
+        note: true,
+      },
+    });
   }
 
   async createAssignment(input: {

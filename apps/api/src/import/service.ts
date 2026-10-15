@@ -5,6 +5,7 @@ import { columnFillRate, columnSamples, parseCsv, type CsvTable } from '@falcon/
 
 import { isLeadError } from '../leads/errors.js';
 import { LeadService, type LeadRepository } from '../leads/service.js';
+import type { LeadActor } from '../leads/status-rules.js';
 import { DryRunRollback, ImportError, isDryRunRollback, isImportError } from './errors.js';
 import {
   coerceCell,
@@ -84,6 +85,8 @@ export interface ImportRunInput {
   recordPredicate: RecordPredicate;
   /** Echoed from the preview. A mismatch is refused rather than committed. */
   expectedContentHash?: string | undefined;
+  /** ADR-0026 — the importer's role, so status and field rules apply per row. */
+  actor?: LeadActor;
 }
 
 export class ImportService {
@@ -184,6 +187,7 @@ export class ImportService {
                 leadService,
                 organizationId: input.organizationId,
                 actorUserId: input.actorUserId,
+                ...(input.actor === undefined ? {} : { actor: input.actor }),
                 mapping,
                 statuses,
                 usersByEmail,
@@ -275,6 +279,7 @@ export class ImportService {
     leadService: LeadService;
     organizationId: string;
     actorUserId: string;
+    actor?: LeadActor;
     mapping: ResolvedMapping;
     statuses: readonly ImportStatusDefinition[];
     usersByEmail: ReadonlyMap<string, string>;
@@ -368,6 +373,7 @@ export class ImportService {
       ...(mapping.emailIndex === null ? {} : { email: email === '' ? null : email }),
       fieldValues,
       assignments,
+      ...(input.actor === undefined ? {} : { actor: input.actor }),
     });
     return {
       rowNumber: input.rowNumber,

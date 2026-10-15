@@ -5,7 +5,9 @@ export type ConfigurationAuditEntityType =
   | 'field'
   | 'journey_service'
   | 'field_journey_setting'
-  | 'field_visibility';
+  | 'field_visibility'
+  // ADR-0026 — a Status's allowed roles and required-to-enter Fields.
+  | 'status_rules';
 
 export type ConfigurationAuditAction =
   'create' | 'edit' | 'reorder' | 'deactivate' | 'delete' | 'reassign_and_deactivate';

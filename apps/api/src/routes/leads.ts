@@ -9,8 +9,10 @@ import {
 import { isLeadError, type LeadError } from '../leads/errors.js';
 import { filterFieldIds } from '../leads/filter-model.js';
 import { parseFilter, resolveFilter, type ResolvedCondition } from '../leads/filter-validation.js';
+import { resolveLeadActor } from '../leads/status-rules.js';
 import {
   LeadService,
+  type FollowUpInput,
   type LeadAssignmentRecord,
   type LeadCoreRecord,
   type LeadProcessRecord,
@@ -113,6 +115,29 @@ export interface SellerListInput {
   filter?: unknown;
 }
 
+/** ADR-0026 — what a status-changing request may carry besides the status. */
+export interface StatusEntryExtras {
+  statusReason?: string | null;
+  /** ISO-8601 due time; the follow-up is always the acting user's own. */
+  followUp?: { dueAt: string; note?: string | null };
+}
+
+function followUpInput(followUp: StatusEntryExtras['followUp']): FollowUpInput | undefined {
+  if (followUp === undefined) return undefined;
+  return {
+    dueAt: new Date(followUp.dueAt),
+    ...(followUp.note === undefined ? {} : { note: followUp.note }),
+  };
+}
+
+function extrasFor(input: StatusEntryExtras, withFollowUp: boolean) {
+  const followUp = withFollowUp ? followUpInput(input.followUp) : undefined;
+  return {
+    ...(input.statusReason === undefined ? {} : { statusReason: input.statusReason }),
+    ...(followUp === undefined ? {} : { followUp }),
+  };
+}
+
 export type LeadRouteResult =
   | { status: 200 | 201; body: unknown }
   | {
@@ -120,20 +145,22 @@ export type LeadRouteResult =
       body: { error: string; reason?: string; details?: Record<string, unknown> };
     };
 
-export async function createLead(input: {
-  auth: AuthenticatedContext;
-  leadRepository: LeadRepository;
-  permissionRepository: PermissionRepository;
-  journeyId: string;
-  statusId?: string;
-  existingLeadId?: string;
-  name: string;
-  phone?: string | null;
-  email?: string | null;
-  fieldValues: Record<string, unknown>;
-  assignments: readonly { assignmentType: string; userId: string }[];
-  now?: Date;
-}): Promise<LeadRouteResult> {
+export async function createLead(
+  input: {
+    auth: AuthenticatedContext;
+    leadRepository: LeadRepository;
+    permissionRepository: PermissionRepository;
+    journeyId: string;
+    statusId?: string;
+    existingLeadId?: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    fieldValues: Record<string, unknown>;
+    assignments: readonly { assignmentType: string; userId: string }[];
+    now?: Date;
+  } & StatusEntryExtras,
+): Promise<LeadRouteResult> {
   const assignmentTypes = input.assignments.map((assignment) => assignment.assignmentType);
   // The Status this lead is about to land in — resolved the same way
   // `LeadService.createLead` resolves it, so a Role that could never see a
@@ -180,6 +207,8 @@ export async function createLead(input: {
         ...(input.email === undefined ? {} : { email: input.email }),
         fieldValues: input.fieldValues,
         assignments: input.assignments,
+        actor: await resolveLeadActor(input.permissionRepository, input.auth.user),
+        ...extrasFor(input, true),
       }),
     };
   } catch (error) {
@@ -196,18 +225,20 @@ export async function createLead(input: {
  * someone push a record into a journey they have no rights to; checking only
  * the target would let them pull one out of a journey they cannot touch.
  */
-export async function moveLeadJourney(input: {
-  auth: AuthenticatedContext;
-  leadRepository: LeadRepository;
-  permissionRepository: PermissionRepository;
-  leadId: string;
-  processInstanceId: string;
-  journeyId: string;
-  targetJourneyId: string;
-  assignmentTypes: readonly string[];
-  statusId?: string;
-  now?: Date;
-}): Promise<LeadRouteResult> {
+export async function moveLeadJourney(
+  input: {
+    auth: AuthenticatedContext;
+    leadRepository: LeadRepository;
+    permissionRepository: PermissionRepository;
+    leadId: string;
+    processInstanceId: string;
+    journeyId: string;
+    targetJourneyId: string;
+    assignmentTypes: readonly string[];
+    statusId?: string;
+    now?: Date;
+  } & Pick<StatusEntryExtras, 'statusReason'>,
+): Promise<LeadRouteResult> {
   // Source: the process instance's real current Status, looked up server-side
   // — never the client-claimed `journeyId` — same reasoning as `editLead`.
   const source = await input.leadRepository.findProcessInstance(
@@ -272,6 +303,8 @@ export async function moveLeadJourney(input: {
       processInstanceId: input.processInstanceId,
       targetJourneyId: input.targetJourneyId,
       ...(input.statusId === undefined ? {} : { statusId: input.statusId }),
+      actor: await resolveLeadActor(input.permissionRepository, input.auth.user),
+      ...extrasFor(input, false),
     });
     return { status: 200, body: result };
   } catch (error) {
@@ -280,21 +313,23 @@ export async function moveLeadJourney(input: {
   }
 }
 
-export async function editLead(input: {
-  auth: AuthenticatedContext;
-  leadRepository: LeadRepository;
-  permissionRepository: PermissionRepository;
-  processInstanceId: string;
-  journeyId: string;
-  leadId: string;
-  assignmentTypes: readonly string[];
-  name?: string;
-  phone?: string | null;
-  email?: string | null;
-  fieldValues?: Record<string, unknown>;
-  statusId?: string;
-  now?: Date;
-}): Promise<LeadRouteResult> {
+export async function editLead(
+  input: {
+    auth: AuthenticatedContext;
+    leadRepository: LeadRepository;
+    permissionRepository: PermissionRepository;
+    processInstanceId: string;
+    journeyId: string;
+    leadId: string;
+    assignmentTypes: readonly string[];
+    name?: string;
+    phone?: string | null;
+    email?: string | null;
+    fieldValues?: Record<string, unknown>;
+    statusId?: string;
+    now?: Date;
+  } & StatusEntryExtras,
+): Promise<LeadRouteResult> {
   // The Status this axis gates is the record's *real, current* one — looked
   // up server-side, never the client-claimed `journeyId`/`processInstanceId`
   // pairing. Unlike `journeyId` alone (a wrong claim there only self-limits,
@@ -342,6 +377,8 @@ export async function editLead(input: {
         ...(input.email === undefined ? {} : { email: input.email }),
         ...(input.fieldValues === undefined ? {} : { fieldValues: input.fieldValues }),
         ...(input.statusId === undefined ? {} : { statusId: input.statusId }),
+        actor: await resolveLeadActor(input.permissionRepository, input.auth.user),
+        ...extrasFor(input, true),
       }),
     };
   } catch (error) {
@@ -524,7 +561,7 @@ export async function getLeadActivity(input: {
  * timeline. A lead can sit in several journeys and the viewer may be entitled
  * to only some of them.
  */
-async function resolveLeadAccess(input: {
+export async function resolveLeadAccess(input: {
   auth: AuthenticatedContext;
   leadId: string;
   sellerRepository: SellerReadRepository;

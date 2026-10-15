@@ -19,9 +19,29 @@ export interface LeadFieldSetting {
   journeyId: string;
   requirement: string;
   requiredFromStatusId: string | null;
+  /**
+   * ADR-0026 — for requirement `required_on_create`: the roles it applies to.
+   * Empty (or absent) = every role.
+   */
+  requiredRoleIds?: readonly string[];
   active: boolean;
   field: LeadFieldDefinition;
 }
+
+/** Every `fields.field_type` a value can be validated for (closes OD-020). */
+export const supportedFieldTypes = [
+  'text',
+  'textarea',
+  'email',
+  'phone',
+  'date',
+  'datetime',
+  'select',
+  'multi_select',
+  'number',
+  'boolean',
+  'json',
+] as const;
 
 export function validateNonBlank(value: string | null | undefined, label: string): string {
   const trimmed = value?.trim() ?? '';
@@ -73,6 +93,12 @@ export function validateFieldValues(input: {
   fieldValues: Record<string, unknown>;
   existingFieldValues?: Record<string, unknown>;
   statusId: string;
+  /**
+   * Present only when a lead is being *created* (ADR-0026): enforces
+   * `required_on_create` settings that apply to this role. `actorRoleId`
+   * absent means a system path — only role-agnostic settings apply.
+   */
+  creation?: { actorRoleId?: string };
 }): Record<string, unknown> {
   const settingsByField = new Map(input.settings.map((setting) => [setting.fieldId, setting]));
   const existing = input.existingFieldValues ?? {};
@@ -145,8 +171,12 @@ export function validateFieldValues(input: {
     if (!setting.active || !setting.field.active || setting.requirement === 'hidden') continue;
     if (setting.field.editMode === 'system') continue;
     const required =
-      setting.requirement === 'required' &&
-      (setting.requiredFromStatusId === null || setting.requiredFromStatusId === input.statusId);
+      (setting.requirement === 'required' &&
+        (setting.requiredFromStatusId === null ||
+          setting.requiredFromStatusId === input.statusId)) ||
+      (setting.requirement === 'required_on_create' &&
+        input.creation !== undefined &&
+        appliesToRole(setting.requiredRoleIds, input.creation.actorRoleId));
     if (required && isMissing(merged[setting.fieldId])) {
       throw new LeadError('validation_error', 'required field is missing', {
         fieldId: setting.fieldId,
@@ -187,11 +217,25 @@ function computeSystemValue(key: string, fieldValues: Readonly<Record<string, un
   return undefined;
 }
 
+function appliesToRole(
+  requiredRoleIds: readonly string[] | undefined,
+  actorRoleId: string | undefined,
+): boolean {
+  if (requiredRoleIds === undefined || requiredRoleIds.length === 0) return true;
+  return actorRoleId !== undefined && requiredRoleIds.includes(actorRoleId);
+}
+
 function isMissing(value: unknown): boolean {
   return (
-    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '') ||
+    (Array.isArray(value) && value.length === 0)
   );
 }
+
+/** ISO-8601 calendar date and time, with an optional offset. */
+const dateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})?$/;
 
 function validateValue(
   fieldId: string,
@@ -209,6 +253,28 @@ function validateValue(
     case 'select':
       if (typeof value !== 'string') throw invalid(fieldId, fieldType);
       break;
+    case 'datetime':
+      if (
+        typeof value !== 'string' ||
+        !dateTimePattern.test(value) ||
+        Number.isNaN(Date.parse(value))
+      )
+        throw invalid(fieldId, fieldType);
+      break;
+    case 'multi_select': {
+      if (
+        !Array.isArray(value) ||
+        value.some((item) => typeof item !== 'string' || item.trim() === '') ||
+        new Set(value).size !== value.length
+      )
+        throw invalid(fieldId, fieldType);
+      const options = optionsOf(validationRule);
+      if (options !== null && value.some((item) => !options.includes(item as string)))
+        throw new LeadError('validation_error', 'value is not one of the field options', {
+          fieldId,
+        });
+      break;
+    }
     case 'number':
       if (typeof value !== 'number' || !Number.isFinite(value)) throw invalid(fieldId, fieldType);
       break;
@@ -235,6 +301,12 @@ function validateValue(
       throw new LeadError('validation_error', 'field validation rule failed', { fieldId });
     }
   }
+}
+
+function optionsOf(validationRule: unknown): readonly string[] | null {
+  if (!isRuleObject(validationRule)) return null;
+  const options = (validationRule as { options?: unknown }).options;
+  return Array.isArray(options) ? options.filter((o): o is string => typeof o === 'string') : null;
 }
 
 function invalid(fieldId: string, fieldType: string): LeadError {

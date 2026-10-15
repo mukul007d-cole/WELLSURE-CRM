@@ -52,13 +52,18 @@ export interface Filter {
  * one kind — `text`, `textarea`, `email` and `phone` all compare as text — so
  * the catalog is keyed by kind rather than by type.
  */
-export type FilterKind = 'text' | 'number' | 'date' | 'select' | 'boolean' | 'opaque';
+export type FilterKind =
+  'text' | 'number' | 'date' | 'datetime' | 'select' | 'multi' | 'boolean' | 'opaque';
 
 const operatorsByKind: Record<FilterKind, readonly FilterOperator[]> = {
   text: ['equals', 'contains', 'starts_with', 'is_empty', 'is_not_empty'],
   number: ['equals', 'greater_than', 'less_than', 'between', 'is_empty'],
   date: ['before', 'after', 'between', 'is_empty'],
+  // Compared by calendar day: the filter UI picks days, not instants.
+  datetime: ['before', 'after', 'between', 'is_empty'],
   select: ['in', 'not_in'],
+  // A multi-select matches `in` when it holds *any* of the values.
+  multi: ['in', 'not_in', 'is_empty', 'is_not_empty'],
   boolean: ['is_true', 'is_false'],
   // `json` values have no ordering or equality the engine can rely on, so only
   // presence is offered.
@@ -81,8 +86,12 @@ export function filterKindForFieldType(fieldType: string): FilterKind | null {
       return 'number';
     case 'date':
       return 'date';
+    case 'datetime':
+      return 'datetime';
     case 'select':
       return 'select';
+    case 'multi_select':
+      return 'multi';
     case 'boolean':
       return 'boolean';
     case 'json':

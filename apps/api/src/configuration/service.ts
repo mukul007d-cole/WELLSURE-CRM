@@ -14,9 +14,13 @@ import {
   requireNonBlank,
   requireNonNegativeInteger,
   requireOneOf,
+  requireReasonOptions,
   requireSystemKey,
+  requireUniqueIds,
   statusBehaviorTypes,
+  statusColors,
   statusOutcomeTypes,
+  supportedFieldTypes,
 } from './validation.js';
 
 export interface ConfigRow {
@@ -142,6 +146,18 @@ export interface ConfigurationRepository extends ConfigurationAuditWriter, LeadA
     roleId: string;
     accessLevel: string;
   }): Promise<ConfigRow>;
+  /** ADR-0026 — role ids that exist in the organization and are active. */
+  listActiveRoleIds(organizationId: string, roleIds: readonly string[]): Promise<string[]>;
+  getStatusRules(
+    organizationId: string,
+    statusId: string,
+  ): Promise<{ allowedRoleIds: string[]; requiredFieldIds: string[] }>;
+  replaceStatusRules(input: {
+    organizationId: string;
+    statusId: string;
+    allowedRoleIds: readonly string[];
+    requiredFieldIds: readonly string[];
+  }): Promise<void>;
   deleteFieldVisibility(
     organizationId: string,
     fieldId: string,
@@ -295,6 +311,8 @@ export class ConfigurationService {
     outcomeType: string;
     behaviorType: string;
     sortOrder: number;
+    color?: string | null;
+    reasonOptions?: unknown;
   }) {
     return this.repository.transaction(async (tx) => {
       await requireFound(tx.findJourney(input.organizationId, input.journeyId));
@@ -312,6 +330,7 @@ export class ConfigurationService {
         outcomeType: requireOneOf(input.outcomeType, statusOutcomeTypes, 'outcome type'),
         behaviorType: requireOneOf(input.behaviorType, statusBehaviorTypes, 'behavior type'),
         sortOrder: requireNonNegativeInteger(input.sortOrder, 'sort order'),
+        ...statusPresentation(input),
         createdById: input.actorUserId,
         updatedById: input.actorUserId,
       });
@@ -397,6 +416,8 @@ export class ConfigurationService {
     outcomeType: string;
     behaviorType: string;
     sortOrder: number;
+    color?: string | null;
+    reasonOptions?: unknown;
   }) {
     return this.repository.transaction(async (tx) => {
       const oldValue = await requireFound(tx.findStatus(input.organizationId, input.statusId));
@@ -408,12 +429,66 @@ export class ConfigurationService {
           outcomeType: requireOneOf(input.outcomeType, statusOutcomeTypes, 'outcome type'),
           behaviorType: requireOneOf(input.behaviorType, statusBehaviorTypes, 'behavior type'),
           sortOrder: requireNonNegativeInteger(input.sortOrder, 'sort order'),
+          ...statusPresentation(input),
           updatedById: input.actorUserId,
         }),
       );
       await tx.writeSystemAudit(audit(input, 'status', input.statusId, 'edit', oldValue, row));
       return row;
     });
+  }
+
+  /**
+   * ADR-0026 — replace a Status's "Allowed roles" and "Required to enter"
+   * Fields as one set. Each required Field must be shown on the Status's
+   * Journey (an active, non-hidden setting): one that is not could never be
+   * filled in, and would make the Status unreachable.
+   */
+  async replaceStatusRules(input: {
+    organizationId: string;
+    actorUserId: string;
+    statusId: string;
+    allowedRoleIds: unknown;
+    requiredFieldIds: unknown;
+  }) {
+    const allowedRoleIds = requireUniqueIds(input.allowedRoleIds, 'allowedRoleIds');
+    const requiredFieldIds = requireUniqueIds(input.requiredFieldIds, 'requiredFieldIds');
+    return this.repository.transaction(async (tx) => {
+      const status = await requireFound(tx.findStatus(input.organizationId, input.statusId));
+      const roles = await tx.listActiveRoleIds(input.organizationId, allowedRoleIds);
+      if (roles.length !== allowedRoleIds.length)
+        throw new ConfigurationError('validation_error', 'every allowed role must be active', {
+          unknownRoleIds: allowedRoleIds.filter((id) => !roles.includes(id)),
+        });
+      const shown = new Set(
+        (await tx.listJourneyFieldSettings(input.organizationId, status.journeyId as string))
+          .filter((row) => row.requirement !== 'hidden')
+          .map((row) => row.fieldId as string),
+      );
+      const unshown = requiredFieldIds.filter((id) => !shown.has(id));
+      if (unshown.length > 0)
+        throw new ConfigurationError(
+          'validation_error',
+          'every required field must be shown on the status journey',
+          { fieldIds: unshown },
+        );
+      const oldValue = await tx.getStatusRules(input.organizationId, input.statusId);
+      await tx.replaceStatusRules({
+        organizationId: input.organizationId,
+        statusId: input.statusId,
+        allowedRoleIds,
+        requiredFieldIds,
+      });
+      const newValue = { allowedRoleIds, requiredFieldIds };
+      await tx.writeSystemAudit(
+        audit(input, 'status_rules', input.statusId, 'edit', oldValue, newValue),
+      );
+      return { statusId: input.statusId, ...newValue };
+    });
+  }
+
+  getStatusRules(input: { organizationId: string; statusId: string }) {
+    return this.repository.getStatusRules(input.organizationId, input.statusId);
   }
 
   async reorderStatuses(input: {
@@ -570,7 +645,7 @@ export class ConfigurationService {
           tx.fieldKeyExists(input.organizationId, candidate),
         ),
       );
-      const fieldType = requireNonBlank(input.fieldType, 'field type');
+      const fieldType = requireOneOf(input.fieldType, supportedFieldTypes, 'field type');
       const editMode = requireOneOf(input.editMode, fieldEditModes, 'edit mode');
       const validationRule = await this.withModeConfig(tx, {
         organizationId: input.organizationId,
@@ -640,7 +715,7 @@ export class ConfigurationService {
   }) {
     return this.repository.transaction(async (tx) => {
       const oldValue = await requireFound(tx.findField(input.organizationId, input.fieldId));
-      const fieldType = requireNonBlank(input.fieldType, 'field type');
+      const fieldType = requireOneOf(input.fieldType, supportedFieldTypes, 'field type');
       const editMode = requireOneOf(input.editMode, fieldEditModes, 'edit mode');
       const validationRule = await this.withModeConfig(tx, {
         organizationId: input.organizationId,
@@ -784,9 +859,25 @@ export class ConfigurationService {
     journeyId: string;
     requirement: string;
     requiredFromStatusId?: string | null;
+    /** ADR-0026 — only with `required_on_create`; empty = every role. */
+    requiredRoleIds?: unknown;
   }) {
     return this.map(input, 'field_journey_setting', async (tx) => {
       const requirement = requireOneOf(input.requirement, fieldRequirements, 'field requirement');
+      const requiredRoleIds =
+        input.requiredRoleIds === undefined
+          ? []
+          : requireUniqueIds(input.requiredRoleIds, 'requiredRoleIds');
+      if (requiredRoleIds.length > 0) {
+        if (requirement !== 'required_on_create')
+          throw new ConfigurationError(
+            'validation_error',
+            'requiredRoleIds only has an effect when requirement is required_on_create',
+          );
+        const roles = await tx.listActiveRoleIds(input.organizationId, requiredRoleIds);
+        if (roles.length !== requiredRoleIds.length)
+          throw new ConfigurationError('validation_error', 'every required role must be active');
+      }
       if (input.requiredFromStatusId !== undefined && input.requiredFromStatusId !== null) {
         // The required-from-status narrowing only has an effect when the
         // Field is also `required`: `validateFieldValues` only checks it at
@@ -813,6 +904,7 @@ export class ConfigurationService {
         journeyId: input.journeyId,
         requirement,
         requiredFromStatusId: input.requiredFromStatusId ?? null,
+        requiredRoleIds,
       });
     });
   }
@@ -889,6 +981,18 @@ export class ConfigurationService {
       return row;
     });
   }
+}
+
+/** ADR-0026 — color and reason options, validated; absent keys are left unchanged. */
+function statusPresentation(input: { color?: string | null; reasonOptions?: unknown }) {
+  return {
+    ...(input.color === undefined
+      ? {}
+      : { color: input.color === null ? null : requireOneOf(input.color, statusColors, 'color') }),
+    ...(input.reasonOptions === undefined
+      ? {}
+      : { reasonOptions: requireReasonOptions(input.reasonOptions) }),
+  };
 }
 
 function audit(

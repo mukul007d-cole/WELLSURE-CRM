@@ -11,7 +11,9 @@ export interface LeadActivityInput {
     | 'share_changed'
     | 'lead_deactivated'
     // A process instance moved to a different journey.
-    | 'journey_change';
+    | 'journey_change'
+    // ADR-0026 — a follow-up scheduled, rescheduled or completed.
+    | 'follow_up';
   source: string;
   oldValue: unknown;
   newValue: unknown;

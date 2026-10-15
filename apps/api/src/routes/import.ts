@@ -5,6 +5,7 @@ import { isCsvError } from '@falcon/validation';
 import { isImportError } from '../import/errors.js';
 import type { ImportService } from '../import/service.js';
 import type { ImportMapping } from '../import/types.js';
+import { resolveLeadActor } from '../leads/status-rules.js';
 
 export const importAction = 'import' as const;
 export const createAction = 'create' as const;
@@ -202,6 +203,8 @@ export async function runImport(input: {
         content: input.content,
         mapping: input.mapping,
         ...(input.stopOnError === undefined ? {} : { stopOnError: input.stopOnError }),
+        // ADR-0026 — status rules apply to import, because import runs createLead.
+        actor: await resolveLeadActor(input.permissionRepository, input.auth.user),
         // An importer with no `leads:view` scope at all can still import; they
         // simply cannot be told the identity of anything they matched.
         recordPredicate: view.recordPredicate ?? {

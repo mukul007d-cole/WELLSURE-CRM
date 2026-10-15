@@ -261,6 +261,19 @@ export function coerceCell(fieldType: string, raw: string): unknown {
         throw invalid('value is not valid JSON');
       }
     }
+    case 'multi_select':
+      // "a, b; c" → ["a", "b", "c"]; option membership is `validateValue`'s call.
+      return [
+        ...new Set(
+          value
+            .split(/[;,]/)
+            .map((item) => item.trim())
+            .filter((item) => item !== ''),
+        ),
+      ];
+    case 'datetime':
+      // Spreadsheets write "2026-01-31 14:05:00"; the stored form is ISO-8601.
+      return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value) ? value.replace(' ', 'T') : value;
     default:
       // text, textarea, email, phone, date, select — and any Field type added
       // later, which reaches `validateValue` as a string and is judged there
