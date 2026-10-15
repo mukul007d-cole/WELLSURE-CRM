@@ -37,13 +37,17 @@ export function useColumnQuery(journeyId: string, statusId: string) {
 export function BoardColumn({
   journeyId,
   status,
-  statuses,
+  moveTargets,
+  acceptsDrop,
   canEdit,
   onMove,
 }: {
   journeyId: string;
   status: Status;
-  statuses: Status[];
+  /** The statuses this viewer may choose — what each card's Move menu offers. */
+  moveTargets: Status[];
+  /** False for a status this viewer's role can't choose: drops are refused. */
+  acceptsDrop: boolean;
   canEdit: boolean;
   onMove: (args: {
     row: SellerListResponse['rows'][number];
@@ -53,7 +57,11 @@ export function BoardColumn({
   }) => void;
 }) {
   const query = useColumnQuery(journeyId, status.id);
-  const { setNodeRef, isOver } = useDroppable({ id: status.id, data: { status } });
+  const { setNodeRef, isOver } = useDroppable({
+    id: status.id,
+    data: { status },
+    disabled: !acceptsDrop,
+  });
 
   const rows = columnRows(query.data);
   // The server's scoped count, not the number of rows loaded so far.
@@ -114,7 +122,7 @@ export function BoardColumn({
                     ownerName: process.ownerName,
                   }}
                   status={status}
-                  statuses={statuses}
+                  statuses={moveTargets}
                   canEdit={canEdit}
                   onMove={(toStatus) =>
                     onMove({

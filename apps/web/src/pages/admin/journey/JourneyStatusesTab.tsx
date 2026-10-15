@@ -12,14 +12,14 @@ import { friendlyErrorMessage } from '../../../lib/api-error';
 import { cn } from '../../../lib/cn';
 import type { Status } from '../../../types/domain';
 import type { MultiSelectOption } from './CheckboxMultiSelect';
+import { StatusEditor } from './StatusEditor';
 import {
-  StatusEditor,
   fromStatus,
   newStatusDraft,
   rulesChanged,
   statusBody,
   type StatusDraft,
-} from './StatusEditor';
+} from './status-draft';
 import { STATUS_SWATCH_CLASS, colorLabel } from './status-colors';
 import { useActiveRoleOptions, type JourneyFieldRow } from './queries';
 

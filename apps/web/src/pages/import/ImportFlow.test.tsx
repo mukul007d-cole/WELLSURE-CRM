@@ -134,8 +134,10 @@ describe('bulk import flow', () => {
   });
 
   it('shows the nav entry with the grant', async () => {
+    // Import now lives in the Admin area's "Data" group (Phase 24, D12); the
+    // sidebar carries the single Admin entry that leads there.
     renderAs('user-admin', <Sidebar />, '/import');
-    expect(await screen.findByText(/import leads/i)).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Admin' })).toBeInTheDocument();
   });
 });
 

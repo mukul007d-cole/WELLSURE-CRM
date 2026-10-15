@@ -275,14 +275,16 @@ describe('Journey-limited grants (ADR-0026)', () => {
 
     // Only a granted row has a limit to set; role-sales-rep holds `leads:view` only.
     const trigger = await screen.findByRole('button', {
-      name: 'Leads view journeys: Only in journeys…',
+      name: /^Leads view journeys:\s*Only in journeys…$/,
     });
     expect(screen.queryByRole('button', { name: /^Leads edit journeys/ })).not.toBeInTheDocument();
+    // Journey names arrive with their own query.
+    await within(section('Journey access')).findByRole('checkbox', { name: 'Journey Beta' });
 
     fireEvent.click(trigger);
     const panel = screen.getByRole('group', { name: 'Leads view journeys' });
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'Journey Beta' }));
-    expect(trigger).toHaveAccessibleName('Leads view journeys: Only in Journey Beta');
+    expect(trigger).toHaveAccessibleName(/^Leads view journeys:\s*Only in Journey Beta$/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Save feature permissions' }));
     await vi.waitFor(() => expect(puts('/roles/role-sales-rep/permissions')).toHaveLength(1));
@@ -317,7 +319,7 @@ describe('Journey-limited grants (ADR-0026)', () => {
     renderRole('role-sales-rep');
 
     expect(
-      await screen.findByRole('button', { name: 'Leads view journeys: Only in Journey Gamma' }),
+      await screen.findByRole('button', { name: /^Leads view journeys:\s*Only in Journey Gamma$/ }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: 'export' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save feature permissions' }));

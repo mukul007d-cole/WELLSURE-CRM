@@ -24,7 +24,10 @@ import { DataCell, DataRow, DataTable, RowActions } from '../../components/ui/Da
 import { usePageChrome } from '../../app/page-chrome';
 import { usePreferences } from '../../app/preferences';
 import { qk } from '../../lib/query-keys';
-import type { StatusChangeRejection } from '../../lib/status-change';
+import {
+  ROLE_NOT_ALLOWED_MESSAGE,
+  type StatusEntryRejection,
+} from '../../components/leads/status-entry';
 import { ColumnManager } from './ColumnManager';
 import { SellerStatusCell } from './SellerStatusCell';
 
@@ -67,11 +70,11 @@ export function SellerListPage() {
     setSearchDraft(search);
   }
 
-  // Inline status-change feedback (see SellerStatusCell): a missing-field
-  // rejection gets its own dialog, rendered by the cell itself; every other
-  // outcome is reported here, matching how BoardPage surfaces the same
-  // rejection kinds as a page-level banner plus an aria-live announcement.
-  const [statusChangeRejection, setStatusChangeRejection] = useState<StatusChangeRejection | null>(
+  // Inline status-change feedback (see SellerStatusCell): missing Fields
+  // re-open the cell's own status-change dialog; every other outcome is
+  // reported here, matching how BoardPage surfaces the same rejection kinds
+  // as a page-level banner plus an aria-live announcement.
+  const [statusChangeRejection, setStatusChangeRejection] = useState<StatusEntryRejection | null>(
     null,
   );
   const [statusChangeAnnouncement, setStatusChangeAnnouncement] = useState('');
@@ -216,13 +219,15 @@ export function SellerListPage() {
         {exportMutation.error ? (
           <Banner tone="error">{friendlyErrorMessage(exportMutation.error)}</Banner>
         ) : null}
-        {statusChangeRejection && statusChangeRejection.kind !== 'missing_field' ? (
+        {statusChangeRejection && statusChangeRejection.kind !== 'missing_fields' ? (
           <Banner tone="error">
-            {statusChangeRejection.kind === 'forbidden'
-              ? "You don't have permission to change that seller's status."
-              : statusChangeRejection.kind === 'stale_status'
-                ? "That status isn't available on this journey any more — the list has been refreshed."
-                : friendlyErrorMessage(statusChangeRejection.error)}
+            {statusChangeRejection.kind === 'role_not_allowed'
+              ? ROLE_NOT_ALLOWED_MESSAGE
+              : statusChangeRejection.kind === 'forbidden'
+                ? "You don't have permission to change that seller's status."
+                : statusChangeRejection.kind === 'stale_status'
+                  ? "That status isn't available on this journey any more — the list has been refreshed."
+                  : friendlyErrorMessage(statusChangeRejection.error)}
           </Banner>
         ) : null}
 
@@ -445,19 +450,20 @@ export function SellerListPage() {
                               <SellerStatusCell
                                 row={row}
                                 process={process}
-                                onRejected={(result) => {
+                                onRejected={(result, variables) => {
                                   setStatusChangeRejection(result);
                                   setStatusChangeAnnouncement(
-                                    result.kind === 'missing_field'
-                                      ? `Status change refused. ${row.name} stayed in ${result.variables.fromStatus.name} because a required field is missing.`
+                                    result.kind === 'missing_fields'
+                                      ? `Status change refused. ${row.name} stayed in ${variables.fromStatus.name} because a required field is missing.`
                                       : `Status change refused for ${row.name}. It stayed in its current status.`,
                                   );
                                 }}
-                                onMoved={(variables) =>
+                                onMoved={(variables) => {
+                                  setStatusChangeRejection(null);
                                   setStatusChangeAnnouncement(
                                     `Changed ${row.name}'s status to ${variables.toStatus.name}.`,
-                                  )
-                                }
+                                  );
+                                }}
                               />
                             ) : (
                               <StatusPill

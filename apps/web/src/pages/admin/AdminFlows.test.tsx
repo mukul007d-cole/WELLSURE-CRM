@@ -225,6 +225,37 @@ describe('administration resource flows', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate' }).at(-1) as HTMLElement);
   });
 
+  it('creates a multiple-choice Field with the same options editor as select', async () => {
+    let createBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/v1/fields', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { ...createBody, id: 'field-new', key: 'synthetic_multi', active: true, sortOrder: 99 },
+          { status: 201 },
+        );
+      }),
+    );
+    renderPage(<FieldsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Create Field' }));
+    // Both Phase 24 types are offered, under readable labels.
+    expect(screen.getByRole('option', { name: 'Date & time' })).toHaveValue('datetime');
+    expect(screen.getByRole('option', { name: 'Multiple choice' })).toHaveValue('multi_select');
+
+    change('Name', 'Synthetic Multi');
+    change('Type', 'multi_select');
+    // Like select, it cannot be saved without options.
+    expect(screen.getByRole('button', { name: 'Save Field' })).toBeDisabled();
+    change('Options', 'One\n Two \n\nThree');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Field' }));
+
+    await waitFor(() => expect(createBody).toBeDefined());
+    expect(createBody).toMatchObject({
+      fieldType: 'multi_select',
+      validationRule: { options: ['One', 'Two', 'Three'] },
+    });
+  });
+
   it('grants a new Field to roles in one request, not one call per role', async () => {
     const visibilityWrites: Array<{ url: string; body: unknown }> = [];
     server.use(

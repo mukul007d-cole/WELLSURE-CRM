@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { StatusChangeRejectedDialog } from '../../components/leads/StatusChangeRejectedDialog';
+import type { StatusEntryRejection } from '../../components/leads/status-entry';
+import { useStatusChangeFlow } from '../../components/leads/useStatusChangeFlow';
+import { useStatusChoices } from '../../components/leads/useStatusChoices';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { configApi } from '../../lib/api-client';
 import { qk } from '../../lib/query-keys';
-import type { StatusChangeRejection, StatusChangeVariables } from '../../lib/status-change';
 import type { SellerListRow, Status } from '../../types/domain';
-import { useSellerStatusChange } from './useSellerStatusChange';
+import { useSellerStatusChange, type SellerStatusChangeVariables } from './useSellerStatusChange';
 
 type SellerProcess = NonNullable<SellerListRow['processInstances']>[number];
 
@@ -48,8 +49,8 @@ export function SellerStatusCell({
 }: {
   row: SellerListRow;
   process: SellerProcess;
-  onRejected: (rejection: StatusChangeRejection) => void;
-  onMoved: (variables: StatusChangeVariables) => void;
+  onRejected: (rejection: StatusEntryRejection, variables: SellerStatusChangeVariables) => void;
+  onMoved: (variables: SellerStatusChangeVariables) => void;
 }) {
   const statusesQuery = useQuery({
     queryKey: qk.journeyStatuses(process.journeyId),
@@ -57,8 +58,11 @@ export function SellerStatusCell({
     staleTime: 300_000,
   });
 
+  const chooseStatuses = useStatusChoices();
   const fetchedStatuses = statusesQuery.data ?? [];
-  const activeStatuses = fetchedStatuses.filter((status) => status.isActive);
+  // Only what this role may choose (ADR-0026 allowed roles) — plus the
+  // current status below, which has to stay selectable as the value.
+  const activeStatuses = chooseStatuses(fetchedStatuses.filter((status) => status.isActive));
   const currentStatus =
     fetchedStatuses.find((status) => status.id === process.statusId) ?? fallbackStatus(process);
   const options = activeStatuses.some((status) => status.id === currentStatus.id)
@@ -73,32 +77,35 @@ export function SellerStatusCell({
   // config rejects.
   const [syncedStatusId, setSyncedStatusId] = useState(process.statusId);
   const [pendingStatusId, setPendingStatusId] = useState(process.statusId);
-  const [rejection, setRejection] = useState<StatusChangeRejection | null>(null);
   if (process.statusId !== syncedStatusId) {
     setSyncedStatusId(process.statusId);
     setPendingStatusId(process.statusId);
   }
 
-  // Only worth asking for once a missing-field rejection actually needs a
-  // label — same no-label-for-a-403 fallback the Board's dialog already uses.
-  const fieldsQuery = useQuery({
-    queryKey: qk.fields(),
-    queryFn: configApi.fields,
-    retry: false,
-    enabled: rejection?.kind === 'missing_field',
+  const flow = useStatusChangeFlow<SellerStatusChangeVariables>({
+    subject: (variables) => ({
+      leadId: variables.row.id,
+      leadName: variables.row.name,
+      journeyId: variables.journeyId,
+      fromStatusName: variables.fromStatus.name,
+      toStatus: variables.toStatus,
+    }),
+    submit: (variables, entry) => mutation.mutate({ ...variables, entry }),
+    // Cancelling means "don't change it", so stop offering to save.
+    onCancel: () => setPendingStatusId(process.statusId),
   });
-  const fieldLabel =
-    rejection?.kind === 'missing_field'
-      ? ((fieldsQuery.data ?? []).find((field) => field.id === rejection.fieldId)?.label ?? null)
-      : null;
 
   const mutation = useSellerStatusChange({
-    onRejected: (result) => {
+    onRejected: (result, variables) => {
       // Nothing was patched optimistically, so there's nothing to revert —
       // just stop offering to save the attempted value.
       setPendingStatusId(process.statusId);
-      setRejection(result);
-      onRejected(result);
+      // Missing Fields re-open the dialog to collect them; the page reports
+      // every outcome (including that one) to assistive tech.
+      if (result.kind === 'missing_fields') {
+        flow.promptForFields(variables, variables.entry, result.fieldIds);
+      }
+      onRejected(result, variables);
     },
     onMoved: (variables) => onMoved(variables),
   });
@@ -108,7 +115,7 @@ export function SellerStatusCell({
   function handleSave() {
     const toStatus = options.find((status) => status.id === pendingStatusId);
     if (!toStatus) return;
-    mutation.mutate({
+    flow.request({
       row,
       processInstanceId: process.processInstanceId,
       journeyId: process.journeyId,
@@ -154,12 +161,11 @@ export function SellerStatusCell({
         </Button>
       ) : null}
 
-      {rejection?.kind === 'missing_field' ? (
-        <StatusChangeRejectedDialog
-          variables={rejection.variables}
-          fieldLabel={fieldLabel}
-          onClose={() => setRejection(null)}
-        />
+      {flow.dialog ? (
+        // The dialog sits inside a clickable table row; without this, every
+        // click in it would bubble up and open the seller instead.
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+        <div onClick={(event) => event.stopPropagation()}>{flow.dialog}</div>
       ) : null}
     </div>
   );

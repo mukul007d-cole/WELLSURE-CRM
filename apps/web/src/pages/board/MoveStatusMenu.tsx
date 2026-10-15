@@ -16,12 +16,15 @@ export function MoveStatusMenu({
   currentStatusId,
   onSelect,
   accessibleName,
+  label = 'Move',
 }: {
   statuses: Status[];
   currentStatusId: string;
   onSelect: (status: Status) => void;
-  /** Reads as "Move Acme Ltd" to assistive tech; the button shows just "Move". */
+  /** Reads as "Move Acme Ltd" to assistive tech; the button shows just `label`. */
   accessibleName: string;
+  /** The visible button text; the Seller 360 record says "Change status". */
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,7 +51,7 @@ export function MoveStatusMenu({
         aria-label={accessibleName}
         className="rounded-control px-2 py-1 text-xs font-medium text-ink-soft transition-colors hover:bg-paper hover:text-ink"
       >
-        Move
+        {label}
       </button>
 
       {open ? (

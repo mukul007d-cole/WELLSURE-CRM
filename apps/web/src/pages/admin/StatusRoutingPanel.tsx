@@ -41,7 +41,7 @@ function toDraft(rule: RoutingRule | null): Draft {
 }
 
 /**
- * Routing for one Status, inside the Journey's Statuses list.
+ * Routing for one Status, on the Journey editor's Routing tab.
  *
  * Two sections, as specified: the rule itself, and the per-Status role grants.
  * The second only renders for someone who can edit permissions — granting

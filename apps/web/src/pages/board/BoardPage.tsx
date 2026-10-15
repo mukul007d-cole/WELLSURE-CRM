@@ -27,7 +27,9 @@ import { qk } from '../../lib/query-keys';
 import type { SellerListRow, Status } from '../../types/domain';
 import { PageHeader } from '../../components/layout/PageFrame';
 import { ViewSwitcher } from '../../components/layout/ViewSwitcher';
-import { StatusChangeRejectedDialog } from '../../components/leads/StatusChangeRejectedDialog';
+import { ROLE_NOT_ALLOWED_MESSAGE } from '../../components/leads/status-entry';
+import { useStatusChangeFlow } from '../../components/leads/useStatusChangeFlow';
+import { useStatusChoices } from '../../components/leads/useStatusChoices';
 import { BoardCardBody } from './BoardCard';
 import { BoardColumn } from './BoardColumn';
 import { adjacentColumnCoordinates } from './keyboard-coordinates';
@@ -68,22 +70,40 @@ export function BoardPage() {
   });
 
   const statuses = (statusesQuery.data ?? []).filter((status) => status.isActive);
+  // Every column still shows; only the ones this role may choose accept a
+  // card or appear in a Move menu (ADR-0026 allowed roles).
+  const chooseStatuses = useStatusChoices();
+  const moveTargets = chooseStatuses(statuses);
+  const moveTargetIds = new Set(moveTargets.map((status) => status.id));
 
-  const fieldsQuery = useQuery({
-    queryKey: qk.fields(),
-    queryFn: configApi.fields,
-    // Field labels sit behind fields:view; the dialog copes without them.
-    retry: false,
+  const flow = useStatusChangeFlow<MoveVariables>({
+    subject: (variables) => ({
+      leadId: variables.row.id,
+      leadName: variables.row.name,
+      journeyId: variables.journeyId,
+      fromStatusName: variables.fromStatus.name,
+      toStatus: variables.toStatus,
+    }),
+    submit: (variables, entry) => {
+      setAnnouncement(`Moving ${variables.row.name} to ${variables.toStatus.name}…`);
+      move.mutate({ ...variables, entry });
+    },
   });
 
   const move = useMoveLeadStatus({
-    onRejected: (result) => {
+    onRejected: (result, variables) => {
+      if (result.kind === 'missing_fields') {
+        // Not a dead end: the dialog asks for exactly what the server named,
+        // keeping whatever the previous attempt already carried.
+        setRejection(null);
+        flow.promptForFields(variables, variables.entry, result.fieldIds);
+        setAnnouncement(
+          `Move refused. ${variables.row.name} stayed in ${variables.fromStatus.name} because a required field is missing.`,
+        );
+        return;
+      }
       setRejection(result);
-      setAnnouncement(
-        result.kind === 'missing_field'
-          ? `Move refused. ${result.variables.row.name} stayed in ${result.variables.fromStatus.name} because a required field is missing.`
-          : 'Move refused. The card returned to its original column.',
-      );
+      setAnnouncement('Move refused. The card returned to its original column.');
     },
     onMoved: (variables) =>
       setAnnouncement(`Moved ${variables.row.name} to ${variables.toStatus.name}.`),
@@ -96,9 +116,16 @@ export function BoardPage() {
     toStatus: Status;
   }) => {
     if (!journeyId) return;
-    const variables: MoveVariables = { ...args, journeyId };
-    setAnnouncement(`Moving ${args.row.name} to ${args.toStatus.name}…`);
-    move.mutate(variables);
+    setRejection(null);
+    if (!moveTargetIds.has(args.toStatus.id)) {
+      // Columns that refuse drops can't normally be reached; this covers a
+      // drop that raced a capability refresh.
+      setRejection({ kind: 'role_not_allowed' });
+      return;
+    }
+    // Opens the status-change dialog first when the destination asks for a
+    // reason, a follow-up or required Fields; otherwise saves straight away.
+    flow.request({ ...args, journeyId });
   };
 
   const onDragStart = (event: DragStartEvent) => {
@@ -160,11 +187,6 @@ export function BoardPage() {
     (journeysQuery.error instanceof ApiError && journeysQuery.error.status === 403) ||
     (statusesQuery.error instanceof ApiError && statusesQuery.error.status === 403);
 
-  const fieldLabel =
-    rejection?.kind === 'missing_field'
-      ? ((fieldsQuery.data ?? []).find((field) => field.id === rejection.fieldId)?.label ?? null)
-      : null;
-
   const visibleStatuses =
     mobileStatusId === undefined
       ? statuses
@@ -197,13 +219,15 @@ export function BoardPage() {
           </Banner>
         ) : null}
 
-        {rejection && rejection.kind !== 'missing_field' ? (
+        {rejection && rejection.kind !== 'missing_fields' ? (
           <Banner tone="error">
-            {rejection.kind === 'forbidden'
-              ? "You don't have permission to move that seller."
-              : rejection.kind === 'stale_status'
-                ? "That status isn't available on this journey any more — the board has been refreshed."
-                : friendlyErrorMessage(rejection.error)}
+            {rejection.kind === 'role_not_allowed'
+              ? ROLE_NOT_ALLOWED_MESSAGE
+              : rejection.kind === 'forbidden'
+                ? "You don't have permission to move that seller."
+                : rejection.kind === 'stale_status'
+                  ? "That status isn't available on this journey any more — the board has been refreshed."
+                  : friendlyErrorMessage(rejection.error)}
           </Banner>
         ) : null}
       </div>
@@ -280,7 +304,8 @@ export function BoardPage() {
                     key={status.id}
                     journeyId={journeyId}
                     status={status}
-                    statuses={statuses}
+                    moveTargets={moveTargets}
+                    acceptsDrop={moveTargetIds.has(status.id)}
                     canEdit={canEdit}
                     onMove={runMove}
                   />
@@ -307,13 +332,7 @@ export function BoardPage() {
         {announcement}
       </p>
 
-      {rejection?.kind === 'missing_field' ? (
-        <StatusChangeRejectedDialog
-          variables={rejection.variables}
-          fieldLabel={fieldLabel}
-          onClose={() => setRejection(null)}
-        />
-      ) : null}
+      {flow.dialog}
     </div>
   );
 }

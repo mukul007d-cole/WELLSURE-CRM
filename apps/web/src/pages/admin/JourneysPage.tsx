@@ -91,7 +91,13 @@ export function JourneysPage() {
           <DataRow key={journey.id}>
             <DataCell primary>{journey.name}</DataCell>
             <DataCell>{journey.key}</DataCell>
-            <DataCell>{journey.active ? 'Active' : 'Inactive'}</DataCell>
+            <DataCell>
+              {journey.active ? 'Active' : 'Inactive'}
+              {/* ADR-0026: worth seeing at a glance, since it narrows who can work it. */}
+              {journey.restrictToMembers ? (
+                <span className="ml-2 text-xs text-ink-soft">Members only</span>
+              ) : null}
+            </DataCell>
             <DataCell align="right">
               {/* Manage stays outside RowActions — it is the row's primary
                   destination, not a hover-revealed extra. */}

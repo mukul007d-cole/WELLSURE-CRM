@@ -1,15 +1,19 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import {
+  classifyStatusEntryRejection,
+  type StatusEntryRejection,
+  type StatusEntryValues,
+} from '../../components/leads/status-entry';
 import { sellersApi } from '../../lib/api-client';
 import { qk } from '../../lib/query-keys';
-import {
-  classifyStatusChangeRejection,
-  type StatusChangeRejection,
-  type StatusChangeVariables,
-} from '../../lib/status-change';
+import type { StatusChangeVariables } from '../../lib/status-change';
 import type { SellerListResponse } from '../../types/domain';
 import { insertRowAtHead, patchRowStatus, removeRow, type ColumnData } from './board-cache';
 
-export type MoveVariables = StatusChangeVariables;
+export interface MoveVariables extends StatusChangeVariables {
+  /** What the status-change dialog collected, when the destination asked. */
+  entry?: StatusEntryValues | undefined;
+}
 
 interface MoveContext {
   fromKey: readonly unknown[];
@@ -19,16 +23,16 @@ interface MoveContext {
 }
 
 /** Why a move was refused, in terms the board can act on. */
-export type MoveRejection = StatusChangeRejection;
+export type MoveRejection = StatusEntryRejection;
 
 export function useMoveLeadStatus(options: {
-  onRejected: (rejection: MoveRejection) => void;
+  onRejected: (rejection: MoveRejection, variables: MoveVariables) => void;
   onMoved: (variables: MoveVariables) => void;
 }) {
   const queryClient = useQueryClient();
 
   return useMutation<unknown, unknown, MoveVariables, MoveContext>({
-    mutationFn: async ({ row, processInstanceId, journeyId, toStatus }) => {
+    mutationFn: async ({ row, processInstanceId, journeyId, toStatus, entry }) => {
       /*
        * assignmentTypes feeds the authorization record-predicate server-side:
        * for anything narrower than ORGANIZATION scope, an empty array fails the
@@ -47,14 +51,16 @@ export function useMoveLeadStatus(options: {
         ...new Set((target?.assignments ?? []).map((assignment) => assignment.assignmentType)),
       ];
 
-      // No fieldValues key: this is purely a status move, so requestedEditFieldIds
-      // stays empty and the server's required-field check is what we surface.
+      // fieldValues only when the dialog collected required Fields: a plain
+      // move sends none, so the server's required-field check is what we
+      // surface (and re-prompt for).
       return sellersApi.edit(row.id, {
         leadId: row.id,
         processInstanceId,
         journeyId,
         statusId: toStatus.id,
         assignmentTypes,
+        ...entry,
       });
     },
 
@@ -102,14 +108,14 @@ export function useMoveLeadStatus(options: {
         }
       }
 
-      const rejection = classifyStatusChangeRejection(error, variables);
+      const rejection = classifyStatusEntryRejection(error);
       if (rejection.kind === 'stale_status') {
         void queryClient.invalidateQueries({ queryKey: qk.journeyStatuses(variables.journeyId) });
       }
       if (rejection.kind === 'other') {
         void queryClient.invalidateQueries({ queryKey: qk.board() });
       }
-      options.onRejected(rejection);
+      options.onRejected(rejection, variables);
     },
 
     onSuccess: (_data, variables) => options.onMoved(variables),
