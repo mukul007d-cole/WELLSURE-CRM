@@ -25,6 +25,7 @@ useful section in this guide.
 2. [The Seller record](#2-the-seller-record)
 3. [Creating and editing a Seller](#3-creating-and-editing-a-seller)
 4. [Moving a Seller between statuses](#4-moving-a-seller-between-statuses)
+   - [Follow-ups](#4a-follow-ups)
 5. [Moving or adding a Seller to another Journey](#5-moving-or-adding-a-seller-to-another-journey)
 6. [Sharing a Seller with someone else](#6-sharing-a-seller-with-someone-else)
 7. [Attachments (Document Locker)](#7-attachments-document-locker)
@@ -186,6 +187,29 @@ touched.
 A rejected move never leaves the Seller in a half-changed state — either the whole move
 succeeds, or nothing changes.
 
+**Statuses can ask for more (Phase 24).** Wherever you change a status — the Board, the
+Seller List, or the Seller record — an administrator may have configured the destination
+status to:
+
+- **offer reasons** (for example *Hot / Cold*): pick one in the dialog that opens;
+- **need certain fields filled first**: the dialog shows those fields so you can fill them
+  in without leaving the page;
+- **schedule a follow-up**: Follow Up and Call Later statuses ask when to call back; any
+  other status lets you add one optionally.
+
+A status with none of these still changes in one click. You only see the statuses your
+role is allowed to choose; if one is refused anyway, you'll see *"Your role can't move
+leads into this status."*
+
+## 4a. Follow-ups
+
+**Follow-ups** in the sidebar lists your own follow-ups as **Overdue**, **Today**,
+**Upcoming** and **Done**; the badge counts overdue plus today. From the list — or from
+the **Follow-ups** panel on a Seller record — you can mark one **Done**, **Reschedule** it
+(the old date stays in the history), **Cancel** it, or **Reopen** a closed one. Scheduling
+a new follow-up for a seller closes any open one on the same journey as *rescheduled*.
+Follow-up dates migrated from Cronberry arrive as open follow-ups for the lead owner.
+
 ---
 
 ## 5. Moving or adding a Seller to another Journey
@@ -303,7 +327,7 @@ retroactively in history.
 
 ## 9. Your settings
 
-**Settings** (top-right, always available) covers:
+**Settings** (in your account menu, top-right — always available) covers:
 
 - **Your profile** — name, email, role; read-only, set by an administrator.
 - **Your access** — a read-only summary of what your role currently grants: how many

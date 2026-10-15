@@ -22,6 +22,7 @@ your team actually uses.
 
 ## Table of contents
 
+0. [What changed in Phase 24](#0-what-changed-in-phase-24-read-first)
 1. [Before you start: the permission catalog and your first login](#1-before-you-start-the-permission-catalog-and-your-first-login)
 2. [Journeys and Statuses](#2-journeys-and-statuses)
 3. [Fields](#3-fields)
@@ -37,6 +38,32 @@ your team actually uses.
 13. [Needs confirmation](#13-needs-confirmation)
 
 ---
+
+## 0. What changed in Phase 24 (read first)
+
+- **One Admin area.** Every administration screen now lives under **Admin** in the
+  sidebar, grouped as *Pipeline* (Journeys & statuses, Fields), *People* (Users, Org
+  chart, Departments & teams, Roles & permissions), *Automation* (Notification rules,
+  Campaigns) and *Data* (Import leads). Old links keep working. Personal **Settings**
+  moved to the account menu.
+- **Journey editor tabs:** *Statuses*, *Fields*, *Members & access* and *Routing*.
+- **Status rules** (Statuses tab → edit a status): a **color**, **reasons** users pick when
+  entering it, **who can choose this status** (leave empty for everyone; roles holding
+  *Leads → Bypass status rules* are never restricted) and **required to enter** (fields
+  that must be filled before a lead can move in — checked on entry only, so leads already
+  there are never locked).
+- **Members only journeys** (Members & access tab): when on, only listed members — who
+  also need the role's journey access — can work the journey.
+- **Role reporting lines** (Roles & permissions → a role → *Reports to*) and the
+  **Reporting roles** scope: a user sees their own leads plus those owned by users of
+  every role below theirs, including people who have left. This is how Cronberry's
+  role hierarchy works in Falcon.
+- **Journey-limited permissions:** any granted action can be limited to some journeys
+  ("Only in journeys…"); empty means every journey the role can access.
+- **Fields:** new *Date & time* and *Multiple choice* types; unsupported types are refused;
+  *Required when adding a lead* can be limited to some roles.
+- **Follow-ups** replace "Tasks — coming soon"; see the user guide §4a.
+- **Moving from Cronberry:** `docs/operations/cutover-runbook.md`.
 
 ## 1. Before you start: the permission catalog and your first login
 
