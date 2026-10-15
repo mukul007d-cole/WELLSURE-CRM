@@ -61,12 +61,15 @@ export function RecordSummaryPanel({
   repeatCount,
   actions,
   selectedProcessId,
+  statusControl,
 }: {
   seller: Seller360Record;
   shares: LeadShare[];
   repeatCount: number;
   actions: ReactNode;
   selectedProcessId?: string;
+  /** Shown under the selected journey's status; absent without leads:edit. */
+  statusControl?: ReactNode;
 }) {
   // The first current assignment is the closest thing to an owner; assignment
   // types are configurable, so no particular one is privileged.
@@ -103,8 +106,8 @@ export function RecordSummaryPanel({
       {/*
         Only facts with something behind them. The reference layout also carries
         Communication Status, Recent Followup and Lead Source; this system has
-        no telephony, no tasks API and no source column, so those are left out
-        rather than shown as a permanent "N/A".
+        no telephony and no source column, so those are left out rather than
+        shown as a permanent "N/A". Follow-ups have their own tab.
       */}
       <dl className="grid grid-cols-2 gap-3 border-t border-line-soft pt-4">
         <Stat label="Owner" value={owner ? (owner.userName ?? 'Unknown user') : 'Unassigned'} />
@@ -140,6 +143,9 @@ export function RecordSummaryPanel({
                   outcomeType={process.currentStatus.outcomeType}
                   behaviorType={process.currentStatus.behaviorType}
                 />
+                {process.processInstanceId === selectedProcess?.processInstanceId
+                  ? statusControl
+                  : null}
                 <span className="text-xs text-ink-soft">
                   {process.assignments.length > 0
                     ? process.assignments

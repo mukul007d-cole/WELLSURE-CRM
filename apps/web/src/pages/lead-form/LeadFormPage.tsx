@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useForm, type Resolver } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { Banner } from '../../components/ui/Banner';
@@ -12,13 +12,19 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Skeleton } from '../../components/ui/Skeleton';
-import { configApi, sellersApi } from '../../lib/api-client';
+import { adminApi, configApi, sellersApi } from '../../lib/api-client';
 import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { groupFieldsBySection } from '../../lib/field-sections';
 import { qk } from '../../lib/query-keys';
 import type { FieldDefinition } from '../../types/domain';
 import { DynamicFieldControl } from './DynamicFieldControl';
-import { defaultFieldValues, leadFormSchema, toFieldValues } from './schema';
+import {
+  defaultFieldValues,
+  isRequiredNow,
+  leadFormSchemaFor,
+  toFieldValues,
+  type FieldRequirementSetting,
+} from './schema';
 import type { LeadFormValues } from './schema';
 import { usePageChrome } from '../../app/page-chrome';
 
@@ -40,8 +46,25 @@ export function LeadFormPage() {
   const isEditMode = Boolean(sellerId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, capabilities, can } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * Which Fields render, and which must hold a value, depend on the Journey
+   * and Status chosen *in* this form, so neither can be known where `useForm`
+   * is called. The resolver reads the latest lists at validation time
+   * instead; an effect keeps them current (see `requiredFields`).
+   */
+  const validatedFieldsRef = useRef<{
+    fields: FieldDefinition[];
+    required: FieldDefinition[];
+  }>({ fields: [], required: [] });
+  const resolver = useMemo<Resolver<LeadFormValues>>(
+    () => (values, context, options) =>
+      zodResolver(
+        leadFormSchemaFor(validatedFieldsRef.current.fields, validatedFieldsRef.current.required),
+      )(values, context, options),
+    [],
+  );
 
   const journeysQuery = useQuery({ queryKey: ['journeys'], queryFn: configApi.journeys });
   const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
@@ -69,8 +92,9 @@ export function LeadFormPage() {
     handleSubmit,
     watch,
     formState: { errors, isSubmitting },
+    control,
   } = useForm<LeadFormValues>({
-    resolver: zodResolver(leadFormSchema),
+    resolver,
     values: useMemo(
       () => ({
         name: sellerQuery.data?.name ?? '',
@@ -129,6 +153,51 @@ export function LeadFormPage() {
   const formSections = groupFieldsBySection(formFields);
   const activeStatuses = (statusesQuery.data ?? []).filter((status) => status.isActive);
   /**
+   * `configApi.journeyFields` keeps only what renders a control; whether a
+   * value is required lives on the same rows, read here through the admin
+   * client, which keeps them. Same endpoint and the same `fields:view` gate
+   * the form's own Field list already needs, so a role without it has no
+   * Additional fields to mark anyway. The server enforces every rule on save
+   * regardless — this only says so beside the control first.
+   */
+  const fieldSettingsQuery = useQuery({
+    queryKey: ['journey-field-settings', selectedJourneyId],
+    queryFn: (): Promise<Array<FieldRequirementSetting & { fieldId: string }>> =>
+      adminApi.journeyFields(selectedJourneyId),
+    enabled: Boolean(selectedJourneyId) && can('fields', 'view'),
+  });
+  const watchedStatusId = watch('statusId');
+  const requirementContext = {
+    creating: !isEditMode,
+    // The status the lead will be in once saved: the one picked, else the
+    // one it keeps (edit) or lands in (create).
+    statusId:
+      watchedStatusId ||
+      (isEditMode
+        ? existingProcess?.currentStatus.id
+        : activeStatuses.find((status) => status.isDefaultOnCreate)?.id),
+    roleId: capabilities?.roleId ?? user?.roleId,
+  };
+  const isFieldDisabled = (field: FieldDefinition) =>
+    field.editMode === 'calculated' ||
+    field.editMode === 'system' ||
+    (field.editMode === 'locked' && hasValue(existingFieldValues?.[field.id]));
+  // A disabled control submits nothing and a checkbox is never blank, so
+  // neither can be asked for a value.
+  const requiredFields = formFields.filter((field) => {
+    if (field.type === 'boolean' || isFieldDisabled(field)) return false;
+    const setting = fieldSettingsQuery.data?.find((row) => row.fieldId === field.id);
+    return setting !== undefined && isRequiredNow(setting, requirementContext);
+  });
+  useEffect(() => {
+    // A disabled control's stored value is never sent, so it isn't checked
+    // either: a retired option on a locked Field is nothing anyone can untick.
+    validatedFieldsRef.current = {
+      fields: formFields.filter((field) => !isFieldDisabled(field)),
+      required: requiredFields,
+    };
+  });
+  /**
    * Creating without an explicit statusId falls back to the Journey's
    * default-on-create Status. Offering that when no Status carries the flag is
    * a trap: the API rejects it with a bare validation_error that names nothing.
@@ -162,7 +231,7 @@ export function LeadFormPage() {
           name: values.name,
           phone: values.phone || null,
           email: values.email || null,
-          fieldValues: toFieldValues(formFields, values.fields),
+          fieldValues: toFieldValues(formFields, values.fields, existingFieldValues),
           statusId: values.statusId || undefined,
           // Feeds the authorization record-predicate. Omitting it sends an
           // empty array, which fails the scope check for any role narrower
@@ -410,12 +479,10 @@ export function LeadFormPage() {
                           key={field.id}
                           field={field}
                           register={register}
-                          disabled={
-                            field.editMode === 'calculated' ||
-                            field.editMode === 'system' ||
-                            (field.editMode === 'locked' &&
-                              hasValue(existingFieldValues?.[field.id]))
-                          }
+                          control={control}
+                          required={requiredFields.includes(field)}
+                          error={errors.fields?.[field.key]?.message}
+                          disabled={isFieldDisabled(field)}
                         />
                       ))}
                     </div>
@@ -446,7 +513,10 @@ export function LeadFormPage() {
 /** Mirrors `validateFieldValues`'s own `isMissing` — a blank string is not a stored value. */
 function hasValue(value: unknown): boolean {
   return (
-    value !== null && value !== undefined && !(typeof value === 'string' && value.trim() === '')
+    value !== null &&
+    value !== undefined &&
+    !(typeof value === 'string' && value.trim() === '') &&
+    !(Array.isArray(value) && value.length === 0)
   );
 }
 

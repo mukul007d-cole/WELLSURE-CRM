@@ -19,20 +19,23 @@ import { CallHistoryTab } from './CallHistoryTab';
 import { CommentComposer } from './CommentComposer';
 import { DetailsTab } from './DetailsTab';
 import { DocumentLockerTab } from './DocumentLockerTab';
+import { FollowUpsPanel } from './FollowUpsPanel';
+import { useLeadFollowUps } from './follow-ups';
 import { JourneyDialog, type JourneyAction } from './JourneyDialog';
 import { RepeatLeadTab, useRepeatLeads } from './RepeatLeadTab';
 import { downloadRecordPdf } from './record-pdf';
 import { DeactivateDialog } from './DeactivateDialog';
 import { LeadShareDialog } from './LeadShareDialog';
 import { ReassignDialog } from './ReassignDialog';
+import { RecordStatusControl } from './RecordStatusControl';
 import { RecordSummaryPanel } from './RecordSummaryPanel';
 
-type Tab = 'timeline' | 'details' | 'documents' | 'repeats' | 'calls';
+type Tab = 'timeline' | 'follow_ups' | 'details' | 'documents' | 'repeats' | 'calls';
 
 export function Seller360Page() {
   const { sellerId } = useParams<{ sellerId: string }>();
   const qc = useQueryClient();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const [tab, setTab] = useState<Tab>('timeline');
   const tabGroup = useTabGroup();
   const [shareOpen, setShareOpen] = useState(false);
@@ -128,6 +131,9 @@ export function Seller360Page() {
     enabled: Boolean(sellerId && seller),
     retry: false,
   });
+
+  // Page-level rather than inside the tab, so the tab can badge what's open.
+  const followUpsQuery = useLeadFollowUps(sellerId);
 
   const activityKey = qk.sellerActivity(sellerId ?? '');
   const comment = useMutation({
@@ -278,8 +284,14 @@ export function Seller360Page() {
       ]
     : seller.processInstances;
   const repeatCount = repeatsQuery.data?.length ?? 0;
+  const openFollowUps = (followUpsQuery.data ?? []).filter((task) => task.status === 'open').length;
   const tabItems: TabItem<Tab>[] = [
     { id: 'timeline', label: 'Activity' },
+    {
+      id: 'follow_ups',
+      label: 'Follow-ups',
+      ...(openFollowUps > 0 ? { badge: openFollowUps } : {}),
+    },
     { id: 'details', label: 'Details' },
     { id: 'documents', label: 'Documents' },
     // Only badge a real, non-zero count — a "0" chip reads as a broken feature.
@@ -360,6 +372,20 @@ export function Seller360Page() {
           {...(selectedProcess ? { selectedProcessId: selectedProcess.processInstanceId } : {})}
           shares={sharesQuery.data ?? []}
           repeatCount={repeatCount}
+          {...(can('leads', 'edit') && selectedProcess
+            ? {
+                statusControl: (
+                  <RecordStatusControl
+                    seller={seller}
+                    process={selectedProcess}
+                    statuses={statusesQuery.data ?? []}
+                    // Values fetched without the Field catalogue are empty,
+                    // which would read as "every required Field is missing".
+                    knownFieldValues={fieldsQuery.isSuccess ? seller.fieldValues : undefined}
+                  />
+                ),
+              }
+            : {})}
           actions={
             <>
               <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
@@ -406,6 +432,20 @@ export function Seller360Page() {
                     />
                   ) : null
                 }
+              />
+            ) : tab === 'follow_ups' ? (
+              <FollowUpsPanel
+                leadId={seller.id}
+                items={followUpsQuery.data ?? []}
+                isPending={followUpsQuery.isPending}
+                error={followUpsQuery.error}
+                scheduleContext={
+                  selectedProcess && journeyContext
+                    ? { processInstanceId: selectedProcess.processInstanceId, ...journeyContext }
+                    : null
+                }
+                canEditLead={can('leads', 'edit')}
+                currentUserId={user?.id}
               />
             ) : tab === 'details' ? (
               <DetailsTab

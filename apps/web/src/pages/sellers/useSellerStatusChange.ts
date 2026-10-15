@@ -6,6 +6,7 @@ import {
 } from '../../components/leads/status-entry';
 import { sellersApi } from '../../lib/api-client';
 import { qk } from '../../lib/query-keys';
+import { followUpKeys } from '../follow-ups/follow-up-queries';
 import type { StatusChangeVariables } from '../../lib/status-change';
 
 export interface SellerStatusChangeVariables extends StatusChangeVariables {
@@ -70,6 +71,9 @@ export function useSellerStatusChange(options: {
       void queryClient.invalidateQueries({ queryKey: qk.seller(variables.row.id) });
       // Inactive elsewhere, so this is only marked stale for its next visit.
       void queryClient.invalidateQueries({ queryKey: qk.dashboard() });
+      // A change can schedule a follow-up (and every follow-up row shows its
+      // lead's status): the Follow-ups page and the sidebar badge.
+      void queryClient.invalidateQueries({ queryKey: followUpKeys.all() });
     },
   });
 }

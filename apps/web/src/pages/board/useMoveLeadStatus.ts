@@ -6,6 +6,7 @@ import {
 } from '../../components/leads/status-entry';
 import { sellersApi } from '../../lib/api-client';
 import { qk } from '../../lib/query-keys';
+import { followUpKeys } from '../follow-ups/follow-up-queries';
 import type { StatusChangeVariables } from '../../lib/status-change';
 import type { SellerListResponse } from '../../types/domain';
 import { insertRowAtHead, patchRowStatus, removeRow, type ColumnData } from './board-cache';
@@ -129,6 +130,9 @@ export function useMoveLeadStatus(options: {
       // Inactive elsewhere, so these are only marked stale for their next visit.
       void queryClient.invalidateQueries({ queryKey: qk.sellers() });
       void queryClient.invalidateQueries({ queryKey: qk.dashboard() });
+      // A change can schedule a follow-up (and every follow-up row shows its
+      // lead's status): the Follow-ups page and the sidebar badge.
+      void queryClient.invalidateQueries({ queryKey: followUpKeys.all() });
     },
   });
 }
