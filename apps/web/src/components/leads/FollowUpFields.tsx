@@ -19,15 +19,17 @@ export function FollowUpFields({
   onChange,
   required,
   error,
+  hint,
 }: {
   value: FollowUpDraft;
   onChange: (next: FollowUpDraft) => void;
   required?: boolean;
   error?: string | undefined;
+  hint?: string | undefined;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Field label="Follow-up date and time" required={required} error={error}>
+      <Field label="Follow-up date and time" required={required} error={error} hint={hint}>
         {({ inputId, describedBy }) => (
           <Input
             id={inputId}

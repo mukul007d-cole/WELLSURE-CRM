@@ -5,9 +5,11 @@ import {
   reassignmentParties,
   TONE_CLASSES,
 } from '../../components/activity/entry-copy';
+import { formatFollowUpDate } from '../../components/leads/status-entry';
 import { formatFieldValue } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import type { ActivityEntry, FieldDefinition, Status } from '../../types/domain';
+import { followUpEntry, followUpVerb } from './follow-up-entry';
 
 /** Absolute date in a title so hovering gives the exact time. */
 function relativeTime(iso: string): { label: string; exact: string } {
@@ -28,6 +30,22 @@ function statusName(statuses: readonly Status[], id: unknown): string | null {
   return statuses.find((status) => status.id === id)?.name ?? null;
 }
 
+/** The reason chosen on entering a status (ADR-0026), when one was. */
+function statusReason(entry: ActivityEntry): string | null {
+  if (entry.actionType !== 'status_change') return null;
+  const reason = (entry.newValue as { reason?: unknown } | null)?.reason;
+  return typeof reason === 'string' && reason.trim() !== '' ? reason : null;
+}
+
+/**
+ * Rows the one-time Cronberry cutover wrote (D10) carry a `migrated_…`
+ * source: backdated remarks and the creation snapshot. Tagged so nobody
+ * mistakes a backdated remark for something typed in Falcon.
+ */
+function isImported(entry: ActivityEntry): boolean {
+  return entry.source.startsWith('migrated_');
+}
+
 export function TimelineEntry({
   entry,
   fields,
@@ -39,8 +57,21 @@ export function TimelineEntry({
   statuses: readonly Status[];
   directory: ReadonlyMap<string, string>;
 }) {
-  const { verb, tone } = entryCopy(entry.actionType);
+  const followUp = followUpEntry(entry);
+  // A follow-up row's verb depends on what happened to the task, so it's
+  // read off the payload; its tone is the follow-up palette `edit` uses.
+  const { verb, tone } = followUp
+    ? { verb: followUpVerb(followUp), tone: 'edit' as const }
+    : entryCopy(entry.actionType);
   const time = relativeTime(entry.timestamp);
+  const reason = statusReason(entry);
+  // Named only when someone other than the scheduler will make the call.
+  const followUpAssignee =
+    followUp?.kind === 'scheduled' &&
+    followUp.assignedToUserId &&
+    followUp.assignedToUserId !== entry.actorUserId
+      ? (directory.get(followUp.assignedToUserId) ?? 'another user')
+      : null;
   const changes = fieldChanges(entry, fields);
   const redacted = hasRedactedChanges(entry, changes);
   const parties = reassignmentParties(entry, directory);
@@ -78,6 +109,11 @@ export function TimelineEntry({
           <time dateTime={entry.timestamp} title={time.exact} className="text-xs text-ink-soft">
             {time.label}
           </time>
+          {isImported(entry) ? (
+            <span className="ml-2 rounded-pill bg-surface-sunken px-1.5 py-0.5 text-[11px] font-semibold text-ink-soft">
+              Imported
+            </span>
+          ) : null}
         </p>
 
         {entry.commentText ? (
@@ -98,12 +134,45 @@ export function TimelineEntry({
           </p>
         ) : null}
 
-        {oldStatus || newStatus ? (
+        {oldStatus || newStatus || reason ? (
           <p className="mt-1 text-sm text-ink-muted">
             {oldStatus ? <span className="line-through text-ink-soft">{oldStatus}</span> : null}
             {oldStatus && newStatus ? <span aria-hidden="true"> → </span> : null}
             {newStatus}
+            {reason ? (
+              <>
+                <span className="text-ink-soft">{oldStatus || newStatus ? ' · ' : ''}reason: </span>
+                {reason}
+              </>
+            ) : null}
           </p>
+        ) : null}
+
+        {followUp ? (
+          <div className="mt-1 text-sm text-ink-muted">
+            {followUp.kind === 'scheduled' ? (
+              <p>
+                <span className="text-ink-soft">Due </span>
+                {followUp.previousDueAt ? (
+                  <>
+                    <span className="text-ink-soft line-through">
+                      {formatFollowUpDate(followUp.previousDueAt)}
+                    </span>
+                    <span aria-hidden="true"> → </span>
+                  </>
+                ) : null}
+                <time dateTime={followUp.dueAt}>{formatFollowUpDate(followUp.dueAt)}</time>
+                {followUpAssignee ? (
+                  <span className="text-ink-soft"> · for {followUpAssignee}</span>
+                ) : null}
+              </p>
+            ) : null}
+            {followUp.note ? (
+              <p className="mt-1.5 whitespace-pre-wrap rounded-control bg-surface-sunken px-3 py-2">
+                {followUp.note}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {changes.length > 0 ? (

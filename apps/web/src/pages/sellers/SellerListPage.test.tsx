@@ -577,8 +577,11 @@ describe('seller list inline status change', () => {
     fireEvent.change(select, { target: { value: WON_STATUS } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
+    // The dialog opens at once and names the Field once its definition has
+    // loaded — the server's id is never what's shown.
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Deal Value (₹)')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Deal Value (₹)')).toBeInTheDocument();
+    expect(within(dialog).queryByText(DEAL_VALUE_FIELD)).not.toBeInTheDocument();
     expect(within(dialog).getByText('New Lead')).toBeInTheDocument();
     expect(within(dialog).getByText('Won')).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: 'Open seller form' })).toHaveAttribute(

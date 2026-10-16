@@ -146,15 +146,20 @@ export function StatusChangeDialog({
     result: draftToFieldValue(field, draftFor(field)),
   }));
   const followUpIso = followUpOn ? fromDateTimeLocal(followUp.dueAt) : null;
-  const followUpError =
-    attempted && followUpOn && followUpIso === null ? 'Choose when to follow up.' : undefined;
+  // Optional even where the status prompts for it — the API doesn't require
+  // one — but a ticked box or a written note needs a date to hang on.
+  const followUpNeedsDate =
+    followUpOn &&
+    followUpIso === null &&
+    (!followUpExpected || followUp.note.trim() !== '');
+  const followUpError = attempted && followUpNeedsDate ? 'Choose when to follow up.' : undefined;
 
   const blocked = fieldsLoading || unresolvedCount > 0;
 
   function submit() {
     setAttempted(true);
     if (blocked) return;
-    if (followUpOn && followUpIso === null) return;
+    if (followUpNeedsDate) return;
     const fieldValues: Record<string, unknown> = {};
     // Values from an earlier attempt still have to be sent: nothing from a
     // refused change was saved.
@@ -257,7 +262,13 @@ export function StatusChangeDialog({
         ) : null}
 
         {followUpExpected ? (
-          <FollowUpFields value={followUp} onChange={setFollowUp} required error={followUpError} />
+          // Open up front: a callback date is the point of this kind of status.
+          <FollowUpFields
+            value={followUp}
+            onChange={setFollowUp}
+            error={followUpError}
+            hint="Leave empty to change the status without scheduling one."
+          />
         ) : (
           <>
             <Checkbox

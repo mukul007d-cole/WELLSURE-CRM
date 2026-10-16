@@ -60,6 +60,9 @@ export function RecordStatusControl({
         flow.promptForFields(variables, variables.entry, result.fieldIds);
         return;
       }
+      if (result.kind === 'stale_status') {
+        void qc.invalidateQueries({ queryKey: qk.journeyStatuses(process.journeyId) });
+      }
       setRejection(result);
     },
     onSettled: () =>

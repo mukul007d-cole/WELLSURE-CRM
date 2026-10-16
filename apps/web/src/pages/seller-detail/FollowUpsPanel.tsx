@@ -12,7 +12,7 @@ import { ApiError, friendlyErrorMessage } from '../../lib/api-error';
 import { qk } from '../../lib/query-keys';
 import type { FollowUp, FollowUpStatus } from '../../types/domain';
 import { followUpKeys } from '../follow-ups/follow-up-queries';
-import { followUpsKey, splitFollowUps } from './follow-ups';
+import { followUpsKey, isOverdue, splitFollowUps } from './follow-ups';
 
 type TaskAction = 'complete' | 'reopen' | 'reschedule' | 'cancel';
 
@@ -115,7 +115,10 @@ export function FollowUpsPanel({
         ) : null}
       </div>
 
-      {update.error ? <Banner tone="error">{friendlyErrorMessage(update.error)}</Banner> : null}
+      {/* A failed reschedule reports inside its own dialog instead. */}
+      {update.error && !rescheduling ? (
+        <Banner tone="error">{friendlyErrorMessage(update.error)}</Banner>
+      ) : null}
 
       {isPending ? (
         <div className="flex flex-col gap-3" role="status" aria-label="Loading follow-ups">
@@ -233,7 +236,7 @@ export function FollowUpsPanel({
 }
 
 function FollowUpItem({ task, children }: { task: FollowUp; children?: React.ReactNode }) {
-  const overdue = task.status === 'open' && Date.parse(task.dueDate) < Date.now();
+  const overdue = isOverdue(task);
   const context = [task.assignedToName, task.journeyName, task.statusName].filter(Boolean);
   return (
     <li className="flex flex-wrap items-start justify-between gap-2 rounded-control border border-line px-3 py-2.5">

@@ -61,7 +61,13 @@ export function useSellerStatusChange(options: {
     },
 
     onError: (error, variables) => {
-      options.onRejected(classifyStatusEntryRejection(error), variables);
+      const rejection = classifyStatusEntryRejection(error);
+      // The status (or its rules) changed under us: refresh the options, as
+      // the Board does, so the control stops offering it.
+      if (rejection.kind === 'stale_status') {
+        void queryClient.invalidateQueries({ queryKey: qk.journeyStatuses(variables.journeyId) });
+      }
+      options.onRejected(rejection, variables);
     },
 
     onSuccess: (_data, variables) => options.onMoved(variables),

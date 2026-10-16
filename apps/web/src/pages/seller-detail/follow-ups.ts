@@ -18,6 +18,11 @@ export function useLeadFollowUps(leadId: string | undefined) {
   });
 }
 
+/** Still owed and already past its due time. */
+export function isOverdue(task: Pick<FollowUp, 'status' | 'dueDate'>, now = Date.now()): boolean {
+  return task.status === 'open' && Date.parse(task.dueDate) < now;
+}
+
 /** Open first (soonest due first), then the history (most recent first). */
 export function splitFollowUps(items: readonly FollowUp[]): {
   open: FollowUp[];

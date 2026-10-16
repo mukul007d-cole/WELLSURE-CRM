@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { delay, http, HttpResponse } from 'msw';
 import { AuthProvider } from '../../app/AuthContext';
 import { PreferencesProvider } from '../../app/preferences';
-import { FIELDS, JOURNEYS } from '../../mocks/fixtures';
+import { FIELDS, JOURNEYS, STATUSES } from '../../mocks/fixtures';
+import type { Status } from '../../types/domain';
 import { createSession, setCookieHeader } from '../../mocks/session';
 import { server } from '../../test/setup';
 import { BoardPage } from './BoardPage';
@@ -181,7 +182,7 @@ describe('board', () => {
     expect(within(columnNamed('Won')).getByText('2')).toBeInTheDocument();
 
     // Names the configured field and both configured statuses, and links to the form.
-    expect(within(dialog).getByText('Deal Value (₹)')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Deal Value (₹)')).toBeInTheDocument();
     expect(within(dialog).getByText('New Lead')).toBeInTheDocument();
     expect(within(dialog).getByText('Won')).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: 'Open seller form' })).toHaveAttribute(
@@ -249,7 +250,12 @@ describe('board', () => {
     grantLeadPermissions(['view', 'edit']);
     stubColumns();
     server.use(
+      // The API gates both Field reads on fields:view, so a role that can't
+      // read the catalogue can't read the journey's field settings either.
       http.get('/api/v1/fields', () => HttpResponse.json({ error: 'forbidden' }, { status: 403 })),
+      http.get('/api/v1/journeys/:id/fields', () =>
+        HttpResponse.json({ error: 'forbidden' }, { status: 403 }),
+      ),
       http.patch('/api/v1/leads/:id', () =>
         HttpResponse.json(
           { error: 'validation_error', details: { fieldId: DEAL_VALUE_FIELD } },
@@ -263,8 +269,10 @@ describe('board', () => {
     await moveAlphaToWon();
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/a required field/i)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/a required field/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(DEAL_VALUE_FIELD)).not.toBeInTheDocument();
+    // Nothing it could send would satisfy the server, so it doesn't offer to.
+    expect(within(dialog).getByRole('button', { name: 'Change status' })).toBeDisabled();
   });
 
   it('renders read-only without drag affordances when the viewer lacks leads edit', async () => {
@@ -307,5 +315,178 @@ describe('board', () => {
     renderBoard();
 
     expect(await screen.findByText(/isn't visible to your role/i)).toBeInTheDocument();
+  });
+});
+
+describe('board status rules (ADR-0026)', () => {
+  const FOLLOW_UP_STATUS = `status-${JOURNEYS[0]!.key}-follow_up`;
+  const LOST_STATUS = `status-${JOURNEYS[0]!.key}-lost`;
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    document.cookie = 'falcon_session=; Path=/; Max-Age=0';
+  });
+
+  /** Configures a fixture status; the test setup restores STATUSES afterwards. */
+  function configureStatus(id: string, rules: Partial<Status>) {
+    Object.assign(
+      STATUSES.find((status) => status.id === id)!,
+      rules,
+    );
+  }
+
+  /** Every PATCH body, oldest first; answers each with the next response. */
+  function capturePatches(responses: Array<() => Response> = []) {
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(
+      http.patch('/api/v1/leads/:id', async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        const respond = responses[bodies.length - 1];
+        return respond ? respond() : HttpResponse.json({ id: 'lead-1' });
+      }),
+    );
+    return bodies;
+  }
+
+  async function openMoveMenu() {
+    await within(await findColumn('New Lead')).findByText('Synthetic Alpha');
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Synthetic Alpha' }));
+    return screen.findByRole('listbox', { name: 'Move to status' });
+  }
+
+  it('changes a plain status in one click, with nothing extra in the request', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    const bodies = capturePatches();
+
+    renderBoard();
+    fireEvent.click(within(await openMoveMenu()).getByRole('option', { name: 'Won' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(bodies[0]).toMatchObject({ statusId: WON_STATUS });
+    expect(bodies[0]).not.toHaveProperty('statusReason');
+    expect(bodies[0]).not.toHaveProperty('followUp');
+    expect(bodies[0]).not.toHaveProperty('fieldValues');
+  });
+
+  it('asks for a reason before a status that has them, and sends the one chosen', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    configureStatus(WON_STATUS, { reasonOptions: ['Synthetic reason A', 'Synthetic reason B'] });
+    const bodies = capturePatches();
+
+    renderBoard();
+    fireEvent.click(within(await openMoveMenu()).getByRole('option', { name: 'Won' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Move to Won' });
+    // Nothing is saved until the dialog is submitted.
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(within(dialog).getByLabelText('Reason'), {
+      target: { value: 'Synthetic reason B' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Change status' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ statusId: WON_STATUS, statusReason: 'Synthetic reason B' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('prompts for a follow-up on a follow-up status and sends it with the change', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    const bodies = capturePatches();
+
+    renderBoard();
+    fireEvent.click(within(await openMoveMenu()).getByRole('option', { name: 'Follow Up' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Move to Follow Up' });
+    fireEvent.change(within(dialog).getByLabelText('Follow-up date and time'), {
+      target: { value: '2026-11-02T10:30' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Follow-up note'), {
+      target: { value: 'Synthetic callback note' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Change status' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      statusId: FOLLOW_UP_STATUS,
+      followUp: {
+        dueAt: new Date('2026-11-02T10:30').toISOString(),
+        note: 'Synthetic callback note',
+      },
+    });
+  });
+
+  it('offers only the statuses the viewer’s role may choose', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    // The signed-in fixture user holds role-admin.
+    configureStatus(WON_STATUS, { allowedRoles: [{ roleId: 'role-sales-rep' }] });
+    configureStatus(LOST_STATUS, { allowedRoles: [{ roleId: 'role-admin' }] });
+
+    renderBoard();
+    const menu = await openMoveMenu();
+
+    expect(within(menu).queryByRole('option', { name: 'Won' })).not.toBeInTheDocument();
+    expect(within(menu).getByRole('option', { name: 'Lost' })).toBeInTheDocument();
+    // Unrestricted statuses stay on offer.
+    expect(within(menu).getByRole('option', { name: 'Contacted' })).toBeInTheDocument();
+    // The column itself still shows; it just can't be chosen.
+    expect(columnNamed('Won')).toBeInTheDocument();
+  });
+
+  it('re-prompts for every field a 400 names and resubmits with their values', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    const bodies = capturePatches([
+      () =>
+        HttpResponse.json(
+          { error: 'validation_error', details: { fieldIds: [DEAL_VALUE_FIELD] } },
+          { status: 400 },
+        ),
+    ]);
+
+    renderBoard();
+    fireEvent.click(within(await openMoveMenu()).getByRole('option', { name: 'Won' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'That move needs more information first',
+    });
+    expect(await within(columnNamed('New Lead')).findByText('Synthetic Alpha')).toBeInTheDocument();
+    fireEvent.change(await within(dialog).findByLabelText(/Deal Value/), {
+      target: { value: '125000' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Change status' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      statusId: WON_STATUS,
+      fieldValues: { [DEAL_VALUE_FIELD]: 125000 },
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('says the role can’t use a status when the server refuses it by name', async () => {
+    grantLeadPermissions(['view', 'edit']);
+    stubColumns();
+    capturePatches([
+      () =>
+        HttpResponse.json(
+          { error: 'forbidden', details: { statusId: WON_STATUS } },
+          { status: 403 },
+        ),
+    ]);
+
+    renderBoard();
+    fireEvent.click(within(await openMoveMenu()).getByRole('option', { name: 'Won' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Your role can't move leads into this status",
+    );
+    expect(await within(columnNamed('New Lead')).findByText('Synthetic Alpha')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

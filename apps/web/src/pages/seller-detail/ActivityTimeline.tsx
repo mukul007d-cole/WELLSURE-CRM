@@ -49,7 +49,7 @@ export function ActivityTimeline({
       ) : entries.length === 0 ? (
         <EmptyState
           title="Nothing recorded yet"
-          description="Edits, status moves, comments and reassignments show up here."
+          description="Edits, status moves, follow-ups, comments and reassignments show up here."
         />
       ) : (
         <ol className="flex flex-col">
