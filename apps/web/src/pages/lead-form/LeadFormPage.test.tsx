@@ -718,3 +718,282 @@ describe('lead form editMode rendering', () => {
     expect(bodies[0]).not.toHaveProperty('fieldValues.field-flag');
   });
 });
+
+describe('lead form multi_select, datetime and required_on_create', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  /**
+   * Stubs both the org catalogue and the chosen Journey's mapping. The
+   * mapping rows carry the requirement too — the form reads it from the same
+   * endpoint to mark (and check) what must hold a value.
+   */
+  function stubJourneyFields(
+    rows: Array<{
+      id: string;
+      key: string;
+      label: string;
+      type: string;
+      options?: string[];
+      requirement?: string;
+      requiredRoleIds?: string[];
+    }>,
+  ) {
+    const adminFields = rows.map((row) => ({
+      id: row.id,
+      key: row.key,
+      name: row.label,
+      fieldType: row.type,
+      ...(row.options ? { validationRule: { options: row.options } } : {}),
+      editMode: 'manual',
+      section: null,
+      source: 'manual',
+      active: true,
+    }));
+    server.use(
+      http.get('/api/v1/fields', () => HttpResponse.json(adminFields)),
+      http.get('/api/v1/journeys/:id/fields', () =>
+        HttpResponse.json(
+          rows.map((row, index) => ({
+            fieldId: row.id,
+            journeyId: JOURNEY.id,
+            requirement: row.requirement ?? 'optional',
+            requiredFromStatusId: null,
+            requiredRoleIds: row.requiredRoleIds ?? [],
+            field: adminFields[index],
+          })),
+        ),
+      ),
+    );
+  }
+
+  function captureFieldValues() {
+    const bodies: Array<{ fieldValues: Record<string, unknown> }> = [];
+    server.use(
+      http.post('/api/v1/leads', async ({ request }) => {
+        bodies.push((await request.json()) as (typeof bodies)[number]);
+        return HttpResponse.json(
+          { lead: { id: 'lead-new', name: 'Synthetic Co' }, process: { id: 'pi-new' } },
+          { status: 201 },
+        );
+      }),
+      http.patch('/api/v1/leads/:id', async ({ request }) => {
+        bodies.push((await request.json()) as (typeof bodies)[number]);
+        return HttpResponse.json({ id: 'lead-1', processInstances: [] });
+      }),
+    );
+    return bodies;
+  }
+
+  /**
+   * Requirements arrive on their own fetch, after the control itself renders;
+   * the asterisk is what shows they've landed. `getByText` matches a node's
+   * own text, so the label/legend is found without its asterisk child.
+   */
+  async function waitForRequiredMark(label: string) {
+    await waitFor(() =>
+      expect(screen.getByText(label, { selector: 'label, legend' })).toHaveTextContent(`${label}*`),
+    );
+  }
+
+  /** Name and Journey filled, statuses loaded — ready for a create to go through. */
+  async function startCreate() {
+    renderCreate();
+    await waitForFormReady();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Synthetic Co' } });
+    await chooseJourney();
+    await screen.findByRole('option', { name: 'New Lead' });
+  }
+
+  it('sends ticked options as a list and a picked date-time as an ISO instant', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-multi',
+        key: 'synthetic_multi',
+        label: 'Synthetic Multi',
+        type: 'multi_select',
+        options: ['Option A', 'Option B', 'Option C'],
+      },
+      { id: 'field-dt', key: 'synthetic_dt', label: 'Synthetic Datetime', type: 'datetime' },
+    ]);
+    await startCreate();
+
+    const datetime = await screen.findByLabelText('Synthetic Datetime');
+    expect(datetime).toHaveAttribute('type', 'datetime-local');
+    fireEvent.change(datetime, { target: { value: '2026-03-04T10:30' } });
+    // Ticked out of order on purpose: the list follows the option order.
+    fireEvent.click(screen.getByLabelText('Option C'));
+    fireEvent.click(screen.getByLabelText('Option A'));
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]!.fieldValues).toEqual({
+      'field-multi': ['Option A', 'Option C'],
+      'field-dt': new Date('2026-03-04T10:30').toISOString(),
+    });
+  });
+
+  it('blocks a create missing a required_on_create value that names the viewer’s role', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-multi',
+        key: 'synthetic_multi',
+        label: 'Synthetic Multi',
+        type: 'multi_select',
+        options: ['Option A', 'Option B'],
+        requirement: 'required_on_create',
+        // user-admin's role in the fixtures.
+        requiredRoleIds: ['role-admin'],
+      },
+    ]);
+    await startCreate();
+    await waitForRequiredMark('Synthetic Multi');
+
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+    expect(await screen.findByText('Synthetic Multi is required')).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByLabelText('Option B'));
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]!.fieldValues).toEqual({ 'field-multi': ['Option B'] });
+  });
+
+  it('applies required_on_create to every role when it names none', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-dt',
+        key: 'synthetic_dt',
+        label: 'Synthetic Datetime',
+        type: 'datetime',
+        requirement: 'required_on_create',
+      },
+    ]);
+    await startCreate();
+    await waitForRequiredMark('Synthetic Datetime');
+
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+    expect(await screen.findByText('Synthetic Datetime is required')).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it('does not ask for a required_on_create value naming only other roles', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-text',
+        key: 'synthetic_text',
+        label: 'Synthetic Text',
+        type: 'text',
+        requirement: 'required_on_create',
+        requiredRoleIds: ['role-someone-else'],
+      },
+      // Required of everyone: proves the requirements have loaded.
+      {
+        id: 'field-control',
+        key: 'synthetic_control',
+        label: 'Synthetic Control',
+        type: 'text',
+        requirement: 'required_on_create',
+      },
+    ]);
+    await startCreate();
+    await waitForRequiredMark('Synthetic Control');
+    expect(screen.getByText('Synthetic Text', { selector: 'label' })).toHaveTextContent(
+      /^Synthetic Text$/,
+    );
+    fireEvent.change(screen.getByLabelText(/^Synthetic Control/), { target: { value: 'Filled' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /create seller/i }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(screen.queryByText('Synthetic Text is required')).not.toBeInTheDocument();
+  });
+
+  it('never applies required_on_create to an edit, so migrated leads stay editable', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-text',
+        key: 'synthetic_text',
+        label: 'Synthetic Text',
+        type: 'text',
+        requirement: 'required_on_create',
+      },
+      // Required while in any status, edits included: proves the
+      // requirements have loaded.
+      {
+        id: 'field-control',
+        key: 'synthetic_control',
+        label: 'Synthetic Control',
+        type: 'text',
+        requirement: 'required',
+      },
+    ]);
+    renderEdit('user-admin', 'lead-1');
+    await waitForRequiredMark('Synthetic Control');
+    expect(screen.getByText('Synthetic Text', { selector: 'label' })).toHaveTextContent(
+      /^Synthetic Text$/,
+    );
+    fireEvent.change(screen.getByLabelText(/^Synthetic Control/), { target: { value: 'Filled' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(screen.queryByText('Synthetic Text is required')).not.toBeInTheDocument();
+  });
+
+  it('refuses a stored option the Field no longer offers until it is unticked', async () => {
+    const bodies = captureFieldValues();
+    stubJourneyFields([
+      {
+        id: 'field-multi',
+        key: 'synthetic_multi',
+        label: 'Synthetic Multi',
+        type: 'multi_select',
+        options: ['Option A'],
+      },
+    ]);
+    server.use(
+      http.get('/api/v1/leads/:id', () =>
+        HttpResponse.json({
+          id: 'lead-1',
+          name: 'Vantage Retail Co',
+          phone: null,
+          email: null,
+          fieldValues: { 'field-multi': ['Option A', 'Retired Option'] },
+          processInstances: [
+            {
+              processInstanceId: 'pi-lead-1',
+              journeyId: JOURNEY.id,
+              active: true,
+              assignments: [],
+              journey: { id: JOURNEY.id, key: JOURNEY.key, name: JOURNEY.name },
+              currentStatus: {
+                id: 'status-1',
+                key: 'new',
+                name: 'New',
+                outcomeType: 'open',
+                behaviorType: 'default',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderEdit('user-admin', 'lead-1');
+
+    // Still listed, and ticked, so it can be seen and removed.
+    expect(await screen.findByLabelText('Retired Option')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(await screen.findByText(/“Retired Option” is no longer an option/)).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByLabelText('Retired Option'));
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]!.fieldValues).toEqual({ 'field-multi': ['Option A'] });
+  });
+});

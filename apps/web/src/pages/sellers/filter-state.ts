@@ -8,7 +8,8 @@ import type { FieldDefinition } from '../../types/domain';
  * condition, so a hand-written URL can't widen anything this file allows.
  */
 
-export type FilterKind = 'text' | 'number' | 'date' | 'select' | 'boolean' | 'opaque';
+export type FilterKind =
+  'text' | 'number' | 'date' | 'datetime' | 'select' | 'multi' | 'boolean' | 'opaque';
 
 export type FilterTarget =
   { kind: 'field'; fieldId: string } | { kind: 'core'; column: CoreColumn };
@@ -26,7 +27,12 @@ const operatorsByKind: Record<FilterKind, readonly string[]> = {
   text: ['equals', 'contains', 'starts_with', 'is_empty', 'is_not_empty'],
   number: ['equals', 'greater_than', 'less_than', 'between', 'is_empty'],
   date: ['before', 'after', 'between', 'is_empty'],
+  // Compared by calendar day, so its values are the same YYYY-MM-DD as `date`.
+  datetime: ['before', 'after', 'between', 'is_empty'],
   select: ['in', 'not_in'],
+  // `in` matches a record holding *any* of the values; unlike a single
+  // select, an empty list is a state of its own.
+  multi: ['in', 'not_in', 'is_empty', 'is_not_empty'],
   boolean: ['is_true', 'is_false'],
   opaque: ['is_empty', 'is_not_empty'],
 };
@@ -78,8 +84,12 @@ export function filterKindForFieldType(fieldType: string): FilterKind | null {
       return 'number';
     case 'date':
       return 'date';
+    case 'datetime':
+      return 'datetime';
     case 'select':
       return 'select';
+    case 'multi_select':
+      return 'multi';
     case 'boolean':
       return 'boolean';
     case 'json':

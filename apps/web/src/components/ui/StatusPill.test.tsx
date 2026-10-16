@@ -27,7 +27,12 @@ describe('StatusPill', () => {
 
   it('uses the status’s configured color in place of the outcome tone', () => {
     render(
-      <StatusPill name="Configured" outcomeType="closed_won" behaviorType="default" color="purple" />,
+      <StatusPill
+        name="Configured"
+        outcomeType="closed_won"
+        behaviorType="default"
+        color="purple"
+      />,
     );
     const pill = screen.getByText('Configured').closest('span');
     expect(pill).toHaveClass('text-purple-700');

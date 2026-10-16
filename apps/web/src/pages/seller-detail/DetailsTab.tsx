@@ -52,7 +52,7 @@ export function DetailsTab({
                   {field.label}
                 </dt>
                 <dd className="mt-1 text-sm text-ink">
-                  {formatFieldValue(field, fieldValues[field.id])}
+                  {formatDetailValue(field, fieldValues[field.id])}
                 </dd>
               </div>
             ))}
@@ -61,4 +61,28 @@ export function DetailsTab({
       ))}
     </div>
   );
+}
+
+/**
+ * `formatFieldValue` predates the ADR-0026 types: it would print a
+ * `multi_select` list as JSON and a `datetime` instant as its raw ISO string.
+ * Both are handled here first; every other type is unchanged.
+ */
+function formatDetailValue(field: FieldDefinition, value: unknown): string {
+  if (field.type === 'multi_select' && Array.isArray(value)) {
+    return value.length === 0 ? '—' : value.map(String).join(', ');
+  }
+  if (field.type === 'datetime' && typeof value === 'string' && value !== '') {
+    const date = new Date(value);
+    // A malformed stored value is shown as-is rather than as "Invalid Date".
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+  return formatFieldValue(field, value);
 }

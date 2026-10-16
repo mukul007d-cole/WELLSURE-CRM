@@ -26,6 +26,22 @@ export function formatFieldValue(field: FieldDefinition, value: unknown): string
       } catch {
         return toDisplayString(value);
       }
+    case 'datetime': {
+      const date = new Date(toDisplayString(value));
+      return Number.isNaN(date.getTime())
+        ? toDisplayString(value)
+        : date.toLocaleString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+    }
+    case 'multi_select':
+      // A list, not JSON: "Listing, Advertising".
+      if (Array.isArray(value)) return value.length === 0 ? '—' : value.map(String).join(', ');
+      return toDisplayString(value);
     default:
       return toDisplayString(value);
   }

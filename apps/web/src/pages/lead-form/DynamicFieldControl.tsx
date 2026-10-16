@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Controller, type Control, type UseFormRegister } from 'react-hook-form';
 import type { FieldDefinition } from '../../types/domain';
 import { Checkbox } from '../../components/ui/Checkbox';
@@ -5,7 +6,7 @@ import { Field } from '../../components/ui/Field';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Textarea } from '../../components/ui/Textarea';
-import type { LeadFormValues } from './schema';
+import type { FormFieldValue, LeadFormValues } from './schema';
 
 interface DynamicFieldControlProps {
   field: FieldDefinition;
@@ -62,51 +63,18 @@ export function DynamicFieldControl({
         control={control}
         name={name}
         disabled={disabled}
-        render={({ field: controlled }) => {
-          const selected = Array.isArray(controlled.value) ? controlled.value : [];
-          // A stored value no longer among the options stays listed, so it can
-          // be seen and unticked rather than kept invisibly.
-          const options = [
-            ...(field.options ?? []),
-            ...selected.filter((value) => !(field.options ?? []).includes(value)),
-          ];
-          return (
-            <fieldset className="flex flex-col gap-1.5 sm:col-span-2">
-              <legend className="mb-1.5 text-sm font-medium text-ink">
-                {field.label}
-                {required ? (
-                  <span className="ml-0.5 text-status-lost" aria-hidden="true">
-                    *
-                  </span>
-                ) : null}
-              </legend>
-              <div className="flex flex-wrap gap-x-5 gap-y-2">
-                {options.map((option) => (
-                  <Checkbox
-                    key={option}
-                    label={option}
-                    disabled={disabled}
-                    checked={selected.includes(option)}
-                    onBlur={controlled.onBlur}
-                    onChange={(event) =>
-                      // In option order, so the stored list doesn't depend on click order.
-                      controlled.onChange(
-                        options.filter((value) =>
-                          value === option ? event.target.checked : selected.includes(value),
-                        ),
-                      )
-                    }
-                  />
-                ))}
-              </div>
-              {error ? (
-                <p className="text-sm text-status-lost">{error}</p>
-              ) : hint ? (
-                <p className="text-sm text-ink-soft">{hint}</p>
-              ) : null}
-            </fieldset>
-          );
-        }}
+        render={({ field: controlled }) => (
+          <MultiSelectControl
+            field={field}
+            value={controlled.value}
+            onChange={controlled.onChange}
+            onBlur={controlled.onBlur}
+            required={required}
+            error={error}
+            hint={hint}
+            disabled={disabled}
+          />
+        )}
       />
     );
   }
@@ -180,5 +148,79 @@ export function DynamicFieldControl({
         />
       )}
     </Field>
+  );
+}
+
+/**
+ * A `multi_select` Field as one checkbox per configured option, its value the
+ * ticked options as a string[]. `Field` wraps a single labelled input, so
+ * this is the group equivalent: a fieldset whose legend is the label.
+ */
+function MultiSelectControl({
+  field,
+  value,
+  onChange,
+  onBlur,
+  required,
+  error,
+  hint,
+  disabled,
+}: {
+  field: FieldDefinition;
+  value: FormFieldValue | undefined;
+  onChange: (next: string[]) => void;
+  onBlur: () => void;
+  required: boolean;
+  error: string | undefined;
+  hint: string | undefined;
+  disabled: boolean;
+}) {
+  const messageId = useId();
+  const selected = Array.isArray(value) ? value : [];
+  const configured = field.options ?? [];
+  // A stored value no longer among the options stays listed, so it can be
+  // seen and unticked rather than kept invisibly (the server refuses it).
+  const options = [...configured, ...selected.filter((item) => !configured.includes(item))];
+  const message = error ?? hint ?? (options.length === 0 ? 'No options configured' : undefined);
+
+  return (
+    <fieldset
+      className="flex flex-col gap-1.5 sm:col-span-2"
+      aria-describedby={message ? messageId : undefined}
+      aria-invalid={error ? true : undefined}
+    >
+      <legend className="mb-1.5 text-sm font-medium text-ink">
+        {field.label}
+        {required ? (
+          <span className="ml-0.5 text-status-lost" aria-hidden="true">
+            *
+          </span>
+        ) : null}
+      </legend>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {options.map((option) => (
+          <Checkbox
+            key={option}
+            label={option}
+            disabled={disabled}
+            checked={selected.includes(option)}
+            onBlur={onBlur}
+            onChange={(event) =>
+              // In option order, so the stored list doesn't depend on click order.
+              onChange(
+                options.filter((item) =>
+                  item === option ? event.target.checked : selected.includes(item),
+                ),
+              )
+            }
+          />
+        ))}
+      </div>
+      {message ? (
+        <p id={messageId} className={error ? 'text-sm text-status-lost' : 'text-sm text-ink-soft'}>
+          {message}
+        </p>
+      ) : null}
+    </fieldset>
   );
 }

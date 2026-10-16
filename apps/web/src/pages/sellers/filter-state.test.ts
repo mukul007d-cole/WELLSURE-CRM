@@ -42,6 +42,51 @@ describe('seller list filter state', () => {
     expect(coreColumnKinds.createdAt).toBe('date');
   });
 
+  it('offers presence checks on a multi-select, which a single select has no use for', () => {
+    expect(filterKindForFieldType('multi_select')).toBe('multi');
+    expect(operatorsForKind('multi')).toEqual(['in', 'not_in', 'is_empty', 'is_not_empty']);
+    expect(
+      kindForTarget({ kind: 'field', fieldId: 'field-multi' }, [
+        ...fields,
+        {
+          id: 'field-multi',
+          key: 'synthetic_multi',
+          label: 'Synthetic Multi',
+          type: 'multi_select',
+          options: ['Option A', 'Option B'],
+          editMode: 'manual',
+        },
+      ]),
+    ).toBe('multi');
+  });
+
+  it('filters a datetime field by calendar day, with the same operators as a date', () => {
+    expect(filterKindForFieldType('datetime')).toBe('datetime');
+    expect(operatorsForKind('datetime')).toEqual(operatorsForKind('date'));
+    expect(valueCountForOperator('before')).toBe(1);
+  });
+
+  it('round-trips multi-select and datetime conditions through the URL', () => {
+    const conditions = [
+      {
+        target: { kind: 'field' as const, fieldId: 'field-multi' },
+        operator: 'in',
+        values: ['Option B'],
+      },
+      {
+        target: { kind: 'field' as const, fieldId: 'field-datetime' },
+        operator: 'between',
+        values: ['2026-01-01', '2026-01-31'],
+      },
+      {
+        target: { kind: 'field' as const, fieldId: 'field-multi' },
+        operator: 'is_not_empty',
+        values: [],
+      },
+    ];
+    expect(decodeFilter(encodeFilter(conditions))).toEqual(conditions);
+  });
+
   it('treats an unknown field type as not filterable', () => {
     expect(filterKindForFieldType('currency')).toBeNull();
     expect(kindForTarget({ kind: 'field', fieldId: 'field-text' }, fields)).toBe('text');

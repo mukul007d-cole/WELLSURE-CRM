@@ -125,7 +125,13 @@ export function FilterBuilder({
                   key={position}
                   aria-label={`Condition ${index + 1} value${valueCount > 1 ? ` ${position + 1}` : ''}`}
                   className="w-44"
-                  type={kind === 'date' ? 'date' : kind === 'number' ? 'number' : 'text'}
+                  type={
+                    kind === 'date' || kind === 'datetime'
+                      ? 'date'
+                      : kind === 'number'
+                        ? 'number'
+                        : 'text'
+                  }
                   value={inputValue(condition.values[position])}
                   onChange={(event) =>
                     update(index, {
@@ -200,8 +206,8 @@ function optionValues(
     return null;
   }
   const field = fields.find((candidate) => candidate.id === target.fieldId);
-  // Select Fields carry their choices in validationRule.options — the only
-  // source of truth for them.
+  // Select and multi-select Fields carry their choices in
+  // validationRule.options — the only source of truth for them.
   return field?.options === undefined
     ? null
     : field.options.map((option) => ({ value: option, label: option }));
