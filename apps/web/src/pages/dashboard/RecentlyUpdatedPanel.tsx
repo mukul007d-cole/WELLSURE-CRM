@@ -88,6 +88,7 @@ export function RecentlyUpdatedPanel({ journeyId }: { journeyId: string | undefi
                       name={process.statusName}
                       outcomeType={process.statusOutcomeType}
                       behaviorType={process.statusBehaviorType}
+                      color={process.statusColor}
                     />
                   ) : null}
                 </Link>

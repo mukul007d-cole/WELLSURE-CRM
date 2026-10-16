@@ -39,7 +39,10 @@ export function RequiredFieldInput({
   if (field.type === 'multi_select') {
     const selected = Array.isArray(value) ? value : [];
     return (
-      <fieldset className="flex flex-col gap-1.5" aria-describedby={error ? `${groupId}-error` : undefined}>
+      <fieldset
+        className="flex flex-col gap-1.5"
+        aria-describedby={error ? `${groupId}-error` : undefined}
+      >
         <legend className="text-sm font-medium text-ink">
           {field.label}
           <span className="ml-0.5 text-status-lost" aria-hidden="true">

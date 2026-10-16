@@ -110,6 +110,7 @@ export function RepeatLeadTab({
                     name={process.statusName}
                     outcomeType={process.statusOutcomeType}
                     behaviorType={process.statusBehaviorType}
+                    color={process.statusColor}
                   />
                 ) : (
                   '—'

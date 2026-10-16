@@ -199,6 +199,8 @@ export interface SellerListRow extends LeadCoreRecord {
     statusName: string;
     statusOutcomeType: OutcomeType;
     statusBehaviorType: BehaviorType;
+    /** ADR-0026 — the status's palette token, when configured. */
+    statusColor?: StatusColor | null;
     ownerName: string | null;
   }>;
 }
@@ -212,6 +214,7 @@ export interface Seller360ProcessInstance extends LeadProcessRecord {
     name: string;
     outcomeType: OutcomeType;
     behaviorType: BehaviorType;
+    color?: StatusColor | null;
   };
 }
 
@@ -251,7 +254,9 @@ export type ActivityActionType =
   | 'status_change'
   | 'reassignment'
   | 'share_changed'
-  | 'lead_deactivated';
+  | 'lead_deactivated'
+  // ADR-0026 — a follow-up scheduled, rescheduled, completed or cancelled.
+  | 'follow_up';
 
 export interface ActivityEntry {
   id: string;

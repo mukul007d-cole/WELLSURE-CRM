@@ -30,6 +30,7 @@ import {
 } from '../../components/leads/status-entry';
 import { ColumnManager } from './ColumnManager';
 import { SellerStatusCell } from './SellerStatusCell';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 export function SellerListPage() {
   const location = useLocation();
@@ -93,7 +94,12 @@ export function SellerListPage() {
     return () => clearTimeout(handle);
   }, [searchDraft, search, setParams]);
 
-  const journeysQuery = useQuery({ queryKey: ['journeys'], queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeysQuery = useQuery({
+    queryKey: ['journeys'],
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
   const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
   const statusesQuery = useQuery({
     queryKey: ['statuses', journeyId],
@@ -470,6 +476,7 @@ export function SellerListPage() {
                                 name={process.statusName}
                                 outcomeType={process.statusOutcomeType}
                                 behaviorType={process.statusBehaviorType}
+                                color={process.statusColor}
                               />
                             )
                           ) : (
@@ -530,6 +537,7 @@ export function SellerListPage() {
                           name={process.statusName}
                           outcomeType={process.statusOutcomeType}
                           behaviorType={process.statusBehaviorType}
+                          color={process.statusColor}
                         />
                       ) : null}
                     </Link>

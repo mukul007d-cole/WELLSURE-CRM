@@ -34,6 +34,7 @@ import { BoardCardBody } from './BoardCard';
 import { BoardColumn } from './BoardColumn';
 import { adjacentColumnCoordinates } from './keyboard-coordinates';
 import { useMoveLeadStatus, type MoveRejection, type MoveVariables } from './useMoveLeadStatus';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 interface DragPayload {
   row: SellerListRow;
@@ -54,7 +55,12 @@ export function BoardPage() {
 
   usePageChrome('Board', [qk.board(), qk.journeys()]);
 
-  const journeysQuery = useQuery({ queryKey: qk.journeys(), queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeysQuery = useQuery({
+    queryKey: qk.journeys(),
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
 
   // The board is per-journey by definition — its columns are one journey's
   // statuses — so fall back to the first rather than showing nothing. Derived

@@ -143,6 +143,7 @@ interface ProcessRow {
     name: string;
     outcomeType?: string;
     behaviorType?: string;
+    color?: string | null;
   };
   assignments?: AssignmentRow[];
 }
@@ -517,6 +518,7 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
                 name: true,
                 outcomeType: true,
                 behaviorType: true,
+                color: true,
               },
             },
             assignments: {
@@ -539,6 +541,9 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
           name: item.currentStatus!.name,
           outcomeType: item.currentStatus!.outcomeType ?? 'open',
           behaviorType: item.currentStatus!.behaviorType ?? 'default',
+          // ADR-0026 — the configured palette token, so the record's status
+          // chip matches the admin's color rather than a derived tone.
+          color: item.currentStatus!.color ?? null,
         },
         assignments: (item.assignments ?? []).map(assignment),
       })),
@@ -697,7 +702,14 @@ export class PrismaLeadRepository implements LeadRepository, SellerReadRepositor
           include: {
             journey: { select: { id: true, key: true, name: true } },
             currentStatus: {
-              select: { id: true, key: true, name: true, outcomeType: true, behaviorType: true },
+              select: {
+                id: true,
+                key: true,
+                name: true,
+                outcomeType: true,
+                behaviorType: true,
+                color: true,
+              },
             },
             assignments: {
               where: { isCurrent: true },
@@ -920,6 +932,7 @@ function sellerListProcess(row: ProcessRow): SellerListProcessSummary {
     statusName: row.currentStatus?.name ?? '',
     statusOutcomeType: row.currentStatus?.outcomeType ?? 'open',
     statusBehaviorType: row.currentStatus?.behaviorType ?? 'default',
+    statusColor: row.currentStatus?.color ?? null,
     ownerName: row.assignments?.[0]?.user?.name ?? null,
   };
 }

@@ -90,11 +90,13 @@ function grantedRow(
   action: string,
   scope: DataScope,
 ): PermissionRows[number] {
-  return rows.find((row) => row.module === module && row.action === action) ?? {
-    module,
-    action,
-    scope,
-  };
+  return (
+    rows.find((row) => row.module === module && row.action === action) ?? {
+      module,
+      action,
+      scope,
+    }
+  );
 }
 
 /** Grant or revoke every action on one module in a single step. */

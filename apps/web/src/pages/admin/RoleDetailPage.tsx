@@ -376,12 +376,7 @@ export function RoleDetailPage() {
                             checked={hasPermission(permissions, module.module, action)}
                             onChange={(e) =>
                               setPermissions(
-                                setPermission(
-                                  permissions,
-                                  module.module,
-                                  action,
-                                  e.target.checked,
-                                ),
+                                setPermission(permissions, module.module, action, e.target.checked),
                               )
                             }
                           />
@@ -556,8 +551,8 @@ export function RoleDetailPage() {
         description="Users of this role see leads owned by users of every role that reports to it (Reporting roles scope)."
       >
         <p className="mb-3 text-xs text-ink-soft">
-          Tick the roles this role reports to. Lines may branch — a role can report to several —
-          but never loop back to itself.
+          Tick the roles this role reports to. Lines may branch — a role can report to several — but
+          never loop back to itself.
         </p>
         {saveReportingLines.error ? (
           <div className="mb-3">

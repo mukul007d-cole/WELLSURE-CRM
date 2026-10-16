@@ -27,6 +27,7 @@ import {
 } from './schema';
 import type { LeadFormValues } from './schema';
 import { usePageChrome } from '../../app/page-chrome';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 /**
  * A newly-created lead has no owner-type ambiguity to resolve — this
@@ -66,7 +67,12 @@ export function LeadFormPage() {
     [],
   );
 
-  const journeysQuery = useQuery({ queryKey: ['journeys'], queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeysQuery = useQuery({
+    queryKey: ['journeys'],
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
   const fieldsQuery = useQuery({ queryKey: ['fields'], queryFn: configApi.fields });
   const sellerQuery = useQuery({
     queryKey: qk.sellerDetail(sellerId as string),

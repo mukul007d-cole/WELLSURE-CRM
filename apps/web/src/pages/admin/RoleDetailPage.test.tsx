@@ -153,7 +153,12 @@ function capturePuts() {
       .filter(
         ([input, init]) =>
           init?.method === 'PUT' &&
-          (typeof input === 'string' ? input : String(input)).endsWith(pathSuffix),
+          (typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url
+          ).endsWith(pathSuffix),
       )
       .map(([, init]) => JSON.parse(init!.body as string) as Record<string, unknown>);
 }
@@ -261,7 +266,9 @@ describe('Role scopes and actions added in Phase 24', () => {
     usePhase24Catalog();
     renderRole('role-sales-rep');
 
-    expect(await screen.findByRole('checkbox', { name: 'Bypass status rules' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('checkbox', { name: 'Bypass status rules' }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -344,7 +351,9 @@ describe('Journey-limited grants (ADR-0026)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Leads view journeys/ }));
 
     const panel = screen.getByRole('group', { name: 'Leads view journeys' });
-    expect(within(panel).queryByRole('checkbox', { name: 'Journey Alpha' })).not.toBeInTheDocument();
+    expect(
+      within(panel).queryByRole('checkbox', { name: 'Journey Alpha' }),
+    ).not.toBeInTheDocument();
     expect(within(panel).getByRole('checkbox', { name: 'Journey Beta' })).toBeInTheDocument();
   });
 });

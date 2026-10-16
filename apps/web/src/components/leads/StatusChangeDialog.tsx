@@ -9,12 +9,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { configApi, sellersApi } from '../../lib/api-client';
 import { qk } from '../../lib/query-keys';
 import type { FieldDefinition, Status } from '../../types/domain';
-import {
-  draftToFieldValue,
-  emptyDraft,
-  isFillableHere,
-  type FieldDraft,
-} from './field-drafts';
+import { draftToFieldValue, emptyDraft, isFillableHere, type FieldDraft } from './field-drafts';
 import { EMPTY_FOLLOW_UP, FollowUpFields, type FollowUpDraft } from './FollowUpFields';
 import { RequiredFieldInput } from './RequiredFieldInput';
 import {
@@ -84,8 +79,7 @@ export function StatusChangeDialog({
   // open already shouting.
   const [attempted, setAttempted] = useState(false);
 
-  const requiredIds =
-    missingFieldIds ?? (toStatus.requiredFields ?? []).map((row) => row.fieldId);
+  const requiredIds = missingFieldIds ?? (toStatus.requiredFields ?? []).map((row) => row.fieldId);
 
   // Only the required Fields' values are needed, and the API returns a value
   // only for ids explicitly requested. A distinct key under `seller` keeps
@@ -149,9 +143,7 @@ export function StatusChangeDialog({
   // Optional even where the status prompts for it — the API doesn't require
   // one — but a ticked box or a written note needs a date to hang on.
   const followUpNeedsDate =
-    followUpOn &&
-    followUpIso === null &&
-    (!followUpExpected || followUp.note.trim() !== '');
+    followUpOn && followUpIso === null && (!followUpExpected || followUp.note.trim() !== '');
   const followUpError = attempted && followUpNeedsDate ? 'Choose when to follow up.' : undefined;
 
   const blocked = fieldsLoading || unresolvedCount > 0;
@@ -182,7 +174,9 @@ export function StatusChangeDialog({
 
   return (
     <Dialog
-      title={missingFieldIds ? 'That move needs more information first' : `Move to ${toStatus.name}`}
+      title={
+        missingFieldIds ? 'That move needs more information first' : `Move to ${toStatus.name}`
+      }
       onClose={onCancel}
       footer={
         <>

@@ -13,6 +13,7 @@ import { qk } from '../../lib/query-keys';
 import { NotificationsPanel, RecentlyUpdatedPanel } from './RecentlyUpdatedPanel';
 import { StatusDistributionChart, type StatusCount } from './StatusDistributionChart';
 import { PageBody, PageHeader } from '../../components/layout/PageFrame';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 function SummaryCard({
   label,
@@ -43,7 +44,12 @@ export function DashboardPage() {
 
   usePageChrome('Dashboard', [qk.dashboard(), qk.journeys(), qk.notifications()]);
 
-  const journeysQuery = useQuery({ queryKey: qk.journeys(), queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeysQuery = useQuery({
+    queryKey: qk.journeys(),
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
 
   const statusesQuery = useQuery({
     queryKey: qk.journeyStatuses(journeyId as string),

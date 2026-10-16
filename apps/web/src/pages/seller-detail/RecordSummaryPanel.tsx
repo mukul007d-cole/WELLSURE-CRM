@@ -142,6 +142,7 @@ export function RecordSummaryPanel({
                   name={process.currentStatus.name}
                   outcomeType={process.currentStatus.outcomeType}
                   behaviorType={process.currentStatus.behaviorType}
+                  color={process.currentStatus.color}
                 />
                 {process.processInstanceId === selectedProcess?.processInstanceId
                   ? statusControl

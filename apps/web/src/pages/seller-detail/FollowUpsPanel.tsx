@@ -64,7 +64,12 @@ export function FollowUpsPanel({
     ]);
 
   const update = useMutation({
-    mutationFn: (input: { task: FollowUp; action: TaskAction; dueAt?: string; note?: string | null }) =>
+    mutationFn: (input: {
+      task: FollowUp;
+      action: TaskAction;
+      dueAt?: string;
+      note?: string | null;
+    }) =>
       tasksApi.update(input.task.id, {
         action: input.action,
         ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt }),

@@ -35,6 +35,7 @@ export interface Seller360Record extends LeadCoreRecord {
         name: string;
         outcomeType: string;
         behaviorType: string;
+        color?: string | null;
       };
     }
   >;
@@ -48,6 +49,8 @@ export interface SellerListProcessSummary {
   statusName: string;
   statusOutcomeType: string;
   statusBehaviorType: string;
+  /** ADR-0026 — the status's palette token, when configured. */
+  statusColor?: string | null;
   ownerName: string | null;
 }
 

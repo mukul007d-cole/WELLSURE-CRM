@@ -9,6 +9,7 @@ import { configApi } from '../../lib/api-client';
 import { friendlyErrorMessage } from '../../lib/api-error';
 import { qk } from '../../lib/query-keys';
 import type { Seller360ProcessInstance } from '../../types/domain';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 export type JourneyAction = 'move' | 'add';
 
@@ -61,7 +62,12 @@ export function JourneyDialog({
   const [targetJourneyId, setTargetJourneyId] = useState('');
   const [statusId, setStatusId] = useState('');
 
-  const journeysQuery = useQuery({ queryKey: qk.journeys(), queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeysQuery = useQuery({
+    queryKey: qk.journeys(),
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
   const statusesQuery = useQuery({
     queryKey: qk.journeyStatuses(targetJourneyId),
     queryFn: () => configApi.statuses(targetJourneyId),

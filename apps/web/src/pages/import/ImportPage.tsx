@@ -24,6 +24,7 @@ import {
   type ImportStepId,
   type MappingDraft,
 } from './import-state';
+import { useWorkableJourneySelect } from '../../app/workable-journeys';
 
 const emptyDraft: MappingDraft = {
   journeyId: '',
@@ -51,7 +52,12 @@ export function ImportPage() {
   const [outcome, setOutcome] = useState<ImportRunResult | null>(null);
   const [stopOnError, setStopOnError] = useState(false);
 
-  const journeys = useQuery({ queryKey: qk.journeys(), queryFn: configApi.journeys });
+  const workableJourneys = useWorkableJourneySelect();
+  const journeys = useQuery({
+    queryKey: qk.journeys(),
+    queryFn: configApi.journeys,
+    select: workableJourneys,
+  });
   const fields = useQuery({ queryKey: qk.fields(), queryFn: configApi.fields });
   const statuses = useQuery({
     queryKey: qk.journeyStatuses(draft.journeyId),
