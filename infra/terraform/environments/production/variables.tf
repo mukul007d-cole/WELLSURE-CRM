@@ -43,3 +43,37 @@ variable "campaign_email_from" {
   default     = null
   nullable    = true
 }
+
+variable "image_tag" {
+  description = <<-EOT
+    Image tag App Runner is created with: the git SHA of a build already pushed
+    to ECR.
+
+    No default, on purpose. The compute module's own default is "bootstrap", a
+    tag nothing ever pushes, and App Runner cannot create a service from an
+    image it cannot pull. With no default, Terraform stops and asks for a value
+    instead of quietly using that one. After creation the service ignores this
+    value (see the compute module's lifecycle block) — deploys move the tag
+    with `aws apprunner update-service` — but keep it naming an image still in
+    ECR, because it is what the service comes back as if it is ever recreated.
+  EOT
+  type        = string
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class. Staging ran on db.t4g.micro."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_multi_az" {
+  description = "Synchronous standby in a second AZ: survives an AZ outage and patches without downtime, at about twice the instance cost."
+  type        = bool
+  default     = true
+}
+
+variable "db_backup_retention_days" {
+  description = "Days of point-in-time restore. Must be at least 1."
+  type        = number
+  default     = 14
+}
